@@ -1,0 +1,38 @@
+# Company entity specification — v0 draft
+# Field-level source of truth for the Company concept across layers
+# (domain / ORM model / schemas). Finalized before the Sprint 2 migration.
+
+company:
+  identity:
+    name: { type: str, required: true }
+    normalized_name: { type: str, note: dedup key }
+    website: { type: url }
+    country: { type: str, default: US }
+    state: { type: str }
+    city: { type: str }
+
+  business:
+    industry: { type: str }
+    product_categories: { type: "list[str]" }
+    hs_codes: { type: "list[str]" }
+    employee_range: { type: str, note: TBD — depends on data source }
+
+  logistics:                 # the freight-forwarder lens — core of the product
+    import_volume: { type: TBD, note: shipments/TEU per period — depends on source }
+    origin_countries: { type: "list[str]" }
+    lanes: { type: "list[str]", note: origin port → destination port }
+    current_forwarders: { type: "list[str]", note: from BoL data if available }
+    last_shipment_date: { type: date }
+
+  scoring:
+    opportunity_score: { type: float, note: produced by scoring service }
+    score_breakdown: { type: json, note: dimensions TBD with scoring model }
+
+  meta:
+    sources: { type: "list[str]", note: which tools contributed data }
+    enriched_at: { type: datetime }
+
+relations:
+  contacts: one-to-many      # domain/contact
+  emails: one-to-many        # domain/email — outreach drafts
+  crm_status: one-to-one     # domain/crm — pipeline stage

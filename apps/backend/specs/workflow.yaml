@@ -1,0 +1,44 @@
+# Workflow specifications — v0 draft
+# Workflows orchestrate agents and services; see docs/workflow.md.
+
+workflows:
+  lead_generation:                   # aka "hunt" — main MVP pipeline
+    package: app.workflows.lead_generation
+    description: >
+      Main MVP pipeline: from a user goal to a prioritized list of US
+      importers with personalized outreach email drafts.
+    steps:
+      - id: plan
+        agent: planner
+        input: user_goal
+      - id: research
+        agent: research
+        for_each: plan.targets       # fan-out per target company
+      - id: score
+        service: scoring
+        input: research.analysis
+      - id: draft_emails
+        agent: sales
+        input: [research.analysis, score.result]
+      - id: report
+        agent: report
+        input: all
+    output: HuntReportSchema         # TBD
+    execution: sync                  # Celery batch execution in a later sprint
+
+  research:
+    package: app.workflows.research
+    description: On-demand deep-dive analysis of a single company.
+    status: planned
+
+  email:
+    package: app.workflows.email
+    description: Generate / regenerate outreach drafts from existing analysis.
+    status: planned
+
+  followup:
+    package: app.workflows.followup
+    description: >
+      Sequence follow-up emails based on CRM stage and time since last
+      touch (uses domain/crm rules).
+    status: planned

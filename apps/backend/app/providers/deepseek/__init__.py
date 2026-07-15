@@ -1,0 +1,1 @@
+"""DeepSeek provider adapter (future)."""

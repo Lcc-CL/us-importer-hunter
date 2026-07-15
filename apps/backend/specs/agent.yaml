@@ -1,0 +1,37 @@
+# Agent specifications — v0 draft
+# Declarative source of truth for agent wiring; code under app/agents/
+# must stay consistent with this file.
+
+agents:
+  planner:
+    package: app.agents.planner
+    role: Decompose a user goal into an executable research plan
+    prompts: prompts/planner
+    tools: []                    # planner reasons only; no data access
+    output_schema: PlanSchema    # TBD — defined in app/schemas when implemented
+
+  research:
+    package: app.agents.research
+    role: Discover and analyze US importers
+    prompts: prompts/research
+    tools: [importyeti, google, website, linkedin]
+    output_schema: CompanyAnalysisSchema   # TBD
+
+  sales:
+    package: app.agents.sales
+    role: Generate personalized outreach emails from analysis results
+    prompts: prompts/sales
+    tools: []
+    output_schema: EmailDraftSchema        # TBD
+
+  report:
+    package: app.agents.report
+    role: Aggregate and prioritize findings into a final report
+    prompts: prompts/summary
+    tools: []
+    output_schema: ReportSchema            # TBD
+
+defaults:
+  llm_gateway: app.services.llm     # agents never call provider SDKs directly
+  provider: openai                  # see app/providers/
+  model: ${OPENAI_MODEL}            # from .env

@@ -1,0 +1,39 @@
+# Tool specifications — v0 draft
+# Tools are the only data-access path for agents; see docs/architecture.md.
+
+tools:
+  importyeti:
+    package: app.tools.importyeti
+    purpose: US customs / bill-of-lading data — importer discovery
+    transport: TBD          # no official public API; access method unresolved
+    needs_browser: TBD
+    rate_limit: TBD
+
+  google:
+    package: app.tools.google
+    purpose: Web search for company discovery and enrichment
+    transport: TBD          # official API (CSE) vs search-provider API vs browser
+    needs_browser: TBD
+
+  website:
+    package: app.tools.website
+    purpose: Fetch and extract content from company websites
+    transport: http         # httpx first; browser fallback for JS-heavy sites
+    needs_browser: fallback
+
+  linkedin:
+    package: app.tools.linkedin
+    purpose: Company and contact profile lookup
+    transport: TBD          # ToS risk — compliant alternative under consideration
+    needs_browser: TBD
+
+  browser:
+    package: app.tools.browser
+    purpose: Shared browser automation infrastructure (Playwright / CDP)
+    transport: cdp
+    note: Not an agent-facing tool itself; other tools build on it.
+
+conventions:
+  io: All tool inputs and outputs are typed Pydantic schemas.
+  errors: Tools raise typed errors; agents decide retry/skip.
+  caching: Redis, per-tool TTL — defined when each tool is implemented.
