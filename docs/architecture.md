@@ -36,6 +36,23 @@ Domain (app/domain/)      Cross-cutting: pure business entities & rules,
                           framework-free; services map domain ↔ ORM ↔ schema
 ```
 
+## Domain boundaries
+
+Five bounded contexts own the nine business entities (full model:
+[business-domain.md](business-domain.md), decision: ADR-0015):
+
+| Context | Owns | Maps mainly to |
+|---|---|---|
+| Discovery | Company, Contact, ImportRecord | tools/, services/company, services/search |
+| Intelligence | Opportunity (central value aggregate) | services/scoring, domain/crm |
+| Outreach | Outreach, EmailDraft, Outcome | agents/sales, services/email |
+| Execution | Task | workflows/, tasks/, observability/ |
+| Identity | User | memory/user, core settings |
+
+Contexts communicate through typed contracts and domain events
+(`app/events/`) — never direct cross-module calls. Aggregates reference
+each other by id only.
+
 ## Backend layout (`apps/backend/app/`)
 
 | Directory      | Responsibility |

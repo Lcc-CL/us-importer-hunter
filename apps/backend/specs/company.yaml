@@ -1,11 +1,13 @@
-# Company entity specification — v0 draft
-# Field-level source of truth for the Company concept across layers
-# (domain / ORM model / schemas). Finalized before the Sprint 2 migration.
+# Company entity specification — v1 (Sprint 2 L3)
+# Discovery context. Company is a FACT: what is objectively knowable about
+# a US importer. Judgment (score/priority/stage) lives in opportunity.yaml.
+# Field-level source of truth across layers; finalized before migration.
 
 company:
   identity:
     name: { type: str, required: true }
     normalized_name: { type: str, note: dedup key }
+    aliases: { type: "list[str]", note: names absorbed by merges }
     website: { type: url }
     country: { type: str, default: US }
     state: { type: str }
@@ -17,22 +19,31 @@ company:
     hs_codes: { type: "list[str]" }
     employee_range: { type: str, note: TBD — depends on data source }
 
-  logistics:                 # the freight-forwarder lens — core of the product
+  logistics:                 # derived summary of ImportRecords — never hand-edited
     import_volume: { type: TBD, note: shipments/TEU per period — depends on source }
     origin_countries: { type: "list[str]" }
     lanes: { type: "list[str]", note: origin port → destination port }
     current_forwarders: { type: "list[str]", note: from BoL data if available }
     last_shipment_date: { type: date }
 
-  scoring:
-    opportunity_score: { type: float, note: produced by scoring service }
-    score_breakdown: { type: json, note: dimensions TBD with scoring model }
+  signals:                   # switching hints derived from evidence
+    volume_trend: { type: str, note: growing / stable / declining }
+    cadence_gap: { type: bool, note: unusual pause in shipping rhythm }
 
-  meta:
-    sources: { type: "list[str]", note: which tools contributed data }
+  freshness:
+    status: { type: str, note: "profiled | stale — stale profiles must not be scored as current" }
     enriched_at: { type: datetime }
 
+  meta:
+    sources: { type: "list[str]", note: which tools contributed data — every fact carries provenance }
+
+invariants:
+  - One company per real-world importer; merges preserve per-field source lineage.
+  - Facts without provenance cannot enter the profile.
+  - logistics section is always re-derivable from linked ImportRecords.
+  - stale companies are excluded from current-scoring (confidence cap).
+
 relations:
-  contacts: one-to-many      # domain/contact
-  emails: one-to-many        # domain/email — outreach drafts
-  crm_status: one-to-one     # domain/crm — pipeline stage
+  import_records: one-to-many   # evidence (immutable, Discovery)
+  contacts: one-to-many         # Discovery
+  opportunities: one-to-many    # judgments about this company (Intelligence), per user/time

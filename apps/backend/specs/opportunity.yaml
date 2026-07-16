@@ -1,0 +1,42 @@
+# Opportunity entity specification — v1 (Sprint 2 L3)
+# Intelligence context. Opportunity is the JUDGMENT: worth pursuing, how
+# much, why, and where the pursuit stands. The central value aggregate of
+# the product (ADR-0015). Company facts live in company.yaml.
+
+opportunity:
+  judgment:
+    score: { type: float, note: changes ONLY via rescore()/apply_outcome() — never assignment }
+    confidence: { type: float, note: capped when company profile is stale }
+    priority: { type: str, note: derived ranking bucket — high / medium / low }
+    reasons: { type: "list[str]", required: true, note: evidence-linked; never empty }
+    recommended_action: { type: str, note: what the salesperson should do next }
+
+  status:
+    stage: { type: str, note: "identified | scored | qualified | disqualified | contacted | engaged | negotiating | won | lost | dormant" }
+    stage_reason: { type: str, note: required for won / lost / disqualified }
+
+  assessment_history:          # append-only — no history entry, no score change
+    entries:
+      - old_score: { type: float }
+        new_score: { type: float }
+        evidence_refs: { type: "list[str]", note: import record / outcome ids }
+        user_lens_version: { type: str }
+        scorer_version: { type: str }
+        assessed_at: { type: datetime }
+
+invariants:
+  - Score changes only through domain behaviors; each change appends an assessment entry.
+  - reasons is never empty — an unexplainable score is invalid.
+  - Stage transitions follow the CRM machine (engaged requires a positive Outcome;
+    won/lost require stage_reason; dormant only from contacted/engaged).
+  - Scoring against a stale company profile caps confidence and flags the assessment.
+
+relations:
+  company: many-to-one          # the fact being judged (Discovery)
+  user: many-to-one             # the lens (Identity) — same company, different users, different judgments
+  outreaches: one-to-many       # pursuit conversations (Outreach context)
+
+events:
+  produces: [OpportunityScoreChanged, OpportunityQualified, OpportunityDisqualified,
+             OpportunityWon, OpportunityLost]
+  consumes: [CompanyProfileUpdated, ImportRecordsUpdated, OutreachReplied]

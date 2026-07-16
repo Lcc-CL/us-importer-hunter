@@ -1,5 +1,7 @@
-# Workflow specifications — v0 draft
+# Workflow specifications — v1 (Sprint 2 L3)
 # Workflows orchestrate agents and services; see docs/workflow.md.
+# Steps emit domain events (docs/business-domain.md) on the in-process
+# EventBus (ADR-0004/0015); Execution context wraps every run in a Task.
 
 workflows:
   lead_generation:                   # aka "hunt" — main MVP pipeline
@@ -14,31 +16,39 @@ workflows:
       - id: research
         agent: research
         for_each: plan.targets       # fan-out per target company
+        emits: [DiscoveryCompleted, CompanyProfileUpdated, ImportRecordsUpdated]
       - id: score
         service: scoring
         input: research.analysis
+        emits: [OpportunityScoreChanged, OpportunityQualified, OpportunityDisqualified]
       - id: draft_emails
         agent: sales
         input: [research.analysis, score.result]
+        emits: [OutreachCreated, EmailDraftGenerated]
       - id: report
         agent: report
         input: all
     output: HuntReportSchema         # TBD
     execution: sync                  # Celery batch execution in a later sprint
+    task_events: [TaskCompleted, TaskFailed]   # emitted by the Execution wrapper
 
   research:
     package: app.workflows.research
     description: On-demand deep-dive analysis of a single company.
+    emits: [CompanyProfileUpdated, ImportRecordsUpdated]
     status: planned
 
   email:
     package: app.workflows.email
     description: Generate / regenerate outreach drafts from existing analysis.
+    emits: [OutreachCreated, EmailDraftGenerated, EmailDraftApproved]
     status: planned
 
   followup:
     package: app.workflows.followup
     description: >
       Sequence follow-up emails based on CRM stage and time since last
-      touch (uses domain/crm rules).
+      touch (uses domain/crm rules via the Opportunity aggregate).
+    emits: [OutreachSent, OutreachReplied]
+    consumes: [OutreachSent, OpportunityQualified]
     status: planned

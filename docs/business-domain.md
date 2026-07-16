@@ -1,20 +1,37 @@
 # Business Domain — US Importer Hunter
 
-> v2 (Sprint 2, Lesson 2). The business model of the product, written
-> before any persistence design. This document answers *what things exist
-> in the business, how they live, and what they can do* — not how they are
-> stored. Database modeling comes later and must conform to this document,
-> not the other way around.
+> v3 (Sprint 2, Lesson 3). The business model, refined with domain
+> boundaries, aggregates and domain events — still written before any
+> persistence design. Database modeling must conform to this document.
+> Plain-English rule: every DDD term below is explained by what it means
+> for a freight forwarder's sales workflow, or it doesn't belong here.
 
 ## The business in one paragraph
 
 A freight forwarder's salesperson wants to win US importers as customers.
 Winning requires knowing **who imports** (Company), **proof that they
 ship** (ImportRecord), **whether they are worth pursuing** (Opportunity),
-**who to talk to** (Contact), **what to say** (EmailDraft) — personalized
-to what *this* forwarder is actually good at (User), executed in
-supervised runs (Task), and improved by **what actually happened**
-(Outcome). The system does the research and writing; the human sells.
+**who to talk to** (Contact), and **running the conversation** (Outreach,
+with its EmailDrafts) — personalized to what *this* forwarder is actually
+good at (User), executed in supervised runs (Task), and improved by
+**what actually happened** (Outcome). The system does the research and
+writing; the human sells.
+
+## Official entity list
+
+Nine entities, each owned by exactly one bounded context:
+
+| Entity | Owning context | One-line role |
+|---|---|---|
+| Company | Discovery | The importer as a deduplicated real-world fact |
+| Contact | Discovery | The human decision maker at an importer |
+| ImportRecord | Discovery | One immutable customs/BoL shipment observation |
+| Opportunity | Intelligence | The judgment: worth pursuing, how much, why — plus CRM stage |
+| Outreach | Outreach | One pursuit conversation for one opportunity |
+| EmailDraft | Outreach | One generated email version inside an outreach |
+| Outcome | Outreach | One immutable feedback event from reality |
+| Task | Execution | One supervised, resumable pipeline run |
+| User | Identity | The forwarder salesperson — the lens and the tenant |
 
 ## The three-layer rule (fact / judgment / artifact)
 
@@ -23,7 +40,7 @@ supervised runs (Task), and improved by **what actually happened**
 | **Evidence** | ImportRecord, Outcome | Immutable events — accumulated, never edited |
 | **Facts** | Company, Contact | Enriched over time, deduplicated, source-tracked |
 | **Judgments** | Opportunity | Recomputable from evidence + user lens |
-| **Artifacts** | EmailDraft, Task | Versioned work products with lifecycle states |
+| **Artifacts** | Outreach, EmailDraft, Task | Versioned work products with lifecycle states |
 | **Principal** | User | The lens everything above is computed through |
 
 Any judgment traces down to evidence; any artifact traces back to the
@@ -32,352 +49,359 @@ future judgments. This closed loop is the product.
 
 ---
 
-## 1. Company — the importer as a real-world fact
+# Bounded contexts
 
-**Purpose.** One canonical identity per real-world US importer. Every data
-source (customs records, Google, websites, LinkedIn) describes fragments
-of the same buyer under slightly different names; without a canonical
-company, volume is undercounted, outreach is duplicated, and enrichment is
-wasted. A Company carries only what is objectively knowable — whether it
-is *worth pursuing* lives in Opportunity.
+A bounded context is a part of the business where words have one precise
+meaning and one team of modules is responsible. "Score" means something
+in Intelligence and nothing in Discovery; "attempt" means something in
+Execution and nothing in Outreach. Contexts talk to each other only
+through **typed contracts and domain events** — never by reaching into
+each other's internals (ADR-0015).
 
-**Lifecycle.**
+## Discovery Context — "find importers and prove they ship"
+
+- **Purpose**: turn messy external data into canonical companies with
+  evidence and reachable people.
+- **Responsibilities**: ingest and normalize import records; deduplicate
+  and enrich companies; discover and verify contacts; keep profiles fresh
+  (staleness).
+- **Owned entities**: Company, Contact, ImportRecord.
+- **Excluded responsibilities**: judging whether a company is worth
+  pursuing (Intelligence); writing to anyone (Outreach).
+- **Inputs**: user targeting criteria (Identity contract); raw data from
+  tools (importyeti, google, website, linkedin).
+- **Outputs**: events `DiscoveryCompleted`, `CompanyProfileUpdated`,
+  `ImportRecordsUpdated`; canonical profiles readable by other contexts.
+- **Depends on**: Identity (targeting lens). Runs inside Execution tasks.
+
+## Intelligence Context — "decide who is worth pursuing, and why"
+
+- **Purpose**: convert facts into prioritized, explainable, living
+  judgments.
+- **Responsibilities**: score opportunities (deterministic, explainable);
+  qualify/disqualify; own the CRM stage machine; recommend next actions;
+  recalibrate from outcomes.
+- **Owned entities**: Opportunity.
+- **Excluded responsibilities**: gathering data (Discovery); writing or
+  sending anything (Outreach).
+- **Inputs**: company profiles + evidence aggregates (Discovery); user
+  lens (Identity); outcome events (Outreach).
+- **Outputs**: events `OpportunityScoreChanged`, `OpportunityQualified`,
+  `OpportunityDisqualified`, `OpportunityWon`, `OpportunityLost`;
+  prioritized opportunity lists.
+- **Depends on**: Discovery (facts), Identity (lens), Outreach (outcomes).
+
+## Outreach Context — "run the sales conversation"
+
+- **Purpose**: pursue qualified opportunities through personalized,
+  human-approved communication, and capture what reality answers.
+- **Responsibilities**: select the right contact; generate and version
+  email drafts; enforce human approval before anything leaves; track send
+  state and follow-up plans; record outcomes.
+- **Owned entities**: Outreach (root), EmailDraft, Outcome.
+- **Excluded responsibilities**: deciding *whether* to pursue
+  (Intelligence decides; Outreach executes); discovering contacts
+  (Discovery finds them; Outreach selects among them).
+- **Inputs**: `OpportunityQualified` events + opportunity context
+  (Intelligence); contact facts (Discovery); voice/strengths (Identity).
+- **Outputs**: events `OutreachCreated`, `EmailDraftGenerated`,
+  `EmailDraftApproved`, `OutreachSent`, `OutreachReplied`; outcome data
+  consumed by Intelligence and memory.
+- **Depends on**: Intelligence, Discovery, Identity.
+
+## Execution Context — "run the machine, keep the receipts"
+
+- **Purpose**: make long-running, fan-out, money-costing AI work
+  visible, resumable and auditable.
+- **Responsibilities**: turn user goals into executable plans (planner);
+  track run state, attempts, errors, retries; account cost; emit
+  completion/failure signals.
+- **Owned entities**: Task.
+- **Excluded responsibilities**: any business judgment — a Task knows
+  *that* research ran and what it cost, never whether a company is good.
+- **Inputs**: user goals (Identity); workflow definitions
+  (specs/workflow.yaml).
+- **Outputs**: events `TaskCompleted`, `TaskFailed`; progress and cost
+  reporting.
+- **Depends on**: invokes Discovery, Intelligence and Outreach operations
+  through workflows; none of them depend back on Execution.
+
+## Identity Context — "who the system works for"
+
+- **Purpose**: hold the forwarder's selling identity — strengths, lanes,
+  targeting, tone — and be the future tenancy boundary.
+- **Responsibilities**: profile and targeting management; preference
+  learning (from draft edits and outcomes, via memory/user); scoping all
+  data by owner from day one.
+- **Owned entities**: User.
+- **Excluded responsibilities**: any prospect data or work product.
+- **Inputs**: explicit settings; learning signals (Outreach outcomes,
+  draft edit diffs).
+- **Outputs**: the **user lens contract** — a typed context object
+  (strengths, lanes, targeting, tone) consumed by every other context.
+- **Depends on**: nothing (foundational).
+
+## Context map
+
+```mermaid
+graph LR
+    ID["Identity Context<br/>(User)"]
+    DIS["Discovery Context<br/>(Company · Contact · ImportRecord)"]
+    INT["Intelligence Context<br/>(Opportunity)"]
+    OUT["Outreach Context<br/>(Outreach · EmailDraft · Outcome)"]
+    EXE["Execution Context<br/>(Task)"]
+
+    ID -->|"user lens contract"| DIS
+    ID -->|"user lens contract"| INT
+    ID -->|"voice + strengths contract"| OUT
+    DIS -->|"DiscoveryCompleted<br/>CompanyProfileUpdated<br/>ImportRecordsUpdated"| INT
+    INT -->|"OpportunityQualified"| OUT
+    OUT -->|"OutreachReplied + outcomes"| INT
+    INT -.->|"OpportunityWon / Lost<br/>(learning)"| ID
+    EXE -->|"invokes via workflows"| DIS
+    EXE -->|"invokes via workflows"| INT
+    EXE -->|"invokes via workflows"| OUT
 ```
-discovered → enriching → profiled → stale → re-enriched → …
-                 ↘ merged (dedup absorbs a duplicate into the canonical record)
-                 ↘ archived (out of business / irrelevant)
-```
-"Stale" is a business state, not an error: shipping behavior ages fast,
-and a profile older than its data-source refresh window must not be
-scored as current.
 
-**Behaviors.**
-- `merge(duplicate)` — absorb another record for the same real company,
-  keeping source lineage of every field.
-- `enrich(source, data)` — accept new facts with provenance; conflicting
-  facts resolve by source trust + recency policy.
-- `derive_shipping_profile()` — recompute lanes / volumes / cadence /
-  incumbent forwarders by aggregating its ImportRecords.
-- `mark_stale()` / `refresh()` — age out, then re-run enrichment.
-
-**Relationships.** Has many ImportRecords (evidence), many Contacts, many
-Opportunities (one per user-lens/time); produced and updated inside Tasks.
-
-**Ownership.** Agent: **research** (discovers and enriches via tools).
-Workflows: lead_generation, research. Services: company (lifecycle/dedup),
-search, scoring (reads), rag.
+Solid arrows are events/contracts; the dotted arrow is the learning loop
+into user memory. Execution invokes the three business contexts and is
+depended on by none.
 
 ---
 
-## 2. Opportunity — the forwarder's judgment about a company
+# Aggregates
 
-**Purpose.** The first-class object for "worth pursuing, this much, right
-now, for this reason" — plus the pursuit's CRM life. Separating judgment
-from fact lets the same importer be a gold prospect for a China→LA
-furniture forwarder and worthless for an EU pharma specialist, and lets
-scores be recomputed when evidence or the user's profile changes.
+An aggregate is a cluster of business data that must change **together
+and consistently**, guarded by one entry point (the aggregate root). Rule
+of thumb used here: *if two pieces of state can contradict each other
+when edited separately, they belong in one aggregate; otherwise they stay
+apart and hold references.*
 
-**Lifecycle.**
-```
-identified → scored → qualified ──→ contacted → engaged → negotiating → won
-                    ↘ disqualified(reason)         ↘ dormant → re-opened   ↘ lost(reason)
-```
-Stage transitions are business rules (`domain/crm`): e.g. `engaged`
-requires a positive Outcome; `dormant` triggers after N days without
-response; `won/lost` require a reason for learning.
+## A. Company Aggregate (root: Company) — Discovery
 
-**Behaviors.**
-- `score()` / `rescore()` — deterministic scoring service computes score +
-  breakdown from company facts × user lens; always re-derivable.
-- `explain()` — return the score breakdown (which dimensions, which
-  evidence) for user trust.
-- `advance_stage(event)` / `disqualify(reason)` — CRM transitions guarded
-  by domain rules.
-- `go_dormant()` / `reopen(trigger)` — staleness and revival (e.g. new
-  shipment burst detected).
+**Contains**: company identity (canonical name, aliases, location),
+business profile (industry, products, HS codes), logistics profile
+(lanes, volumes, cadence, incumbent forwarders — derived), signals
+(growth, gaps, switching hints).
 
-**Relationships.** Belongs to one Company and one User (the lens); has
-many EmailDrafts (pursuit artifacts) and many Outcomes (what happened);
-created inside a Task.
+**Not inside**: Contacts and ImportRecords are separate entities
+referenced by company id — contacts have their own lifecycle, and import
+records are high-volume immutable evidence that would bloat the
+aggregate. The logistics profile is a *derived summary* of those records,
+owned by the aggregate.
 
-**Ownership.** Agent: **research** (produces the qualitative analysis);
-the numeric score is owned by the **scoring service** — deliberately not
-an LLM, so ranking is explainable and reproducible. Workflows:
-lead_generation (creates), followup (advances), email (reads context).
-Services: scoring, company.
+**Invariants** (what must always be true):
+1. One aggregate per real-world importer — a merge absorbs the duplicate
+   and preserves per-field source lineage; the absorbed id keeps
+   resolving to the canonical company.
+2. Every profile fact carries provenance (source + retrieved_at); facts
+   without provenance cannot enter the profile.
+3. The logistics profile is always re-derivable from linked
+   ImportRecords — it is a cache of evidence, never hand-edited.
+4. A company whose evidence is older than the freshness window is
+   `stale` and must not be presented as current to Intelligence.
 
----
+**Allowed behaviors**: `enrich(source, facts)`, `merge(duplicate_id)`,
+`derive_shipping_profile()`, `mark_stale()` / `refresh()`.
 
-## 3. Contact — the human who reads the email
+## B. Opportunity Aggregate (root: Opportunity) — Intelligence
 
-**Purpose.** Companies don't answer cold emails; a logistics manager does.
-Contact holds the person, their role relevance, how to reach them, and
-where that information came from (provenance matters commercially and
-legally).
+**The central value aggregate of the product.** Everything upstream
+(discovery, evidence) exists to create it; everything downstream
+(outreach, outcomes) exists to act on it and improve it. If the product
+had to keep exactly one screen, it would be the prioritized opportunity
+list.
 
-**Lifecycle.**
-```
-found → verified (address deliverable) → active → bounced / departed → replaced
-```
-A bounced or departed contact is never deleted — outreach history hangs
-off it — but it stops being selectable as a recipient.
+**Contains**: score, confidence, priority, reasons (evidence-linked),
+status (CRM stage), assessment history (append-only), recommended action.
 
-**Behaviors.**
-- `verify()` — confirm deliverability / role currency before any draft is
-  addressed to them.
-- `mark_bounced()` / `mark_departed()` — invalidate as recipient, trigger
-  replacement search.
-- `record_provenance(source)` — every contact knows how it was obtained.
-- `best_recipient(company, purpose)` — company-level selection rule:
-  prefer logistics/supply-chain roles, verified addresses, no recent
-  bounces.
+**Invariants**:
+1. **The score never changes by assignment — only through domain
+   behaviors** (`rescore()`, `apply_outcome()`). Each change appends an
+   assessment record (old → new, evidence refs, user-lens version,
+   scorer version) to the history. No history entry, no score change.
+2. Reasons are never empty: an unexplainable score is invalid by
+   definition (`explain()` must always answer).
+3. Stage transitions obey the CRM machine: `engaged` requires a positive
+   Outcome; `won`/`lost` require a reason; `dormant` only from
+   `contacted`/`engaged` after the staleness rule fires.
+4. Confidence reflects evidence freshness: scoring against a `stale`
+   company profile caps confidence and flags the assessment.
 
-**Relationships.** Belongs to one Company; receives many EmailDrafts;
-Outcomes (reply/bounce) attribute to the draft *and* the contact.
+**Allowed behaviors**: `rescore(profile, lens)`, `apply_outcome(outcome)`,
+`qualify()` / `disqualify(reason)`, `advance_stage(event)`,
+`go_dormant()` / `reopen(trigger)`, `recommend_action()`, `explain()`.
 
-**Ownership.** Agent: **research** (finds people via linkedin/website
-tools). Workflows: lead_generation, email, followup. Services: email
-(recipient selection), company.
+## C. Outreach Aggregate (root: Outreach) — Outreach
 
----
+**Why it exists as an aggregate**: an EmailDraft is one artifact; the
+*sales process* is a conversation — contact selection, several draft
+versions, an approval gate, a send, planned follow-ups, and outcomes.
+Treating the draft as the whole process (the v2 model) hid approval
+state, follow-up state and outcome attribution with nowhere consistent
+to live. Outreach is that home.
 
-## 4. ImportRecord — the shipment evidence
+**Contains**: selected contact (reference + selection reason), email
+drafts (versioned), approval state, send state, follow-up plan,
+outcomes.
 
-**Purpose.** The product's unfair advantage: one customs / bill-of-lading
-observation (date, HS code, origin, ports, volume, carrier, incumbent
-forwarder). Everything persuasive the system says traces back to these
-records — qualification (real volume on real lanes), switching signals
-(incumbent forwarder, cadence gaps), and personalization ammunition.
+**Invariants**:
+1. Nothing is ever sent without an explicit human approval recorded on
+   the aggregate (MVP: the system never sends at all — it records the
+   user's send).
+2. Exactly one active draft at a time; regeneration versions the old one
+   (lineage kept) rather than deleting it.
+3. The selected contact must be `active` and verified at approval time;
+   a bounce invalidates the contact and reopens contact selection.
+4. Every Outcome attributes to this outreach (and through it, to the
+   opportunity) — orphan outcomes don't exist.
+5. Follow-ups only exist after a send, and follow the plan's spacing
+   rules (domain/crm).
 
-**Lifecycle.**
-```
-ingested → normalized (units/ports/names standardized) → linked (to a Company)
-```
-Then **immutable forever**. Records are never edited or enriched;
-corrections arrive as new records from the source. Companies and
-Opportunities are *derived* from aggregating them.
+**Allowed behaviors**: `select_contact(reason)`, `generate_draft(lens)`,
+`regenerate(feedback)`, `approve(draft)`, `record_sent()`,
+`record_outcome(event)`, `plan_followup(rules)`, `close(reason)`.
 
-**Behaviors.**
-- `normalize()` — standardize units (TEU/kg), port codes, party names at
-  ingestion; the raw source payload is preserved alongside.
-- `link(company)` — attach to a canonical Company (re-linkable when a
-  merge changes canonical identity — the only mutable thing about it).
-- Aggregation queries (by lane / HS / period / forwarder) are read-side
-  behaviors consumed by `derive_shipping_profile()` and scoring.
+## D. Task Aggregate (root: Task) — Execution
 
-**Relationships.** Belongs to (at most) one Company; referenced by
-Opportunity score breakdowns and EmailDraft personalization claims.
+**Contains**: execution state (planned/queued/running/…), attempts,
+error state (diagnosis, failed step), retry information, workflow
+references (which workflow, which step, fan-out progress), cost
+accounting.
 
-**Ownership.** Agent: none — raw material. The **importyeti tool**
-produces records; the research agent consumes them. Workflows:
-lead_generation, research. Services: search, company, scoring.
+**Invariants**:
+1. Holds **execution state only** — it references produced business ids
+   for audit but never contains business judgment (a task never knows a
+   score).
+2. State transitions follow the machine; `attempts` is monotonic;
+   `failed` always carries a diagnosis.
+3. A resumed task continues from the last completed fan-out unit —
+   completed work is never redone.
 
----
+**Allowed behaviors**: `plan(goal)`, `start()`, `report_progress(unit)`,
+`fail(error, diagnosis)`, `retry()` / `resume()`, `cancel()`,
+`account_cost()`.
 
-## 5. EmailDraft — the deliverable, with a human in the loop
-
-**Purpose.** The pipeline's end product the user touches. Deliberately a
-*draft*: the MVP never sends autonomously — the salesperson reviews,
-edits, approves and owns the send. The entity records what was generated,
-from which analysis, with which prompt version, and everything that
-happened to it afterwards.
-
-**Lifecycle.**
-```
-generating → drafted → edited* → approved → sent → replied / bounced / no_response
-     ↘ regenerated (new version, lineage kept)          (*edited is optional, repeatable)
-```
-Send-state transitions (`sent`, `replied`, `bounced`) are recorded from
-user action or mailbox signals — never initiated by the system in MVP.
-
-**Behaviors.**
-- `generate(opportunity, contact, user_lens)` — sales agent composes from
-  analysis + shipping evidence + user strengths; stamps prompt version.
-- `regenerate(feedback)` — new version with user guidance; previous
-  versions retained for learning.
-- `edit(user_changes)` — capture human edits (the diff is a learning
-  signal: what did the human fix?).
-- `approve()` / `record_sent()` / `attach_outcome(outcome)` — human-gated
-  transitions.
-
-**Relationships.** Belongs to one Opportunity; addressed to one Contact;
-carries prompt-version lineage; Outcomes attribute to it; created inside
-a Task.
-
-**Ownership.** Agent: **sales**. Workflows: lead_generation (draft step),
-email (generate/regenerate), followup (sequenced drafts). Services: email
-(composition/status), llm (via agent).
-
----
-
-## 6. Task — a supervised unit of pipeline work
-
-**Purpose.** A hunt run is long-running, fans out across dozens of
-companies, costs real money (LLM tokens, data credits) and can fail
-halfway. Task makes runs **visible, resumable, auditable**: what was
-requested, what plan was derived, what ran, what it cost, what it
-produced. It is about *work*, never business judgment.
-
-**Lifecycle.**
-```
-planned → queued → running (step/fan-out progress) → completed
-                        ↘ failed(diagnosis) → resumed / retried
-                        ↘ cancelled (user)
-```
-(Naming note: distinct from `app/tasks/` — the Celery entry-point layer.
-A queue task *executes* part of a domain Task.)
-
-**Behaviors.**
-- `plan(user_goal)` — planner agent turns a goal into an executable
-  blueprint; the plan is the task's contract.
-- `start()` / `report_progress(step, unit)` — live visibility per fan-out
-  unit (company N of M).
-- `fail(error, diagnosis)` / `resume()` — partial results are kept;
-  resume continues from the last completed unit.
-- `cancel()` — user-initiated, graceful.
-- `account_cost()` — tokens, data credits, wall time (observability reads
-  from tracing).
-
-**Relationships.** Initiated by one User; produces/updates Companies,
-Opportunities, EmailDrafts (audit trail); every observability trace hangs
-off its identity.
-
-**Ownership.** Agent: **planner** (owns the blueprint); every agent works
-inside one. Workflows: all four — each execution is a Task. Services:
-none own it; the workflow engine creates it, `app/tasks/` executes it
-asynchronously later, observability records against it.
-
----
-
-## 7. Outcome — what actually happened (the learning signal)
-
-**Purpose.** The feedback event that closes the loop: a reply (positive /
-negative / referral), a bounce, a meeting booked, a quote requested, a
-deal won or lost. Without Outcomes the system generates forever without
-learning *which lanes, angles and templates convert*. Outcomes are the
-raw material for memory (long_term), for scoring calibration, and for
-honest reporting ("40 drafts → 6 replies → 2 meetings").
-
-**Lifecycle.**
-```
-recorded (immutable event) → attributed (to draft / opportunity / contact) → learned
-```
-"Learned" means ingested by the memory layer and available to future
-scoring/prompting — the event itself never changes.
-
-**Behaviors.**
-- `record(type, evidence, when)` — capture the event with its proof
-  (reply text, bounce code, meeting invite); user-reported in MVP.
-- `attribute(draft, opportunity, contact)` — bind the event to what
-  caused it; drives CRM stage transitions (`engaged` requires a positive
-  outcome).
-- `feed_learning()` — hand to memory/long_term and scoring calibration;
-  report agent aggregates outcomes into funnel metrics.
-
-**Relationships.** Attributes to one EmailDraft (usually), one
-Opportunity, one Contact; consumed by memory, scoring, and the report
-agent's funnel reporting.
-
-**Ownership.** Agent: none generates it — outcomes come from reality
-(user reports them in MVP; mailbox integration later). The **report**
-agent aggregates them; memory and scoring consume them. Workflows:
-followup (outcome-driven sequencing), lead_generation (reporting).
-Services: email (send-state sync), scoring (calibration), memory layer.
-
----
-
-## 8. User — the forwarder salesperson the system works for
-
-**Purpose.** Every judgment and every email is *from someone*. The user's
-profile — strong lanes, rate advantages, specialties, tone preferences,
-targeting criteria — is what turns generic output into credible output.
-Also the future tenancy boundary (data isolation, per-user pipelines),
-even though MVP runs single-user.
-
-**Lifecycle.**
-```
-created → profiled (strengths/targeting captured) → active → (multi-tenant: suspended/removed)
-```
-The profile is never "done": memory/user accumulates preferences from
-edits, outcomes and explicit settings continuously.
-
-**Behaviors.**
-- `set_profile(lanes, strengths, specialties)` — the selling lens.
-- `set_targeting(criteria)` — what a good prospect looks like for them.
-- `record_preference(signal)` — implicit learning from draft edits and
-  outcome patterns (via memory/user).
-- `own(everything)` — all Tasks, Opportunities and EmailDrafts are
-  scoped to a user from day one, so multi-tenancy is a filter, not a
-  migration.
-
-**Relationships.** Initiates Tasks; owns Opportunities (the lens) and
-EmailDrafts; profile feeds planner, scoring and sales prompts.
-
-**Ownership.** Agent: none — the user is the principal, not a work
-product. planner consumes user context first; `memory/user` accumulates
-it. Workflows: all. Services: all (context); auth/tenancy attaches here
-later.
-
----
-
-## Domain relationship diagram
+## Aggregate relationship diagram
 
 ```mermaid
 graph TD
-    USER["User<br/>(forwarder salesperson)"]
-    TASK["Task<br/>(supervised pipeline run)"]
-    COMPANY["Company<br/>(importer — fact)"]
-    OPP["Opportunity<br/>(judgment + CRM stage)"]
-    CONTACT["Contact<br/>(decision maker)"]
-    IR["ImportRecord<br/>(immutable shipment evidence)"]
-    DRAFT["EmailDraft<br/>(human-in-the-loop deliverable)"]
-    OUTCOME["Outcome<br/>(immutable feedback event)"]
+    subgraph EXE["Execution"]
+      T["Task (root)<br/>state · attempts · errors ·<br/>retries · workflow refs · cost"]
+    end
+    subgraph DIS["Discovery"]
+      C["Company (root)<br/>identity · business profile ·<br/>logistics profile · signals"]
+      CT["Contact (entity)"]
+      IR["ImportRecord (entity, immutable)"]
+    end
+    subgraph INT["Intelligence"]
+      O["Opportunity (root)<br/>score · confidence · priority ·<br/>reasons · status · history ·<br/>recommended action"]
+    end
+    subgraph OUTC["Outreach"]
+      R["Outreach (root)<br/>selected contact · drafts ·<br/>approval · send state ·<br/>follow-up plan · outcomes"]
+      ED["EmailDraft (entity, versioned)"]
+      OC["Outcome (entity, immutable)"]
+    end
 
-    USER -->|"initiates 1..N"| TASK
-    TASK -->|"discovers / enriches"| COMPANY
-    COMPANY -->|"evidenced by 1..N"| IR
-    COMPANY -->|"employs 1..N"| CONTACT
-    COMPANY -->|"judged as 1..N (per user, per time)"| OPP
-    USER -->|"owns the lens of"| OPP
-    OPP -->|"pursued via 1..N"| DRAFT
-    DRAFT -->|"addressed to 1"| CONTACT
-    DRAFT -->|"triggers 0..N"| OUTCOME
-    OUTCOME -->|"advances stage of"| OPP
-    OUTCOME -.->|"feeds learning"| USER
-    TASK -.->|"audit trail"| OPP
-    TASK -.->|"audit trail"| DRAFT
+    C -->|"derives profile from"| IR
+    CT -->|"belongs to company_id"| C
+    O -->|"judges company_id"| C
+    R -->|"pursues opportunity_id"| O
+    R -->|"addresses contact_id"| CT
+    R --- ED
+    R --- OC
+    OC -->|"drives stage of"| O
+    T -.->|"audit refs (ids only)"| C
+    T -.->|"audit refs (ids only)"| O
+    T -.->|"audit refs (ids only)"| R
 ```
 
-Reading it as a sentence: *a **User** starts a **Task**; the task turns
-**ImportRecords** into deduplicated **Companies** with **Contacts**; each
-company is judged into an **Opportunity** through the user's lens;
-pursuing it produces **EmailDrafts** addressed to contacts; reality
-answers with **Outcomes**, which advance the opportunity's stage and teach
-the system what works — and the task keeps the audit trail of all of it.*
+Aggregates reference each other **by id only** (solid arrows); no
+aggregate reaches inside another. Task's links are audit references
+(dotted) — execution never owns business state.
+
+---
+
+# Domain events
+
+Events are how contexts tell each other that something business-relevant
+happened, without coupling. Names are past tense — they are facts. All
+events below are **auditable: yes** — they form the product's audit
+trail (MVP: persisted via the observability layer's structured log; a
+dedicated event store is a later decision). Common envelope fields
+(`event_id`, `occurred_at`, `task_id?`, `user_id`) are implied and
+omitted from the payload column.
+
+| Event | Meaning (business English) | Producer | Consumers | Required payload |
+|---|---|---|---|---|
+| `DiscoveryCompleted` | "We finished hunting this batch of targets" | Discovery | Intelligence (trigger scoring), Execution (progress) | task_id, target_criteria, company_ids, source_stats |
+| `CompanyProfileUpdated` | "What we know about this importer changed" | Discovery | Intelligence (rescore), rag/memory | company_id, changed_sections, sources |
+| `ImportRecordsUpdated` | "New shipment evidence arrived for this importer" | Discovery | Intelligence (rescore), Outreach (fresher ammo) | company_id, new_record_count, period_covered |
+| `OpportunityScoreChanged` | "Our judgment of this prospect moved" | Intelligence | Outreach (reprioritize), frontend/report | opportunity_id, company_id, old_score, new_score, reasons, assessment_id |
+| `OpportunityQualified` | "Worth pursuing — start the conversation" | Intelligence | Outreach (create outreach), report | opportunity_id, company_id, score, priority, recommended_action |
+| `OpportunityDisqualified` | "Stop spending effort on this one" | Intelligence | Outreach (halt drafts), report | opportunity_id, reason |
+| `OutreachCreated` | "A pursuit conversation has started" | Outreach | Execution (draft work), report | outreach_id, opportunity_id, contact_id, selection_reason |
+| `EmailDraftGenerated` | "A draft is ready for human review" | Outreach | frontend (review queue), observability | draft_id, outreach_id, version, prompt_version, model |
+| `EmailDraftApproved` | "A human signed off on this text" | Outreach | report; (later: mailbox integration) | draft_id, outreach_id, approved_by, was_edited |
+| `OutreachSent` | "The user actually sent it" | Outreach | Intelligence (stage → contacted), followup scheduling | outreach_id, draft_id, sent_at |
+| `OutreachReplied` | "The prospect answered" | Outreach | Intelligence (stage → engaged), memory | outreach_id, outcome_id, sentiment |
+| `OpportunityWon` | "They became a customer" | Intelligence | memory/Identity (learn), report | opportunity_id, reason, won_at |
+| `OpportunityLost` | "They said no / went quiet for good" | Intelligence | memory/Identity (learn), report | opportunity_id, reason, lost_at |
+| `TaskFailed` | "A run broke — here is the diagnosis" | Execution | observability, frontend, retry policy | task_id, workflow, failed_step, error, attempts, resumable |
+| `TaskCompleted` | "A run finished — here is the receipt" | Execution | frontend/report, downstream triggers | task_id, workflow, produced_ids, stats, cost |
+
+Transport note: in the MVP these flow through the in-process `EventBus`
+(`app/events/`, ADR-0004). The definitions above are transport-agnostic
+on purpose — moving to Redis pub/sub or a broker later changes plumbing,
+not meaning (ADR-0015).
+
+---
+
+# Entity reference
+
+The per-entity detail (purpose, lifecycle, behaviors, relationships,
+ownership) from Lesson 2 remains authoritative, amended as follows:
+
+- **Outreach** (new, #5 in the official list): purpose and shape as the
+  Outreach Aggregate above. Lifecycle:
+  `created → drafting → awaiting_approval → approved → sent →
+  awaiting_reply → replied / no_response → following_up → closed(reason)`.
+  Owning agent: **sales**. Workflows: email, followup, lead_generation
+  (draft step creates it). Services: email, llm.
+- **EmailDraft**: now lives *inside* the Outreach aggregate — accessed
+  through the Outreach root, never independently; its lifecycle
+  (`generating → drafted → edited* → approved`) is a sub-machine of the
+  outreach's state. Still owned by the sales agent.
+- **Outcome**: now lives inside the Outreach aggregate (recorded through
+  `Outreach.record_outcome()`); remains an immutable event; still feeds
+  Intelligence and memory.
+- **Opportunity**: gains `confidence`, `priority`, `recommended_action`
+  and the append-only assessment history (invariant B1).
+- **Company / Contact / ImportRecord / Task / User**: unchanged from
+  Lesson 2 (see git history for the full v2 text of those sections).
 
 ## Ownership matrix
 
-| Entity | Owning agent | Workflows | Depending services |
-|---|---|---|---|
-| Company | research | lead_generation, research | company, search, scoring, rag |
-| Opportunity | research (analysis) / scoring service (score) | lead_generation, followup, email | scoring, company |
-| Contact | research | lead_generation, email, followup | email, company |
-| ImportRecord | — (evidence; importyeti tool produces) | lead_generation, research | search, company, scoring |
-| EmailDraft | sales | lead_generation, email, followup | email, llm |
-| Task | planner (blueprint) | all | — (workflow engine + observability) |
-| Outcome | — (reality; report agent aggregates) | followup, lead_generation | email, scoring, memory |
-| User | — (principal) | all | all (context) |
+| Entity | Context | Owning agent | Workflows | Depending services |
+|---|---|---|---|---|
+| Company | Discovery | research | lead_generation, research | company, search, scoring, rag |
+| Contact | Discovery | research | lead_generation, email, followup | email, company |
+| ImportRecord | Discovery | — (importyeti tool produces) | lead_generation, research | search, company, scoring |
+| Opportunity | Intelligence | research (analysis) / scoring service (score) | lead_generation, followup, email | scoring, company |
+| Outreach | Outreach | sales | email, followup, lead_generation | email, llm |
+| EmailDraft | Outreach | sales | (via Outreach) | email, llm |
+| Outcome | Outreach | — (reality; report agent aggregates) | followup, lead_generation | email, scoring, memory |
+| Task | Execution | planner (blueprint) | all | — (workflow engine + observability) |
+| User | Identity | — (principal) | all | all (context) |
 
 ## Consistency notes & follow-ups
 
-- `specs/company.yaml` mixes company facts with a `scoring` block — per
-  this document that judgment belongs to **Opportunity**. Follow-up:
-  split into `company.yaml` + `opportunity.yaml` (specs first, ADR-0006).
-- `app/domain/` today has `company/ contact/ email/ crm/`. This document
-  maps `crm` rules to **Opportunity** stage transitions; `ImportRecord`,
-  `Task`, `Outcome`, `User` need domain homes when their rules are
-  implemented.
-- Outcome is user-reported in MVP; mailbox integration (reply/bounce
-  detection) is a later-sprint decision.
-- Open product questions (docs/prd.md) unchanged; ImportRecord's exact
-  fields depend on the ImportYeti access decision.
+- `specs/company.yaml` no longer carries a scoring block — judgment moved
+  to `specs/opportunity.yaml` (done in this lesson, per ADR-0006).
+- `app/domain/` maps as: `company/` `contact/` → Discovery entities;
+  `crm/` → Opportunity stage rules (Intelligence); `email/` → Outreach
+  aggregate rules. `ImportRecord`, `Task`, `Outcome`, `User` get domain
+  homes when their rules are implemented — no empty folders now.
+- Outcome capture is user-reported in MVP; mailbox integration
+  (reply/bounce detection) is a later-sprint decision.
+- Open product questions: see docs/prd.md — unchanged by this lesson.

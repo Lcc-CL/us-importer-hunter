@@ -18,14 +18,22 @@ they contain no low-level I/O and no prompt content.
 ## Planned MVP workflow (not yet implemented)
 
 ```
-HuntWorkflow
-├── planner agent      → research plan
+lead_generation (each run wrapped in a Task — Execution context)
+├── planner agent      → research plan (the Task's blueprint)
 ├── for each target:
-│   ├── research agent → company analysis (via tools)
-│   └── scoring service→ opportunity score
-├── sales agent        → personalized email drafts
+│   ├── research agent → company facts + analysis        ⤳ DiscoveryCompleted,
+│   │                                                      CompanyProfileUpdated,
+│   │                                                      ImportRecordsUpdated
+│   └── scoring service→ Opportunity (score + reasons)   ⤳ OpportunityScoreChanged,
+│                                                          Qualified / Disqualified
+├── sales agent        → Outreach + email drafts         ⤳ OutreachCreated,
+│                                                          EmailDraftGenerated
 └── report agent       → prioritized summary
+                                    Task wrapper          ⤳ TaskCompleted / TaskFailed
 ```
 
-Progress reporting, cancellation and batch execution (Celery) are
-later-sprint concerns.
+Stage boundaries publish domain events (full catalog:
+[business-domain.md](business-domain.md)) on the in-process EventBus —
+stages never call each other directly (ADR-0004/0015). Progress
+reporting, cancellation and batch execution (Celery) are later-sprint
+concerns.

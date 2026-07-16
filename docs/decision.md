@@ -20,3 +20,4 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0012](ADR/0012-python-312.md) | Python 3.12 pinned | 2026-07-15 |
 | [0013](ADR/0013-defer-celery-qdrant.md) | Defer Celery and Qdrant | 2026-07-15 |
 | [0014](ADR/0014-lazy-infra-clients.md) | Lazy infra clients, observable readiness | 2026-07-15 |
+| [0015](ADR/0015-domain-boundaries-and-events.md) | Domain boundaries, aggregates and domain events | 2026-07-15 |
