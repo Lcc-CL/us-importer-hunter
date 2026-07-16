@@ -72,27 +72,37 @@ Details: [docs/workflow.md](docs/workflow.md) · [docs/agents.md](docs/agents.md
 
 | Sprint | Theme | Status |
 |---|---|---|
-| 1 | Foundation: scaffold, layers, docs, specs | ✅ Done (2026-07-15) |
+| 1 | Foundation: scaffold, layers, docs, specs, Docker stack verified | ✅ Done (2026-07-15) |
 | 2 | Data & first vertical slice: models, first tool, search → list | Planned |
 | 3 | AI pipeline: providers, agents, prompts, hunt workflow | Planned |
 | Later | Celery, Qdrant/RAG, more providers, auth | Backlog |
 
 ## Current Progress
 
-**Sprint 1 complete (2026-07-15).** Full skeleton, zero business logic (by
-design):
+**Sprint 1 complete & verified (2026-07-15).** Full skeleton, zero
+business logic (by design). Baseline commits: `66217d2` (architecture
+v1.0, 167 files) · `c7a0a01` (container-safe settings fix).
 
 - Backend: FastAPI app factory + lifespan DI, async SQLAlchemy + Alembic
   (async env), Redis client, health/readiness endpoints, settings from
   root `.env`. Quality gates green: pytest · ruff · mypy --strict.
-- Layers scaffolded: domain(4) · agents(4) · tools(5) · providers(4) ·
-  services(6) · repositories · prompts(+versioning) · schemas.
+- Layers scaffolded (15 modules): domain(4) · agents(4) · tools(5) ·
+  providers(4) · services(6) · workflows(4) · repositories · seed ·
+  prompts(+shared/+versions) · schemas · shared · events · memory(4) ·
+  tasks · observability(3).
 - Frontend: Next.js 16 + TS + Tailwind + shadcn/ui, feature-first
   structure (5 features), typed API client. Build & lint green.
-- Infra: Docker Compose (backend/frontend/postgres/redis + pgAdmin
-  profile), multi-stage Dockerfiles. ⚠️ Docker not yet installed on the
-  dev machine — compose config written but unverified.
-- Docs (9 files in docs/), YAML specs (4), knowledge base (7 topic areas).
+- **Infra verified end-to-end in Docker (OrbStack)**: all four compose
+  services healthy; readiness probe reports Postgres ✓ Redis ✓; frontend
+  serves on :3000, API docs on :8000/docs. pgAdmin available via
+  `--profile tools`.
+- Docs: 9 topic files + 14 ADRs (docs/ADR/), YAML specs (4), knowledge
+  base (7 topic areas), demo seed data (3 companies + 3 contacts).
+
+**Dev environment notes**: Docker Hub pulls go through the host Clash
+proxy via OrbStack's relay — if pulls fail with EOF, fully restart
+OrbStack (`orbctl stop && orbctl start`), keep `network_proxy auto`,
+and retry.
 
 **Top open questions** (block Sprint 2 design): ImportYeti access method ·
 LinkedIn compliance approach · scoring dimensions · contact email sourcing.
