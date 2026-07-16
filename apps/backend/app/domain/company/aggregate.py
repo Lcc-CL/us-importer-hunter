@@ -68,8 +68,9 @@ class Company:
         self._sources.append(reference)
 
     def mark_verified(self) -> None:
+        """Idempotent: workflow retries may re-verify — no error, no second event."""
         if self._verified:
-            raise DuplicateOperation("company is already verified")
+            return
         if not self._sources:
             raise MissingEvidence("verification requires at least one source reference")
         self._verified = True

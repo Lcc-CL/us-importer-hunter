@@ -108,19 +108,40 @@ class Confidence:
 
 
 class Priority(StrEnum):
-    """Ranking bucket derived from the score — never set by hand."""
+    """Ranking bucket — derived via ScoringPolicy, never set by hand."""
 
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
 
-    @classmethod
-    def from_score(cls, score: OpportunityScore) -> "Priority":
-        if score.value >= 70.0:
-            return cls.HIGH
-        if score.value >= 40.0:
-            return cls.MEDIUM
-        return cls.LOW
+
+@dataclass(frozen=True)
+class ScoringPolicy:
+    """Score-to-priority mapping. Owned and versioned by scoring, like the
+    scorer itself — thresholds are policy, not domain constants (L4 review)."""
+
+    version: str
+    high_threshold: float = 70.0
+    medium_threshold: float = 40.0
+
+    def __post_init__(self) -> None:
+        if not self.version.strip():
+            raise DomainError("scoring policy requires a version")
+        if not 0.0 < self.medium_threshold < self.high_threshold <= 100.0:
+            raise DomainError(
+                "scoring policy thresholds must satisfy 0 < medium < high <= 100, got "
+                f"medium={self.medium_threshold}, high={self.high_threshold}"
+            )
+
+    def priority_for(self, score: OpportunityScore) -> Priority:
+        if score.value >= self.high_threshold:
+            return Priority.HIGH
+        if score.value >= self.medium_threshold:
+            return Priority.MEDIUM
+        return Priority.LOW
+
+
+DEFAULT_SCORING_POLICY = ScoringPolicy(version="policy-v1")
 
 
 @dataclass(frozen=True)

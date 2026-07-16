@@ -133,6 +133,46 @@ class TestIdempotency:
         assert IdempotencyKey("a:b") == IdempotencyKey.from_parts("a", "b")
 
 
+class TestAttemptHistory:
+    """One append-only record per finished attempt (L4 review follow-up)."""
+
+    def test_completed_attempt_recorded(self) -> None:
+        task = make_task()
+        task.start()
+        task.complete()
+        assert len(task.attempt_history) == 1
+        attempt = task.attempt_history[0]
+        assert attempt.number == 1
+        assert attempt.succeeded is True
+        assert attempt.finished_at >= attempt.started_at
+
+    def test_failure_and_retry_accumulate_records(self) -> None:
+        task = make_task()
+        task.start()
+        task.fail("timeout")
+        task.retry()
+        task.complete()
+        history = task.attempt_history
+        assert [a.number for a in history] == [1, 2]
+        assert history[0].succeeded is False
+        assert history[0].error == "timeout"
+        assert history[1].succeeded is True
+
+    def test_running_attempt_not_yet_in_history(self) -> None:
+        task = make_task()
+        task.start()
+        assert task.attempt_history == ()
+
+    def test_attempt_record_is_immutable(self) -> None:
+        import dataclasses
+
+        task = make_task()
+        task.start()
+        task.complete()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            task.attempt_history[0].error = "tampered"  # type: ignore[misc]
+
+
 class TestEventDrain:
     def test_drain_is_safe_to_repeat(self) -> None:
         task = make_task()

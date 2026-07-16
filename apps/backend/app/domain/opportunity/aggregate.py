@@ -25,7 +25,14 @@ from app.domain.exceptions import (
     InvalidStateTransition,
     MissingEvidence,
 )
-from app.domain.values import Confidence, OpportunityAssessment, OpportunityScore, Priority
+from app.domain.values import (
+    DEFAULT_SCORING_POLICY,
+    Confidence,
+    OpportunityAssessment,
+    OpportunityScore,
+    Priority,
+    ScoringPolicy,
+)
 
 
 class OpportunityStage(StrEnum):
@@ -73,8 +80,13 @@ class Opportunity:
 
     # -- behaviors ----------------------------------------------------
 
-    def apply_assessment(self, assessment: OpportunityAssessment) -> None:
-        """The only way the score ever changes."""
+    def apply_assessment(
+        self,
+        assessment: OpportunityAssessment,
+        *,
+        policy: ScoringPolicy = DEFAULT_SCORING_POLICY,
+    ) -> None:
+        """The only way the score ever changes; priority derives via policy."""
         if self._stage in CLOSED_STAGES:
             raise InvalidStateTransition(
                 f"cannot assess a {self._stage.value} opportunity — reopen it first"
@@ -83,7 +95,7 @@ class Opportunity:
         old_score = self._score
         self._score = assessment.new_score
         self._confidence = assessment.confidence
-        self._priority = Priority.from_score(assessment.new_score)
+        self._priority = policy.priority_for(assessment.new_score)
         if self._stage is OpportunityStage.IDENTIFIED:
             self._stage = OpportunityStage.ASSESSED
         self._events.append(

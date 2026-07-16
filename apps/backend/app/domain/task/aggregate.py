@@ -8,6 +8,7 @@ Execution state only — never business judgment (ADR-0015). Invariants:
 """
 
 from collections.abc import Collection
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -29,6 +30,22 @@ class TaskStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class TaskAttempt:
+    """One finished attempt — append-only history record (L4 review
+    follow-up). Written when the attempt ends; the running attempt is
+    tracked by the aggregate's live fields."""
+
+    number: int
+    started_at: datetime
+    finished_at: datetime
+    error: str | None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error is None
 
 
 class Task:
@@ -53,6 +70,7 @@ class Task:
         self._started_at: datetime | None = None
         self._finished_at: datetime | None = None
         self._error: str | None = None
+        self._attempt_history: list[TaskAttempt] = []
         self._events: list[DomainEvent] = []
 
     # -- construction -------------------------------------------------
@@ -98,6 +116,7 @@ class Task:
             raise InvalidStateTransition(f"cannot complete a {self._status.value} task")
         self._status = TaskStatus.COMPLETED
         self._finished_at = utcnow()
+        self._record_attempt(error=None)
         self._events.append(TaskCompleted(task_id=self._id))
 
     def fail(self, error: str) -> None:
@@ -108,6 +127,7 @@ class Task:
         self._status = TaskStatus.FAILED
         self._error = error.strip()
         self._finished_at = utcnow()
+        self._record_attempt(error=self._error)
         self._events.append(
             TaskFailed(task_id=self._id, error=self._error, attempts=self._attempts)
         )
@@ -126,6 +146,17 @@ class Task:
         self._finished_at = None
         self._error = None
         self._events.append(TaskStarted(task_id=self._id, attempt=self._attempts))
+
+    def _record_attempt(self, *, error: str | None) -> None:
+        assert self._started_at is not None and self._finished_at is not None
+        self._attempt_history.append(
+            TaskAttempt(
+                number=self._attempts,
+                started_at=self._started_at,
+                finished_at=self._finished_at,
+                error=error,
+            )
+        )
 
     # -- events -------------------------------------------------------
 
@@ -171,6 +202,11 @@ class Task:
     @property
     def error(self) -> str | None:
         return self._error
+
+    @property
+    def attempt_history(self) -> tuple[TaskAttempt, ...]:
+        """Append-only: one record per finished attempt."""
+        return tuple(self._attempt_history)
 
     @property
     def created_at(self) -> datetime:

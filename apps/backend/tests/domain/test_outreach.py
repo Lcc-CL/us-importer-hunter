@@ -17,7 +17,7 @@ from app.domain.exceptions import (
     DuplicateOperation,
     InvalidStateTransition,
 )
-from app.domain.outreach import Outreach, OutreachStatus
+from app.domain.outreach import Outcome, OutcomeKind, Outreach, OutreachStatus
 
 
 @pytest.fixture
@@ -144,3 +144,36 @@ class TestTerminal:
         drafted(outreach)
         with pytest.raises(InvalidStateTransition):
             outreach.mark_lost("gave up early")
+
+
+class TestOutcomeHistory:
+    """Outcomes are append-only history records (L4 review follow-up)."""
+
+    def test_reply_appends_outcome(self, outreach: Outreach) -> None:
+        sent(outreach)
+        outreach.record_reply("positive")
+        assert len(outreach.outcomes) == 1
+        outcome = outreach.outcomes[0]
+        assert outcome.kind is OutcomeKind.REPLY
+        assert outcome.detail == "positive"
+        assert outcome.draft_version == 1
+        assert outcome.occurred_at.tzinfo is not None
+
+    def test_full_conversation_accumulates_outcomes(self, outreach: Outreach) -> None:
+        sent(outreach)
+        outreach.record_reply("positive")
+        outreach.mark_won("signed 20 TEU/year")
+        kinds = [o.kind for o in outreach.outcomes]
+        assert kinds == [OutcomeKind.REPLY, OutcomeKind.WON]
+
+    def test_outcome_is_immutable(self, outreach: Outreach) -> None:
+        sent(outreach)
+        outreach.record_reply("positive")
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            outreach.outcomes[0].detail = "tampered"  # type: ignore[misc]
+
+    def test_blank_outcome_detail_rejected(self) -> None:
+        from app.domain.clock import utcnow
+
+        with pytest.raises(DomainError):
+            Outcome(kind=OutcomeKind.REPLY, detail=" ", draft_version=1, occurred_at=utcnow())

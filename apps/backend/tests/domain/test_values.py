@@ -15,6 +15,7 @@ from app.domain.exceptions import (
     MissingEvidence,
 )
 from app.domain.values import (
+    DEFAULT_SCORING_POLICY,
     CompanyName,
     Confidence,
     EmailAddress,
@@ -23,6 +24,7 @@ from app.domain.values import (
     OpportunityAssessment,
     OpportunityScore,
     Priority,
+    ScoringPolicy,
     SourceReference,
     WebsiteUrl,
 )
@@ -98,7 +100,7 @@ class TestScoreAndConfidence:
         assert OpportunityScore(80.0) == OpportunityScore(80.0)
 
 
-class TestPriority:
+class TestScoringPolicy:
     @pytest.mark.parametrize(
         ("score", "expected"),
         [
@@ -108,8 +110,25 @@ class TestPriority:
             (10.0, Priority.LOW),
         ],
     )
-    def test_from_score(self, score: float, expected: Priority) -> None:
-        assert Priority.from_score(OpportunityScore(score)) is expected
+    def test_default_policy_thresholds(self, score: float, expected: Priority) -> None:
+        assert DEFAULT_SCORING_POLICY.priority_for(OpportunityScore(score)) is expected
+
+    def test_custom_thresholds(self) -> None:
+        strict = ScoringPolicy(version="policy-v2", high_threshold=90.0, medium_threshold=60.0)
+        assert strict.priority_for(OpportunityScore(85.0)) is Priority.MEDIUM
+        assert strict.priority_for(OpportunityScore(95.0)) is Priority.HIGH
+
+    def test_requires_version(self) -> None:
+        with pytest.raises(DomainError):
+            ScoringPolicy(version="  ")
+
+    @pytest.mark.parametrize(
+        ("high", "medium"),
+        [(40.0, 70.0), (70.0, 70.0), (101.0, 40.0), (50.0, 0.0)],
+    )
+    def test_invalid_thresholds(self, high: float, medium: float) -> None:
+        with pytest.raises(DomainError):
+            ScoringPolicy(version="v", high_threshold=high, medium_threshold=medium)
 
 
 class TestSourceReference:

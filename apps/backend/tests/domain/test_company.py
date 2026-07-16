@@ -67,13 +67,15 @@ class TestVerification:
         assert isinstance(events[0], CompanyVerified)
         assert events[0].company_id == company.id
 
-    def test_double_verification_rejected(
+    def test_verification_is_idempotent(
         self, company: Company, source_ref: SourceReference
     ) -> None:
+        """Workflow retries may re-verify: no error, no second event (L4 review)."""
         company.add_source(source_ref)
         company.mark_verified()
-        with pytest.raises(DuplicateOperation):
-            company.mark_verified()
+        company.mark_verified()
+        assert company.verified is True
+        assert len(company.drain_events()) == 1
 
 
 class TestSignals:

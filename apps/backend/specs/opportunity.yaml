@@ -7,7 +7,7 @@ opportunity:
   judgment:
     score: { type: float, note: changes ONLY via rescore()/apply_outcome() — never assignment }
     confidence: { type: float, note: capped when company profile is stale }
-    priority: { type: str, note: derived ranking bucket — high / medium / low }
+    priority: { type: str, note: derived via versioned ScoringPolicy (thresholds are policy, not domain constants) — high / medium / low }
     reasons: { type: "list[str]", required: true, note: evidence-linked; never empty }
     recommended_action: { type: str, note: what the salesperson should do next }
 

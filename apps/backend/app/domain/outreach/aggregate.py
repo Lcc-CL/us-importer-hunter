@@ -42,6 +42,27 @@ class OutreachStatus(StrEnum):
 TERMINAL_STATUSES = frozenset({OutreachStatus.WON, OutreachStatus.LOST})
 
 
+class OutcomeKind(StrEnum):
+    REPLY = "reply"
+    WON = "won"
+    LOST = "lost"
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """One immutable feedback event from reality — append-only history
+    on the outreach (L4 review follow-up)."""
+
+    kind: OutcomeKind
+    detail: str
+    draft_version: int | None
+    occurred_at: datetime
+
+    def __post_init__(self) -> None:
+        if not self.detail.strip():
+            raise DomainError("outcome requires a detail")
+
+
 @dataclass(frozen=True)
 class EmailDraft:
     """One immutable draft version. New content = new version."""
@@ -71,6 +92,7 @@ class Outreach:
         self._status = OutreachStatus.CREATED
         self._follow_up_active = True
         self._closed_reason: str | None = None
+        self._outcomes: list[Outcome] = []
         self._events: list[DomainEvent] = []
 
     # -- construction -------------------------------------------------
@@ -140,6 +162,14 @@ class Outreach:
             raise DomainError("reply requires a sentiment")
         self._status = OutreachStatus.REPLIED
         self._follow_up_active = False  # a human is talking now — stop automation
+        self._outcomes.append(
+            Outcome(
+                kind=OutcomeKind.REPLY,
+                detail=sentiment.strip(),
+                draft_version=self._sent_version,
+                occurred_at=utcnow(),
+            )
+        )
         self._events.append(OutreachReplied(outreach_id=self._id, sentiment=sentiment.strip()))
 
     def mark_won(self, reason: str) -> None:
@@ -165,6 +195,14 @@ class Outreach:
         self._status = status
         self._closed_reason = reason.strip()
         self._follow_up_active = False
+        self._outcomes.append(
+            Outcome(
+                kind=OutcomeKind.WON if status is OutreachStatus.WON else OutcomeKind.LOST,
+                detail=reason.strip(),
+                draft_version=self._sent_version,
+                occurred_at=utcnow(),
+            )
+        )
 
     # -- events -------------------------------------------------------
 
@@ -206,6 +244,11 @@ class Outreach:
     @property
     def follow_up_active(self) -> bool:
         return self._follow_up_active
+
+    @property
+    def outcomes(self) -> tuple[Outcome, ...]:
+        """Append-only: exposed as an immutable snapshot."""
+        return tuple(self._outcomes)
 
     @property
     def closed_reason(self) -> str | None:
