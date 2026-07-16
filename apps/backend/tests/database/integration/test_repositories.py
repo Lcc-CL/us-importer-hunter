@@ -133,18 +133,35 @@ class TestOpportunityRepository:
         assert reloaded.history[1].new_score == OpportunityScore(85.0)
         assert reloaded.stage is OpportunityStage.ASSESSED
 
-    async def test_list_for_company_and_user(self, uow_factory: UowFactory) -> None:
+    async def test_get_for_company_and_user(self, uow_factory: UowFactory) -> None:
         company = await persist_company(uow_factory)
         user_id = uuid4()
         opportunity = Opportunity.create_for_company(company_id=company.id, user_id=user_id)
+        opportunity.drain_events()
         async with uow_factory() as uow:
             await uow.opportunities.add(opportunity)
             await uow.commit()
         async with uow_factory() as uow:
-            mine = await uow.opportunities.list_for_company_and_user(company.id, user_id)
-            theirs = await uow.opportunities.list_for_company_and_user(company.id, uuid4())
-        assert [o.id for o in mine] == [opportunity.id]
-        assert theirs == []
+            mine = await uow.opportunities.get_for_company_and_user(company.id, user_id)
+            theirs = await uow.opportunities.get_for_company_and_user(company.id, uuid4())
+        assert mine is not None and mine.id == opportunity.id
+        assert theirs is None
+
+    async def test_get_prefers_open_over_closed(self, uow_factory: UowFactory) -> None:
+        company = await persist_company(uow_factory)
+        user_id = uuid4()
+        closed = Opportunity.create_for_company(company_id=company.id, user_id=user_id)
+        closed.disqualify("not a fit")
+        closed.drain_events()
+        opened = Opportunity.create_for_company(company_id=company.id, user_id=user_id)
+        opened.drain_events()
+        async with uow_factory() as uow:
+            await uow.opportunities.add(closed)
+            await uow.opportunities.add(opened)
+            await uow.commit()
+        async with uow_factory() as uow:
+            current = await uow.opportunities.get_for_company_and_user(company.id, user_id)
+        assert current is not None and current.id == opened.id
 
 
 class TestOutreachRepository:

@@ -24,7 +24,7 @@ lead_generation (each run wrapped in a Task — Execution context)
 │   │                                    claims in, CompanyDiscovered out — ADR-0018)
 │   ├── research agent → company facts + analysis        ⤳ CompanyDiscovered (per claim),
 │   │                                                      DiscoveryCompleted / Failed,
-│   │                                                      CompanyProfileUpdated,
+│   │                                                      CompanyFactsChanged,
 │   │                                                      ImportRecordsUpdated
 │   └── scoring service→ Opportunity (score + reasons)   ⤳ OpportunityScoreChanged,
 │                                                          Qualified / Disqualified
@@ -57,3 +57,24 @@ CompanyDiscovered (claim from a DiscoveryRun)
 No real data sources are wired; callers invoke `handle(event)` directly
 until the event bus lands. Discovery still cannot import Company —
 enforced by the context-boundary test.
+
+## Implemented: opportunity (Sprint 2 L8)
+
+The Company → Opportunity scoring seam (ADR-0020):
+
+```
+CompanyIngested | CompanyFactsChanged
+  → load Company (facts + signals + sources)
+  → OpportunityScoringService.assess(OpportunityScoringInput)
+        replaceable strategy — MVP: mvp-deterministic-v1 placeholder
+  → CREATED    (Opportunity.create_for_company + first assessment)
+    REASSESSED (append to history — never overwrite)
+    SKIPPED    (no sources / identical fingerprint / closed opportunity)
+    REJECTED   (unknown company / incomplete assessment)
+  → one UnitOfWork per event; events drained after work, before commit
+```
+
+The workflow orchestrates and never computes scores; weights live in the
+scoring strategy. Idempotency: an assessment fingerprint (version +
+score + confidence + reasons + evidence claims) makes replayed events
+SKIP instead of duplicating history or events.

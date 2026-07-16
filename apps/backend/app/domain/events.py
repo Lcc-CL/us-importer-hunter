@@ -6,7 +6,7 @@ is the application layer's job — no event bus lives in the domain.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid4
 
 from app.domain.clock import utcnow
@@ -51,6 +51,33 @@ class DiscoveryFailed(DomainEvent):
     run_id: UUID
     error: str
     stats: "DiscoveryStats"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CompanyIngested(DomainEvent):
+    """The ingestion workflow finished creating or merging a company.
+    Application-layer fact consumed by the opportunity workflow."""
+
+    company_id: UUID
+    ingestion_result: Literal["created", "merged"]
+    source: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class CompanyFactsChanged(DomainEvent):
+    """Facts relevant to opportunity judgment changed on a company.
+    (Supersedes the earlier catalog name CompanyProfileUpdated.)"""
+
+    company_id: UUID
+    changed_fields: tuple[str, ...]
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class OpportunityCreated(DomainEvent):
+    opportunity_id: UUID
+    company_id: UUID
+    user_id: UUID
 
 
 @dataclass(frozen=True, kw_only=True)

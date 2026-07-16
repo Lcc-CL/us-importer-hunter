@@ -89,7 +89,8 @@ class TestOpportunityMapper:
     def test_events_not_restored(self) -> None:
         original = Opportunity.create_for_company(company_id=uuid4(), user_id=uuid4())
         original.apply_assessment(make_assessment(50.0))
-        assert len(original.drain_events()) == 1
+        # OpportunityCreated + OpportunityAssessmentApplied were pending
+        assert len(original.drain_events()) == 2
         restored = OpportunityMapper.to_domain(OpportunityMapper.to_model(original))
         assert restored.drain_events() == ()
 

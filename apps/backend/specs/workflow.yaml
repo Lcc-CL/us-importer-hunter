@@ -17,7 +17,7 @@ workflows:
         agent: research
         for_each: plan.targets       # fan-out per target company
         emits: [CompanyDiscovered, DiscoveryCompleted, DiscoveryFailed,
-                CompanyProfileUpdated, ImportRecordsUpdated]
+                CompanyFactsChanged, ImportRecordsUpdated]
       - id: score
         service: scoring
         input: research.analysis
@@ -41,12 +41,25 @@ workflows:
       canonical Company. One UnitOfWork per event; rejection is an
       outcome, not an exception.
     consumes: [CompanyDiscovered]
+    emits: [CompanyIngested]
+    status: implemented          # invoked directly until the event bus lands
+
+  opportunity:
+    package: app.workflows.opportunity
+    description: >
+      The Company → Opportunity scoring seam (ADR-0020): load company
+      facts, call the replaceable OpportunityScoringService
+      (mvp-deterministic-v1 placeholder), create the opportunity or
+      append an assessment (history append-only, fingerprint-idempotent).
+      The workflow orchestrates; it never computes scores.
+    consumes: [CompanyIngested, CompanyFactsChanged]
+    emits: [OpportunityCreated, OpportunityAssessmentApplied]
     status: implemented          # invoked directly until the event bus lands
 
   research:
     package: app.workflows.research
     description: On-demand deep-dive analysis of a single company.
-    emits: [CompanyProfileUpdated, ImportRecordsUpdated]
+    emits: [CompanyFactsChanged, ImportRecordsUpdated]
     status: planned
 
   email:

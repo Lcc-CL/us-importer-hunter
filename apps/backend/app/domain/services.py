@@ -5,14 +5,18 @@ Interfaces only — implementations live in app/services and are injected.
 No provider-, LLM- or storage-specific detail belongs here.
 """
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Protocol
 from uuid import UUID
 
-from app.domain.values import CompanyName, OpportunityAssessment, WebsiteUrl
-
-if TYPE_CHECKING:
-    from app.domain.company.aggregate import Company
+from app.domain.clock import utcnow
+from app.domain.values import (
+    CompanyName,
+    OpportunityAssessment,
+    SourceReference,
+    WebsiteUrl,
+)
 
 
 @dataclass(frozen=True)
@@ -23,16 +27,38 @@ class ContactChoice:
     reason: str
 
 
-class OpportunityScoringService(Protocol):
-    """Computes an assessment for a company through a user's lens.
+@dataclass(frozen=True, kw_only=True)
+class OpportunityScoringInput:
+    """Everything a scorer may look at — an explicit facts snapshot.
 
-    Deterministic and explainable by contract: same inputs, same
-    assessment — the scoring version identifies the algorithm.
+    Scorers must not fetch anything else (no repository, no network):
+    same input, same assessment.
     """
 
-    async def assess(self, company: "Company", user_lens_version: str) -> OpportunityAssessment:
-        """Produce one immutable assessment (score, confidence, reasons, evidence)."""
-        ...
+    company_id: UUID
+    company_name: str
+    website_host: str | None
+    verified: bool
+    signals: tuple[str, ...]
+    sources: tuple[SourceReference, ...]
+    scoring_version: str
+    user_lens_version: str | None = None
+    assessed_at: datetime = field(default_factory=utcnow)
+
+
+class OpportunityScoringService(Protocol):
+    """Computes an assessment from an explicit input snapshot.
+
+    Deterministic and explainable by contract: the returned
+    OpportunityAssessment is complete (score, confidence, priority,
+    reasons, evidence, recommended action) and immutable; the scoring
+    version identifies the algorithm.
+    """
+
+    @property
+    def scoring_version(self) -> str: ...
+
+    async def assess(self, scoring_input: OpportunityScoringInput) -> OpportunityAssessment: ...
 
 
 class ContactSelectionService(Protocol):

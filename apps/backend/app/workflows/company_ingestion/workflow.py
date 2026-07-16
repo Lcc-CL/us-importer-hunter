@@ -18,7 +18,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from app.domain.company import Company
-from app.domain.events import CompanyDiscovered
+from app.domain.events import CompanyDiscovered, CompanyIngested
 from app.domain.exceptions import DomainError, DuplicateOperation, InvalidCompanyName
 from app.domain.repositories import UnitOfWork
 from app.domain.values import CompanyName
@@ -40,6 +40,7 @@ class IngestionOutcome:
     status: IngestionStatus
     company_id: UUID | None
     notes: tuple[str, ...] = ()
+    event: CompanyIngested | None = None  # for the opportunity workflow (no bus yet)
 
 
 class CompanyIngestionWorkflow:
@@ -84,7 +85,16 @@ class CompanyIngestionWorkflow:
                 status = IngestionStatus.MERGED
 
             await uow.commit()
-            return IngestionOutcome(status=status, company_id=company.id, notes=tuple(notes))
+            return IngestionOutcome(
+                status=status,
+                company_id=company.id,
+                notes=tuple(notes),
+                event=CompanyIngested(
+                    company_id=company.id,
+                    ingestion_result="created" if status is IngestionStatus.CREATED else "merged",
+                    source=event.result.snapshot.source.source,
+                ),
+            )
 
     # -- merge policy ---------------------------------------------------
 

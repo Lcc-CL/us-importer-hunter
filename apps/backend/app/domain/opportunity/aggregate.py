@@ -17,6 +17,7 @@ from app.domain.clock import utcnow
 from app.domain.events import (
     DomainEvent,
     OpportunityAssessmentApplied,
+    OpportunityCreated,
     OpportunityDisqualified,
     OpportunityQualified,
 )
@@ -76,7 +77,15 @@ class Opportunity:
 
     @classmethod
     def create_for_company(cls, company_id: UUID, user_id: UUID) -> "Opportunity":
-        return cls(id=uuid4(), company_id=company_id, user_id=user_id, created_at=utcnow())
+        opportunity = cls(
+            id=uuid4(), company_id=company_id, user_id=user_id, created_at=utcnow()
+        )
+        opportunity._events.append(
+            OpportunityCreated(
+                opportunity_id=opportunity._id, company_id=company_id, user_id=user_id
+            )
+        )
+        return opportunity
 
     # -- behaviors ----------------------------------------------------
 
@@ -95,7 +104,8 @@ class Opportunity:
         old_score = self._score
         self._score = assessment.new_score
         self._confidence = assessment.confidence
-        self._priority = policy.priority_for(assessment.new_score)
+        # the scoring service's priority wins; policy is the fallback
+        self._priority = assessment.priority or policy.priority_for(assessment.new_score)
         if self._stage is OpportunityStage.IDENTIFIED:
             self._stage = OpportunityStage.ASSESSED
         self._events.append(

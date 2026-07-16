@@ -24,15 +24,21 @@ class SqlAlchemyOpportunityRepository:
     async def save(self, opportunity: Opportunity) -> None:
         await self._session.merge(OpportunityMapper.to_model(opportunity))
 
-    async def list_for_company_and_user(
+    async def get_for_company_and_user(
         self, company_id: UUID, user_id: UUID
-    ) -> list[Opportunity]:
+    ) -> Opportunity | None:
+        """Open opportunity first; otherwise the most recent one."""
         result = await self._session.execute(
             select(OpportunityModel)
             .where(
                 OpportunityModel.company_id == company_id,
                 OpportunityModel.user_id == user_id,
             )
-            .order_by(OpportunityModel.created_at)
+            .order_by(OpportunityModel.created_at.desc())
         )
-        return [OpportunityMapper.to_domain(model) for model in result.scalars()]
+        models = list(result.scalars())
+        if not models:
+            return None
+        closed = {"disqualified", "won", "lost"}
+        open_models = [m for m in models if m.stage not in closed]
+        return OpportunityMapper.to_domain(open_models[0] if open_models else models[0])

@@ -19,9 +19,14 @@ opportunity:
     entries:
       - old_score: { type: float }
         new_score: { type: float }
-        evidence_refs: { type: "list[str]", note: import record / outcome ids }
+        confidence: { type: float }
+        priority: { type: str, note: produced by the scoring service's policy }
+        reasons: { type: "list[str]", note: never empty }
+        evidence_refs: { type: "list[str]", note: source references / import record ids }
+        recommended_action: { type: str }
+        assessed_by: { type: str, note: which scorer produced this }
         user_lens_version: { type: str }
-        scorer_version: { type: str }
+        scoring_version: { type: str, note: "current placeholder: mvp-deterministic-v1 — NOT for real sales decisions" }
         assessed_at: { type: datetime }
 
 invariants:
@@ -39,4 +44,4 @@ relations:
 events:
   produces: [OpportunityScoreChanged, OpportunityQualified, OpportunityDisqualified,
              OpportunityWon, OpportunityLost]
-  consumes: [CompanyProfileUpdated, ImportRecordsUpdated, OutreachReplied]
+  consumes: [CompanyIngested, CompanyFactsChanged, ImportRecordsUpdated, OutreachReplied]

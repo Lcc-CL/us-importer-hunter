@@ -77,6 +77,9 @@ class OpportunityAssessmentModel(Base):
     new_score: Mapped[float] = mapped_column()
     confidence: Mapped[float] = mapped_column()
     reasons: Mapped[list[str]] = mapped_column(JSONB)  # display-only, never searched
+    priority: Mapped[str | None] = mapped_column(String(10))
+    recommended_action: Mapped[str | None] = mapped_column(Text)
+    assessed_by: Mapped[str | None] = mapped_column(String(100))
     scoring_version: Mapped[str] = mapped_column(String(50))
     user_lens_version: Mapped[str | None] = mapped_column(String(50))
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

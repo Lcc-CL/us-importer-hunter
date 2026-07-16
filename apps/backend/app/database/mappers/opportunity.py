@@ -62,6 +62,9 @@ class OpportunityMapper:
                     new_score=assessment.new_score.value,
                     confidence=assessment.confidence.value,
                     reasons=list(assessment.reasons),
+                    priority=assessment.priority.value if assessment.priority else None,
+                    recommended_action=assessment.recommended_action,
+                    assessed_by=assessment.assessed_by,
                     scoring_version=assessment.scoring_version,
                     user_lens_version=assessment.user_lens_version,
                     assessed_at=assessment.assessed_at,
@@ -106,6 +109,9 @@ class OpportunityMapper:
                     for ev in row.evidence
                 ),
                 old_score=OpportunityScore(row.old_score) if row.old_score is not None else None,
+                priority=Priority(row.priority) if row.priority is not None else None,
+                recommended_action=row.recommended_action,
+                assessed_by=row.assessed_by,
                 user_lens_version=row.user_lens_version,
                 assessed_at=row.assessed_at,
             )

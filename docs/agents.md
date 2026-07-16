@@ -16,6 +16,12 @@ research agent may enrich a Company but never sets a score (scoring
 service does, via the Opportunity aggregate); the sales agent generates
 EmailDrafts only through the Outreach root and never sends anything.
 
+Scoring today is the **deterministic placeholder** mvp-deterministic-v1
+behind the replaceable `OpportunityScoringService` protocol (ADR-0020) —
+no LLM involved and not fit for real sales decisions. When agents land,
+the research agent's job is to *feed better facts and evidence* into
+that same interface, not to score.
+
 ## Main chain
 
 ```

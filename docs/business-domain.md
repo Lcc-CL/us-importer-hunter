@@ -76,7 +76,7 @@ each other's internals (ADR-0015).
   pursuing (Intelligence); writing to anyone (Outreach).
 - **Inputs**: user targeting criteria (Identity contract); raw data from
   tools (importyeti, google, website, linkedin).
-- **Outputs**: events `DiscoveryCompleted`, `CompanyProfileUpdated`,
+- **Outputs**: events `DiscoveryCompleted`, `CompanyFactsChanged`,
   `ImportRecordsUpdated`; canonical profiles readable by other contexts.
 - **Depends on**: Identity (targeting lens). Runs inside Execution tasks.
 
@@ -160,7 +160,7 @@ graph LR
     ID -->|"user lens contract"| DIS
     ID -->|"user lens contract"| INT
     ID -->|"voice + strengths contract"| OUT
-    DIS -->|"DiscoveryCompleted<br/>CompanyProfileUpdated<br/>ImportRecordsUpdated"| INT
+    DIS -->|"DiscoveryCompleted<br/>CompanyFactsChanged<br/>ImportRecordsUpdated"| INT
     INT -->|"OpportunityQualified"| OUT
     OUT -->|"OutreachReplied + outcomes"| INT
     INT -.->|"OpportunityWon / Lost<br/>(learning)"| ID
@@ -343,7 +343,9 @@ omitted from the payload column.
 | `CompanyDiscovered` | "A source claims this company exists" | Discovery (DiscoveryRun) | Company side of Discovery (dedup + merge) | run_id, result (snapshot + evidence + signals) |
 | `DiscoveryCompleted` | "We finished hunting this batch of targets" | Discovery (DiscoveryRun) | Intelligence (trigger scoring), Execution (progress) | run_id, stats (discovered/succeeded/failed) |
 | `DiscoveryFailed` | "The discovery pass itself broke" | Discovery (DiscoveryRun) | Execution (diagnosis), frontend | run_id, error, stats |
-| `CompanyProfileUpdated` | "What we know about this importer changed" | Discovery | Intelligence (rescore), rag/memory | company_id, changed_sections, sources |
+| `CompanyIngested` | "A discovered claim became a new or merged company" | company_ingestion workflow | Intelligence (assess) | company_id, ingestion_result, source |
+| `CompanyFactsChanged` | "What we know about this importer changed" | Discovery / ingestion | Intelligence (rescore), rag/memory | company_id, changed_fields, reason |
+| `OpportunityCreated` | "A new judgment now exists for this company × user" | Intelligence | frontend/report | opportunity_id, company_id, user_id |
 | `ImportRecordsUpdated` | "New shipment evidence arrived for this importer" | Discovery | Intelligence (rescore), Outreach (fresher ammo) | company_id, new_record_count, period_covered |
 | `OpportunityScoreChanged` | "Our judgment of this prospect moved" | Intelligence | Outreach (reprioritize), frontend/report | opportunity_id, company_id, old_score, new_score, reasons, assessment_id |
 | `OpportunityQualified` | "Worth pursuing — start the conversation" | Intelligence | Outreach (create outreach), report | opportunity_id, company_id, score, priority, recommended_action |

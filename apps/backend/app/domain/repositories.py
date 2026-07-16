@@ -42,8 +42,9 @@ class OpportunityRepository(Protocol):
 
     async def save(self, opportunity: Opportunity) -> None: ...
 
-    async def list_for_company_and_user(self, company_id: UUID, user_id: UUID) -> list[Opportunity]:
-        """All judgments this user holds about this company (usually 0 or 1 open)."""
+    async def get_for_company_and_user(self, company_id: UUID, user_id: UUID) -> Opportunity | None:
+        """The judgment this user currently holds about this company:
+        the open opportunity if one exists, else the most recent one."""
         ...
 
 

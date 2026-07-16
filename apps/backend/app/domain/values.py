@@ -178,7 +178,12 @@ class Evidence:
 
 @dataclass(frozen=True, kw_only=True)
 class OpportunityAssessment:
-    """One immutable scoring judgment — the unit of the append-only history."""
+    """One immutable scoring judgment — the unit of the append-only history.
+
+    priority / recommended_action / assessed_by are produced by the
+    scoring service (its policy owns the thresholds — ADR-0020); when
+    priority is absent the aggregate falls back to its ScoringPolicy.
+    """
 
     new_score: OpportunityScore
     confidence: Confidence
@@ -186,6 +191,9 @@ class OpportunityAssessment:
     scoring_version: str
     evidence: tuple[Evidence, ...] = ()
     old_score: OpportunityScore | None = None
+    priority: Priority | None = None
+    recommended_action: str | None = None
+    assessed_by: str | None = None
     user_lens_version: str | None = None
     assessed_at: datetime = field(default_factory=utcnow)
 
