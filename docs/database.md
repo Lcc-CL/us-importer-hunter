@@ -85,7 +85,8 @@ position)`; drafts `(outreach_id, version)`; attempts `(task_id, number)`
 | `Opportunity` | opportunities, opportunity_assessments, opportunity_evidence | `OpportunityMapper` |
 | `Outreach` (+ EmailDraft, Outcome) | outreaches, email_drafts, outcomes | `OutreachMapper` |
 | `Task` (+ TaskAttempt) | tasks, task_attempts | `TaskMapper` |
-| Contact (entity, minimal) | contacts | — (domain entity arrives with Discovery) |
+| `Contact` (aggregate root, L10) | contacts, contact_channels, contact_sources | `ContactMapper` |
+| DecisionMakerFitAssessment (VO) | contact_fit_assessments (append-only) | `FitAssessmentMapper` |
 
 Mapping rules: value objects flatten to columns (`CompanyName` → name +
 normalized_name; `WebsiteUrl` → website + website_host); append-only
@@ -127,6 +128,8 @@ will hook into the UoW after commit in a later lesson.
 | CHECK score 0–100, confidence 0–1 (opportunities + assessments) | value object ranges |
 | CHECK data_completeness 0–1, qualification_decision controlled values | L9 scoring value objects |
 | UNIQUE (opportunity_id, assessment_fingerprint) | no duplicate judgment ever inserted (replay/concurrency backstop) |
+| PK (contact_id, channel_type, normalized_value) | duplicate channels structurally impossible |
+| PK (contact_id, assessment_fingerprint) + CHECK fit scores 0–100 | append-only, deduplicated fit assessments |
 | NOT NULL assessment_fingerprint, policy_version | every judgment is identified and versioned |
 | Partial UNIQUE `tasks.idempotency_key WHERE status IN ('created','running')` | one active task per key |
 | UNIQUE `companies.normalized_name` | one canonical company per identity |

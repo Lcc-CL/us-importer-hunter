@@ -1,0 +1,56 @@
+# Contact entity specification — v1 (Sprint 2 L10)
+# Outreach context. Contact is an INDEPENDENT aggregate root (ADR-0022):
+# facts about a person. Decision-maker judgment lives in the append-only
+# DecisionMakerFitAssessment, never on the contact.
+
+contact:
+  identity:
+    name: { type: str, required: true, note: PersonName — non-empty, not symbols-only }
+    company_id: { type: uuid, required: true, note: FK — a contact belongs to one company }
+
+  role:
+    title: { type: str, note: raw + normalized (JobTitle); no weights in the value object }
+    department: { type: str, note: "procurement | supply_chain | logistics | operations | executive | finance | sales_marketing | hr | other | unknown" }
+    seniority: { type: str, note: "c_level | vp | director | head | manager | specialist | unknown" }
+
+  lifecycle:
+    status: { type: str, note: "discovered | active | invalid | inactive — ACTIVE requires a title or one usable channel; INVALID requires a reason" }
+    invalid_reason: { type: str }
+
+  channels:                 # unique per (type, normalized_value); verified independently
+    - channel_type: { type: str, note: "email | linkedin | phone" }
+      normalized_value: { type: str, required: true }
+      display_value: { type: str }
+      verification_status: { type: str, note: "unverified | source_verified | manually_verified | invalid — invalid channels are never usable" }
+      verified_at: { type: datetime }
+      confidence: { type: float, note: 0–1 }
+      source_reference: { type: json, note: provenance — who reported this channel }
+
+  meta:
+    sources: { type: "list[json]", note: every fact carries provenance }
+
+fit_assessment:              # append-only judgment (mvp-decision-maker-policy-v1)
+  role_fit_score: { type: float, note: 0–100 — department + seniority via policy weights }
+  reachability_score: { type: float, note: 0–100 — verified email > unverified > linkedin > phone }
+  total_score: { type: float, note: policy blend (60/40) }
+  confidence: { type: float, note: thin data lowers confidence, never fitness }
+  recommended_channel: { type: str }
+  policy_version: { type: str, required: true }
+  assessment_fingerprint: { type: str, required: true, note: SHA-256; UNIQUE per contact }
+
+invariants:
+  - A contact belongs to exactly one company (FK CASCADE).
+  - Channels never duplicate per (type, normalized value) — composite PK.
+  - Invalid channels are excluded from dedup lookups and reachability.
+  - Name alone is never a global identity; conflicting channels → POSSIBLE_MATCH.
+  - Contacts hold no opportunity score and never send email.
+
+relations:
+  company: many-to-one          # Discovery facts side
+  outreaches: one-to-many       # conversations reference contact_id only
+  fit_assessments: one-to-many  # append-only judgments
+
+events:
+  produces: [ContactCreated, ContactUpdated, ContactChannelAdded, ContactChannelVerified,
+             ContactInvalidated, ContactabilityChanged, DecisionMakerSelected]
+  consumes: [ContactCandidateDiscovered]

@@ -45,7 +45,7 @@ Five bounded contexts own the nine business entities (full model:
 |---|---|---|
 | Discovery | Company, Contact, ImportRecord, DiscoveryRun | tools/, services/company, services/search |
 | Intelligence | Opportunity (central value aggregate) | services/scoring, domain/crm |
-| Outreach | Outreach, EmailDraft, Outcome | agents/sales, services/email |
+| Outreach | Outreach, EmailDraft, Outcome, Contact (independent root, ADR-0022) | agents/sales, services/email, services/contact |
 | Execution | Task | workflows/, tasks/, observability/ |
 | Identity | User | memory/user, core settings |
 
@@ -66,7 +66,7 @@ each other by id only.
 | `tools/`       | Agent capabilities (google, website, linkedin, importyeti, browser) |
 | `providers/`   | LLM vendor adapters (openai; anthropic/deepseek/gemini later) |
 | `services/`    | Deterministic business logic (llm, email, search, company, scoring, rag) |
-| `workflows/`   | Multi-step orchestration (company_ingestion ✅, opportunity ✅, lead_generation, research, email, followup) |
+| `workflows/`   | Multi-step orchestration (company_ingestion ✅, opportunity ✅, contact_ingestion ✅, decision_maker ✅, lead_generation, research, email, followup) |
 | `events/`      | Typed pub/sub between pipeline stages — stages never call each other directly |
 | `memory/`      | Standalone memory layer: short_term, long_term, conversation, user |
 | `tasks/`       | Queue-executed entry points (Celery, later) — thin wrappers that invoke workflows, never orchestration |

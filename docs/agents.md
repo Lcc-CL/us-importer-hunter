@@ -22,6 +22,11 @@ no LLM involved and not fit for real sales decisions. When agents land,
 the research agent's job is to *feed better facts and evidence* into
 that same interface, not to score.
 
+Decision-maker selection (L10) is likewise a versioned deterministic
+policy (mvp-decision-maker-policy-v1) behind
+`DecisionMakerSelectionService` — when agents land, they contribute
+better contact candidates and verification evidence, never rankings.
+
 ## Main chain
 
 ```

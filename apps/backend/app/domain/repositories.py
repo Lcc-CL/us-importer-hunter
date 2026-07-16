@@ -11,6 +11,7 @@ from typing import Protocol
 from uuid import UUID
 
 from app.domain.company import Company
+from app.domain.contact import Contact, DecisionMakerFitAssessment
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
 from app.domain.task import Task
@@ -58,6 +59,30 @@ class OutreachRepository(Protocol):
     async def list_for_opportunity(self, opportunity_id: UUID) -> list[Outreach]: ...
 
 
+class ContactRepository(Protocol):
+    async def get_by_id(self, contact_id: UUID) -> Contact | None: ...
+
+    async def add(self, contact: Contact) -> None: ...
+
+    async def save(self, contact: Contact) -> None: ...
+
+    async def list_for_company(self, company_id: UUID) -> list[Contact]: ...
+
+    async def find_by_email(self, company_id: UUID, normalized_email: str) -> Contact | None:
+        """Dedup lookup: strong match on a company-scoped email channel."""
+        ...
+
+    async def find_by_linkedin_url(
+        self, company_id: UUID, normalized_url: str
+    ) -> Contact | None:
+        """Dedup lookup: strong match on a company-scoped LinkedIn channel."""
+        ...
+
+    async def record_fit_assessment(self, assessment: DecisionMakerFitAssessment) -> None:
+        """Append-only; duplicates rejected by (contact_id, fingerprint)."""
+        ...
+
+
 class TaskRepository(Protocol):
     async def get_by_id(self, task_id: UUID) -> Task | None: ...
 
@@ -77,6 +102,7 @@ class UnitOfWork(Protocol):
     companies: CompanyRepository
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
+    contacts: ContactRepository
     tasks: TaskRepository
 
     async def __aenter__(self) -> "UnitOfWork": ...

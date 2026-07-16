@@ -74,6 +74,33 @@ CompanyIngested | CompanyFactsChanged
   → one UnitOfWork per event; events drained after work, before commit
 ```
 
+## Implemented: contact_ingestion & decision_maker (Sprint 2 L10)
+
+The people side of the pipeline (ADR-0022):
+
+```
+ContactCandidateDiscovered (claim)
+  → ContactNormalizer        name/title/email/linkedin/phone; role classified;
+  │                          bad channel dropped with note; bad name REJECTED
+  → RepositoryContactDeduplicator   email → linkedin → name+title;
+  │                          name-only conflict → POSSIBLE_MATCH (human, no write)
+  → CREATED | MERGED — one UoW per event, peek → commit → drain
+
+(company_id, opportunity_id)
+  → eligible contacts (not INVALID/INACTIVE)
+  → DecisionMakerSelectionService.rank (mvp-decision-maker-policy-v1)
+  → fit assessments persisted append-only (fingerprint-unique)
+  → SELECTED (DecisionMakerSelected event → email draft, next lesson)
+    | REVIEW | RESEARCH_MORE
+```
+
+Contact changes emit ContactabilityChanged — the CONTACTABILITY
+dimension gets reassessed via the opportunity flow; contact workflows
+never modify OpportunityAssessment directly.
+
+The full chain now reads: Company → Contact Candidate → Contact →
+Decision Maker Selection → Email Draft (next lesson).
+
 The workflow orchestrates and never computes scores; weights live in the
 scoring strategy. Idempotency (L9): a persisted SHA-256 assessment
 fingerprint makes replayed events SKIP before any write, and the

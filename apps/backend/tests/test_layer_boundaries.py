@@ -54,9 +54,19 @@ def _assert_no_imports(root: Path, forbidden: tuple[str, ...], rule: str) -> Non
             "Opportunity references companies by id only",
         ),
         (
+            "domain/contact",
+            ("app.domain.opportunity", "app.domain.task", "app.domain.discovery"),
+            "Contact references companies by id only and never judges opportunities",
+        ),
+        (
             "workflows",
             ("sqlalchemy", "app.database"),
             "Workflows must not touch SQLAlchemy or ORM models",
+        ),
+        (
+            "services/contact",
+            ("sqlalchemy", "app.database", "httpx", "openai"),
+            "Contact services must not access the database or network",
         ),
         (
             "services/scoring",

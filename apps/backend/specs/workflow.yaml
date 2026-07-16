@@ -58,6 +58,28 @@ workflows:
     emits: [OpportunityCreated, OpportunityAssessmentApplied]
     status: implemented          # invoked directly until the event bus lands
 
+  contact_ingestion:
+    package: app.workflows.contact_ingestion
+    description: >
+      The candidate → Contact seam (ADR-0022): normalize a contact claim
+      (name/title/channels, role classification), deduplicate (email →
+      linkedin → name+title; name-only conflicts go to POSSIBLE_MATCH for
+      a human), create or merge. One UnitOfWork per event; events drain
+      only after successful commit.
+    consumes: [ContactCandidateDiscovered]
+    emits: [ContactCreated, ContactUpdated, ContactChannelAdded,
+            ContactChannelVerified, ContactInvalidated, ContactabilityChanged]
+    status: implemented          # invoked directly until the event bus lands
+
+  decision_maker:
+    package: app.workflows.decision_maker
+    description: >
+      Rank a company's eligible contacts as logistics decision makers
+      (mvp-decision-maker-policy-v1), persist append-only fit assessments,
+      and select the outreach target. Never creates or sends drafts.
+    emits: [DecisionMakerSelected]     # consumed by the email draft workflow (next lesson)
+    status: implemented
+
   research:
     package: app.workflows.research
     description: On-demand deep-dive analysis of a single company.

@@ -15,6 +15,7 @@ from app.domain.discovery import DiscoveryResult, RawCompanySnapshot, Signal
 from app.domain.events import CompanyDiscovered
 from app.domain.repositories import (
     CompanyRepository,
+    ContactRepository,
     OpportunityRepository,
     OutreachRepository,
     TaskRepository,
@@ -60,6 +61,7 @@ class FakeUnitOfWork:
     companies: CompanyRepository
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
+    contacts: ContactRepository
     tasks: TaskRepository
 
     def __init__(self, companies: FakeCompanyRepository) -> None:

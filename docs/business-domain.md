@@ -24,7 +24,7 @@ Nine entities, each owned by exactly one bounded context:
 | Entity | Owning context | One-line role |
 |---|---|---|
 | Company | Discovery | The importer as a deduplicated real-world fact |
-| Contact | Discovery | The human decision maker at an importer |
+| Contact | Outreach (independent aggregate root, ADR-0022) | The human decision maker at an importer |
 | ImportRecord | Discovery | One immutable customs/BoL shipment observation |
 | DiscoveryRun | Discovery | One supervised discovery pass — produces claims, never companies |
 | Opportunity | Intelligence | The judgment: worth pursuing, how much, why — plus CRM stage |
@@ -66,7 +66,7 @@ each other's internals (ADR-0015).
 - **Responsibilities**: ingest and normalize import records; deduplicate
   and enrich companies; discover and verify contacts; keep profiles fresh
   (staleness).
-- **Owned entities**: Company, Contact, ImportRecord, DiscoveryRun.
+- **Owned entities**: Company, ImportRecord, DiscoveryRun. (Contact moved to the Outreach context as an independent aggregate root — ADR-0022.)
 - **Internal boundary (ADR-0018)**: the discovering side produces
   *claims* — `DiscoveryResult` (a raw `RawCompanySnapshot` + evidence +
   signals) wrapped in `CompanyDiscovered` events; the company side
@@ -104,7 +104,7 @@ each other's internals (ADR-0015).
 - **Responsibilities**: select the right contact; generate and version
   email drafts; enforce human approval before anything leaves; track send
   state and follow-up plans; record outcomes.
-- **Owned entities**: Outreach (root), EmailDraft, Outcome.
+- **Owned entities**: Outreach (root), Contact (root, ADR-0022), EmailDraft, Outcome.
 - **Excluded responsibilities**: deciding *whether* to pursue
   (Intelligence decides; Outreach executes); discovering contacts
   (Discovery finds them; Outreach selects among them).

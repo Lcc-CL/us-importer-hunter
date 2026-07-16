@@ -13,8 +13,9 @@ from app.domain.clock import utcnow
 from app.domain.values import OpportunityScore, Priority
 
 if TYPE_CHECKING:
-    # imported lazily to avoid a package-init cycle (events ↔ discovery);
+    # imported lazily to avoid package-init cycles (events ↔ discovery/contact);
     # dataclasses never resolve annotations at runtime
+    from app.domain.contact.values import RawContactSnapshot
     from app.domain.discovery.values import DiscoveryResult, DiscoveryStats
 
 
@@ -71,6 +72,68 @@ class CompanyFactsChanged(DomainEvent):
     company_id: UUID
     changed_fields: tuple[str, ...]
     reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContactCandidateDiscovered(DomainEvent):
+    """A source claimed a person exists — not yet a trusted contact."""
+
+    candidate: "RawContactSnapshot"
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContactCreated(DomainEvent):
+    contact_id: UUID
+    company_id: UUID
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContactUpdated(DomainEvent):
+    contact_id: UUID
+    changed_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContactChannelAdded(DomainEvent):
+    contact_id: UUID
+    channel_type: str
+    normalized_value: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContactChannelVerified(DomainEvent):
+    contact_id: UUID
+    channel_type: str
+    normalized_value: str
+    verification_status: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContactInvalidated(DomainEvent):
+    contact_id: UUID
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContactabilityChanged(DomainEvent):
+    """Reachability of a company's people changed — feeds a later
+    CompanyFactsChanged / reassessment of the CONTACTABILITY dimension."""
+
+    company_id: UUID
+    contact_id: UUID
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class DecisionMakerSelected(DomainEvent):
+    """A best contact was chosen for an opportunity — consumed by the
+    email draft workflow (next lesson)."""
+
+    opportunity_id: UUID
+    company_id: UUID
+    contact_id: UUID
+    recommended_channel: str | None
+    policy_version: str
 
 
 @dataclass(frozen=True, kw_only=True)

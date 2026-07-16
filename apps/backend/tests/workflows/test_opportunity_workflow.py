@@ -16,6 +16,7 @@ from app.domain.exceptions import DuplicateOperation
 from app.domain.opportunity import Opportunity
 from app.domain.repositories import (
     CompanyRepository,
+    ContactRepository,
     OpportunityRepository,
     OutreachRepository,
     TaskRepository,
@@ -99,6 +100,7 @@ class FakeUnitOfWork:
     companies: CompanyRepository
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
+    contacts: ContactRepository
     tasks: TaskRepository
 
     def __init__(

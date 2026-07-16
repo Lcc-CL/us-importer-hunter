@@ -5,9 +5,10 @@ Interfaces only — implementations live in app/services and are injected.
 No provider-, LLM- or storage-specific detail belongs here.
 """
 
+from collections.abc import Sequence  # noqa: TC003 — used in protocol signatures
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from app.domain.clock import utcnow
@@ -17,6 +18,15 @@ from app.domain.values import (
     SourceReference,
     WebsiteUrl,
 )
+
+if TYPE_CHECKING:
+    from app.domain.contact import (
+        Contact,
+        ContactMatch,
+        DecisionMakerFitAssessment,
+        JobTitle,
+        PersonName,
+    )
 
 
 @dataclass(frozen=True)
@@ -74,4 +84,36 @@ class CompanyDeduplicationService(Protocol):
 
     async def find_canonical(self, name: CompanyName, website: WebsiteUrl | None) -> UUID | None:
         """Return the canonical company id the candidate duplicates, or None."""
+        ...
+
+
+class ContactDeduplicationService(Protocol):
+    """Is this candidate a person we already know at this company?
+
+    Never matches on name alone across companies; conflicting channels
+    demand a human (POSSIBLE_MATCH), not an automatic merge (ADR-0022).
+    """
+
+    async def classify(
+        self,
+        company_id: UUID,
+        name: "PersonName",
+        title: "JobTitle | None",
+        email_normalized: str | None,
+        linkedin_normalized: str | None,
+    ) -> "ContactMatch": ...
+
+
+class DecisionMakerSelectionService(Protocol):
+    """Ranks a company's contacts as logistics decision makers.
+
+    Deterministic and explainable: complete immutable fit assessments,
+    weights owned by the versioned policy. No database, no network.
+    """
+
+    @property
+    def policy_version(self) -> str: ...
+
+    async def rank(self, contacts: "Sequence[Contact]") -> "tuple[DecisionMakerFitAssessment, ...]":
+        """Assessments sorted best-first; ties broken deterministically."""
         ...

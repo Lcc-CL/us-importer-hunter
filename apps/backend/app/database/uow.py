@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database.repositories import (
     SqlAlchemyCompanyRepository,
+    SqlAlchemyContactRepository,
     SqlAlchemyOpportunityRepository,
     SqlAlchemyOutreachRepository,
     SqlAlchemyTaskRepository,
@@ -28,6 +29,7 @@ from app.database.repositories import (
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
     CompanyRepository,
+    ContactRepository,
     OpportunityRepository,
     OutreachRepository,
     TaskRepository,
@@ -36,6 +38,7 @@ from app.domain.repositories import (
 
 class SqlAlchemyUnitOfWork:
     companies: CompanyRepository
+    contacts: ContactRepository
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
     tasks: TaskRepository
@@ -49,6 +52,7 @@ class SqlAlchemyUnitOfWork:
         self._session = self._session_factory()
         self._committed = False
         self.companies = SqlAlchemyCompanyRepository(self._session)
+        self.contacts = SqlAlchemyContactRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)
         self.outreaches = SqlAlchemyOutreachRepository(self._session)
         self.tasks = SqlAlchemyTaskRepository(self._session)

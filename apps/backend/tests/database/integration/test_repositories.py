@@ -176,10 +176,14 @@ class TestOutreachRepository:
                 ContactModel(
                     id=contact_id,
                     company_id=company.id,
-                    full_name="Maria Chen",
-                    title="Director of Supply Chain",
-                    email="maria@phg.com",
+                    name="Maria Chen",
+                    normalized_name="maria chen",
+                    title_raw="Director of Supply Chain",
+                    department="supply_chain",
+                    seniority="director",
+                    status="active",
                     created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
             )
             await uow.commit()
