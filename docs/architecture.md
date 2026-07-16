@@ -59,6 +59,7 @@ Domain (app/domain/)      Cross-cutting: pure business entities & rules,
 
 ## Related docs
 
+- [Business domain](business-domain.md) — entities and ownership, defined before persistence
 - [Coding standards](coding-standard.md)
 - [Agents](agents.md) · [Workflows](workflow.md)
 - [API](api.md) · [Database](database.md)

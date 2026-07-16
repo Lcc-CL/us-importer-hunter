@@ -24,5 +24,6 @@ make frontend                 # Next.js dev server
 
 - **[PROJECT.md](PROJECT.md)** — the project document: vision, MVP,
   architecture, workflow, sprints, progress, roadmap. **Start here.**
-- [docs/](docs/) — detailed references: PRD, architecture, coding
-  standards, agents, workflows, API, database, decision log, roadmap.
+- [docs/](docs/) — detailed references: PRD, business domain, architecture,
+  coding standards, agents, workflows, API, database, decision log (ADRs),
+  roadmap.
