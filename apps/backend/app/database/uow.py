@@ -24,9 +24,20 @@ from app.database.repositories import (
     SqlAlchemyOutreachRepository,
     SqlAlchemyTaskRepository,
 )
+from app.domain.repositories import (
+    CompanyRepository,
+    OpportunityRepository,
+    OutreachRepository,
+    TaskRepository,
+)
 
 
 class SqlAlchemyUnitOfWork:
+    companies: CompanyRepository
+    opportunities: OpportunityRepository
+    outreaches: OutreachRepository
+    tasks: TaskRepository
+
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
         self._session: AsyncSession | None = None

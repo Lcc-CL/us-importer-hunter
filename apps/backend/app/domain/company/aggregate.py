@@ -67,6 +67,22 @@ class Company:
         """Record provenance; facts without provenance don't enter the profile."""
         self._sources.append(reference)
 
+    def set_website(self, website: WebsiteUrl) -> None:
+        """Set the website when unknown; idempotent for the same URL.
+
+        A *different* website is a conflict the aggregate refuses to
+        resolve silently — resolution policy is pending (L7).
+        """
+        if self._website is None:
+            self._website = website
+            return
+        if self._website == website:
+            return
+        raise DomainError(
+            f"website conflict: {self._website.value!r} vs {website.value!r} — "
+            "resolution policy pending"
+        )
+
     def mark_verified(self) -> None:
         """Idempotent: workflow retries may re-verify — no error, no second event."""
         if self._verified:

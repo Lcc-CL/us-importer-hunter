@@ -37,3 +37,10 @@ class SqlAlchemyCompanyRepository:
         )
         model = result.scalar_one_or_none()
         return CompanyMapper.to_domain(model) if model else None
+
+    async def find_by_website_host(self, host: str) -> Company | None:
+        result = await self._session.execute(
+            select(CompanyModel).where(CompanyModel.website_host == host.lower()).limit(1)
+        )
+        model = result.scalar_one_or_none()
+        return CompanyMapper.to_domain(model) if model else None

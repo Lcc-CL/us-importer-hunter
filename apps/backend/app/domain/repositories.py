@@ -30,6 +30,10 @@ class CompanyRepository(Protocol):
         """Dedup lookup: the canonical company already using this name, if any."""
         ...
 
+    async def find_by_website_host(self, host: str) -> Company | None:
+        """Dedup lookup: the canonical company already using this web host, if any."""
+        ...
+
 
 class OpportunityRepository(Protocol):
     async def get_by_id(self, opportunity_id: UUID) -> Opportunity | None: ...

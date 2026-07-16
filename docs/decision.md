@@ -24,3 +24,4 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0016](ADR/0016-domain-model-and-invariants.md) | Domain model: value objects, aggregates, invariants | 2026-07-15 |
 | [0017](ADR/0017-domain-persistence-separation.md) | Domain–persistence separation: mappers, repositories, UoW | 2026-07-16 |
 | [0018](ADR/0018-discovery-produces-events.md) | Discovery produces claims and events, never companies | 2026-07-16 |
+| [0019](ADR/0019-claim-to-company-ingestion.md) | Claim → Company ingestion at the application layer | 2026-07-16 |

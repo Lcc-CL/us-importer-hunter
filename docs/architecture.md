@@ -66,7 +66,7 @@ each other by id only.
 | `tools/`       | Agent capabilities (google, website, linkedin, importyeti, browser) |
 | `providers/`   | LLM vendor adapters (openai; anthropic/deepseek/gemini later) |
 | `services/`    | Deterministic business logic (llm, email, search, company, scoring, rag) |
-| `workflows/`   | Multi-step orchestration (lead_generation, research, email, followup) |
+| `workflows/`   | Multi-step orchestration (company_ingestion ✅, lead_generation, research, email, followup) |
 | `events/`      | Typed pub/sub between pipeline stages — stages never call each other directly |
 | `memory/`      | Standalone memory layer: short_term, long_term, conversation, user |
 | `tasks/`       | Queue-executed entry points (Celery, later) — thin wrappers that invoke workflows, never orchestration |

@@ -39,3 +39,21 @@ Stage boundaries publish domain events (full catalog:
 stages never call each other directly (ADR-0004/0015). Progress
 reporting, cancellation and batch execution (Celery) are later-sprint
 concerns.
+
+## Implemented: company_ingestion (Sprint 2 L7)
+
+The first working workflow — the Discovery → Company seam (ADR-0019):
+
+```
+CompanyDiscovered (claim from a DiscoveryRun)
+  → SnapshotNormalizer          raw text → CompanyName / WebsiteUrl
+  → RepositoryCompanyDeduplicator   name match, then website host
+  → CREATED (new Company + provenance + signals)
+    MERGED  (alias / website-fill / source / signals — idempotent)
+    REJECTED (unusable name; batch continues)
+  → one UnitOfWork per event
+```
+
+No real data sources are wired; callers invoke `handle(event)` directly
+until the event bus lands. Discovery still cannot import Company —
+enforced by the context-boundary test.

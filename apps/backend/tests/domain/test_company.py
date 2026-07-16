@@ -78,6 +78,21 @@ class TestVerification:
         assert len(company.drain_events()) == 1
 
 
+class TestWebsite:
+    def test_set_when_unknown(self) -> None:
+        company = Company.create(CompanyName("Acme"))
+        company.set_website(WebsiteUrl("https://acme.com"))
+        assert company.website == WebsiteUrl("https://acme.com")
+
+    def test_same_website_is_idempotent(self, company: Company) -> None:
+        company.set_website(WebsiteUrl("https://phg.com"))
+        assert company.website == WebsiteUrl("https://phg.com")
+
+    def test_conflicting_website_rejected(self, company: Company) -> None:
+        with pytest.raises(DomainError, match="website conflict"):
+            company.set_website(WebsiteUrl("https://different.com"))
+
+
 class TestSignals:
     def test_add_signal(self, company: Company) -> None:
         company.add_signal("volume growing 3 quarters straight")

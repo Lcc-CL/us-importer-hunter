@@ -33,6 +33,16 @@ workflows:
     execution: sync                  # Celery batch execution in a later sprint
     task_events: [TaskCompleted, TaskFailed]   # emitted by the Execution wrapper
 
+  company_ingestion:
+    package: app.workflows.company_ingestion
+    description: >
+      The Discovery → Company seam (ADR-0019): normalize a discovered
+      claim, deduplicate (name, then website host), create or merge the
+      canonical Company. One UnitOfWork per event; rejection is an
+      outcome, not an exception.
+    consumes: [CompanyDiscovered]
+    status: implemented          # invoked directly until the event bus lands
+
   research:
     package: app.workflows.research
     description: On-demand deep-dive analysis of a single company.
