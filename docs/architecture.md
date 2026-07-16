@@ -43,7 +43,7 @@ Five bounded contexts own the nine business entities (full model:
 
 | Context | Owns | Maps mainly to |
 |---|---|---|
-| Discovery | Company, Contact, ImportRecord | tools/, services/company, services/search |
+| Discovery | Company, Contact, ImportRecord, DiscoveryRun | tools/, services/company, services/search |
 | Intelligence | Opportunity (central value aggregate) | services/scoring, domain/crm |
 | Outreach | Outreach, EmailDraft, Outcome | agents/sales, services/email |
 | Execution | Task | workflows/, tasks/, observability/ |

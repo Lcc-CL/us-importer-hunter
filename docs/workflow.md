@@ -20,8 +20,10 @@ they contain no low-level I/O and no prompt content.
 ```
 lead_generation (each run wrapped in a Task — Execution context)
 ├── planner agent      → research plan (the Task's blueprint)
-├── for each target:
-│   ├── research agent → company facts + analysis        ⤳ DiscoveryCompleted,
+├── for each target:                    (the fan-out operates a DiscoveryRun:
+│   │                                    claims in, CompanyDiscovered out — ADR-0018)
+│   ├── research agent → company facts + analysis        ⤳ CompanyDiscovered (per claim),
+│   │                                                      DiscoveryCompleted / Failed,
 │   │                                                      CompanyProfileUpdated,
 │   │                                                      ImportRecordsUpdated
 │   └── scoring service→ Opportunity (score + reasons)   ⤳ OpportunityScoreChanged,

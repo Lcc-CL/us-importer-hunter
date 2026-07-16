@@ -26,6 +26,7 @@ Nine entities, each owned by exactly one bounded context:
 | Company | Discovery | The importer as a deduplicated real-world fact |
 | Contact | Discovery | The human decision maker at an importer |
 | ImportRecord | Discovery | One immutable customs/BoL shipment observation |
+| DiscoveryRun | Discovery | One supervised discovery pass — produces claims, never companies |
 | Opportunity | Intelligence | The judgment: worth pursuing, how much, why — plus CRM stage |
 | Outreach | Outreach | One pursuit conversation for one opportunity |
 | EmailDraft | Outreach | One generated email version inside an outreach |
@@ -37,10 +38,10 @@ Nine entities, each owned by exactly one bounded context:
 
 | Layer | Entities | Mutability |
 |---|---|---|
-| **Evidence** | ImportRecord, Outcome | Immutable events — accumulated, never edited |
+| **Evidence** | ImportRecord, Outcome, DiscoveryResult (claims) | Immutable events — accumulated, never edited |
 | **Facts** | Company, Contact | Enriched over time, deduplicated, source-tracked |
 | **Judgments** | Opportunity | Recomputable from evidence + user lens |
-| **Artifacts** | Outreach, EmailDraft, Task | Versioned work products with lifecycle states |
+| **Artifacts** | Outreach, EmailDraft, Task, DiscoveryRun | Versioned work products with lifecycle states |
 | **Principal** | User | The lens everything above is computed through |
 
 Any judgment traces down to evidence; any artifact traces back to the
@@ -65,7 +66,12 @@ each other's internals (ADR-0015).
 - **Responsibilities**: ingest and normalize import records; deduplicate
   and enrich companies; discover and verify contacts; keep profiles fresh
   (staleness).
-- **Owned entities**: Company, Contact, ImportRecord.
+- **Owned entities**: Company, Contact, ImportRecord, DiscoveryRun.
+- **Internal boundary (ADR-0018)**: the discovering side produces
+  *claims* — `DiscoveryResult` (a raw `RawCompanySnapshot` + evidence +
+  signals) wrapped in `CompanyDiscovered` events; the company side
+  consumes them through dedup and provenance-tracked merging. Discovery
+  code never creates Company aggregates directly and never scores.
 - **Excluded responsibilities**: judging whether a company is worth
   pursuing (Intelligence); writing to anyone (Outreach).
 - **Inputs**: user targeting criteria (Identity contract); raw data from
@@ -334,7 +340,9 @@ omitted from the payload column.
 
 | Event | Meaning (business English) | Producer | Consumers | Required payload |
 |---|---|---|---|---|
-| `DiscoveryCompleted` | "We finished hunting this batch of targets" | Discovery | Intelligence (trigger scoring), Execution (progress) | task_id, target_criteria, company_ids, source_stats |
+| `CompanyDiscovered` | "A source claims this company exists" | Discovery (DiscoveryRun) | Company side of Discovery (dedup + merge) | run_id, result (snapshot + evidence + signals) |
+| `DiscoveryCompleted` | "We finished hunting this batch of targets" | Discovery (DiscoveryRun) | Intelligence (trigger scoring), Execution (progress) | run_id, stats (discovered/succeeded/failed) |
+| `DiscoveryFailed` | "The discovery pass itself broke" | Discovery (DiscoveryRun) | Execution (diagnosis), frontend | run_id, error, stats |
 | `CompanyProfileUpdated` | "What we know about this importer changed" | Discovery | Intelligence (rescore), rag/memory | company_id, changed_sections, sources |
 | `ImportRecordsUpdated` | "New shipment evidence arrived for this importer" | Discovery | Intelligence (rescore), Outreach (fresher ammo) | company_id, new_record_count, period_covered |
 | `OpportunityScoreChanged` | "Our judgment of this prospect moved" | Intelligence | Outreach (reprioritize), frontend/report | opportunity_id, company_id, old_score, new_score, reasons, assessment_id |

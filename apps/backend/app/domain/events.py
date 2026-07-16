@@ -6,10 +6,16 @@ is the application layer's job — no event bus lives in the domain.
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from app.domain.clock import utcnow
 from app.domain.values import OpportunityScore, Priority
+
+if TYPE_CHECKING:
+    # imported lazily to avoid a package-init cycle (events ↔ discovery);
+    # dataclasses never resolve annotations at runtime
+    from app.domain.discovery.values import DiscoveryResult, DiscoveryStats
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,6 +29,28 @@ class DomainEvent:
 @dataclass(frozen=True, kw_only=True)
 class CompanyVerified(DomainEvent):
     company_id: UUID
+
+
+@dataclass(frozen=True, kw_only=True)
+class CompanyDiscovered(DomainEvent):
+    """A source claimed a company exists. The Company context consumes
+    this (dedup + fact-merge); Discovery never creates companies."""
+
+    run_id: UUID
+    result: "DiscoveryResult"
+
+
+@dataclass(frozen=True, kw_only=True)
+class DiscoveryCompleted(DomainEvent):
+    run_id: UUID
+    stats: "DiscoveryStats"
+
+
+@dataclass(frozen=True, kw_only=True)
+class DiscoveryFailed(DomainEvent):
+    run_id: UUID
+    error: str
+    stats: "DiscoveryStats"
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -16,7 +16,8 @@ workflows:
       - id: research
         agent: research
         for_each: plan.targets       # fan-out per target company
-        emits: [DiscoveryCompleted, CompanyProfileUpdated, ImportRecordsUpdated]
+        emits: [CompanyDiscovered, DiscoveryCompleted, DiscoveryFailed,
+                CompanyProfileUpdated, ImportRecordsUpdated]
       - id: score
         service: scoring
         input: research.analysis
