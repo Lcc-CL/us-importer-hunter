@@ -1,23 +1,22 @@
 """Opportunity application workflow: Company facts → scored judgment.
 
 Consumes CompanyIngested / CompanyFactsChanged (application facts, no bus
-yet) and orchestrates — it never computes a score itself (ADR-0020):
+yet) and orchestrates — it never computes a score itself (ADR-0020/0021):
 
     event → load Company → build OpportunityScoringInput
-          → OpportunityScoringService.assess (replaceable; deterministic MVP)
+          → OpportunityScoringService.assess (replaceable; explainable MVP)
           → create Opportunity | append assessment (history append-only)
-          → one UnitOfWork, explicit commit
-          → typed OpportunityProcessingOutcome
+          → peek pending events → commit → drain AFTER success
 
-Idempotency: an assessment fingerprint (scoring_version + score +
-confidence + reasons + evidence claims) is compared against the latest
-history entry — replaying the same event over unchanged facts SKIPs
-instead of appending a duplicate or re-emitting events.
+Idempotency (two layers):
+1. application: the persisted SHA-256 assessment fingerprint is compared
+   against the whole history — replayed events SKIP before any write;
+2. database: unique (opportunity_id, assessment_fingerprint); a race
+   surfaces as DuplicateOperation from UoW.commit and becomes SKIPPED.
 
-Business non-conditions return outcomes, never exceptions: unknown
-company (REJECTED), no sources (SKIPPED), incomplete assessment
-(REJECTED), duplicate fingerprint (SKIPPED), closed opportunity
-(SKIPPED). Scorer crashes propagate — the UoW context rolls back.
+Event ordering rule (L9): events are peeked before commit but drained
+only after a successful commit — a failed commit keeps them pending, so
+retries publish exactly once and nothing external is called pre-commit.
 """
 
 from collections.abc import Callable
@@ -27,6 +26,7 @@ from uuid import UUID
 
 from app.domain.company import Company
 from app.domain.events import CompanyFactsChanged, CompanyIngested
+from app.domain.exceptions import DuplicateOperation
 from app.domain.opportunity import CLOSED_STAGES, Opportunity
 from app.domain.repositories import UnitOfWork
 from app.domain.services import OpportunityScoringInput, OpportunityScoringService
@@ -47,20 +47,13 @@ class OpportunityProcessingOutcome:
     opportunity_id: UUID | None = None
     score: float | None = None
     confidence: float | None = None
+    qualification_decision: str | None = None
+    data_completeness: float | None = None
+    recommended_action: str | None = None
+    scoring_version: str | None = None
+    policy_version: str | None = None
     notes: tuple[str, ...] = ()
     emitted_events_count: int = 0
-
-
-def _fingerprint(assessment: OpportunityAssessment) -> tuple[object, ...]:
-    """What makes two assessments 'the same judgment': same algorithm
-    over the same facts yields identical score/confidence/reasons/claims."""
-    return (
-        assessment.scoring_version,
-        assessment.new_score,
-        assessment.confidence,
-        assessment.reasons,
-        tuple(evidence.claim for evidence in assessment.evidence),
-    )
 
 
 class OpportunityApplicationWorkflow:
@@ -94,9 +87,7 @@ class OpportunityApplicationWorkflow:
                     notes=("company has no source references — nothing trustworthy to score",),
                 )
 
-            assessment = await self._scoring.assess(
-                self._build_input(company, user_lens_version)
-            )
+            assessment = await self._scoring.assess(self._build_input(company, user_lens_version))
             incomplete = self._incompleteness(assessment)
             if incomplete:
                 return OpportunityProcessingOutcome(
@@ -112,7 +103,6 @@ class OpportunityApplicationWorkflow:
                 opportunity.apply_assessment(assessment)
                 await uow.opportunities.add(opportunity)
                 action = OpportunityProcessingAction.CREATED
-                notes: tuple[str, ...] = ()
             elif opportunity.stage in CLOSED_STAGES:
                 return OpportunityProcessingOutcome(
                     action=OpportunityProcessingAction.SKIPPED,
@@ -122,8 +112,9 @@ class OpportunityApplicationWorkflow:
                         f"opportunity is {opportunity.stage.value} — this event does not reopen",
                     ),
                 )
-            elif opportunity.history and _fingerprint(opportunity.history[-1]) == _fingerprint(
-                assessment
+            elif any(
+                recorded.assessment_fingerprint == assessment.assessment_fingerprint
+                for recorded in opportunity.history
             ):
                 return OpportunityProcessingOutcome(
                     action=OpportunityProcessingAction.SKIPPED,
@@ -131,23 +122,46 @@ class OpportunityApplicationWorkflow:
                     opportunity_id=opportunity.id,
                     score=opportunity.score.value if opportunity.score else None,
                     confidence=opportunity.confidence.value if opportunity.confidence else None,
-                    notes=("identical assessment already recorded — idempotent skip",),
+                    notes=("identical assessment fingerprint already recorded — idempotent skip",),
                 )
             else:
                 opportunity.apply_assessment(assessment)
                 await uow.opportunities.save(opportunity)
                 action = OpportunityProcessingAction.REASSESSED
-                notes = ()
 
+            # peek → commit → drain: events are published-after-commit facts
+            pending_count = len(opportunity.pending_events)
+            try:
+                await uow.commit()
+            except DuplicateOperation as exc:
+                # unique (opportunity_id, fingerprint) race — someone else won;
+                # pending events stay undrained on the discarded aggregate
+                return OpportunityProcessingOutcome(
+                    action=OpportunityProcessingAction.SKIPPED,
+                    company_id=company.id,
+                    opportunity_id=opportunity.id,
+                    notes=(f"concurrent duplicate rejected by the database: {exc}",),
+                )
             events = opportunity.drain_events()
-            await uow.commit()
+            assert len(events) == pending_count
+
             return OpportunityProcessingOutcome(
                 action=action,
                 company_id=company.id,
                 opportunity_id=opportunity.id,
                 score=assessment.new_score.value,
                 confidence=assessment.confidence.value,
-                notes=notes,
+                qualification_decision=(
+                    assessment.qualification_decision.value
+                    if assessment.qualification_decision
+                    else None
+                ),
+                data_completeness=(
+                    assessment.data_completeness.value if assessment.data_completeness else None
+                ),
+                recommended_action=assessment.recommended_action,
+                scoring_version=assessment.scoring_version,
+                policy_version=assessment.policy_version,
                 emitted_events_count=len(events),
             )
 
@@ -173,4 +187,10 @@ class OpportunityApplicationWorkflow:
             return "missing recommended_action"
         if not (assessment.assessed_by or "").strip():
             return "missing assessed_by"
+        if assessment.qualification_decision is None:
+            return "missing qualification_decision"
+        if assessment.data_completeness is None:
+            return "missing data_completeness"
+        if assessment.score_breakdown is None:
+            return "missing score_breakdown"
         return None

@@ -47,11 +47,13 @@ workflows:
   opportunity:
     package: app.workflows.opportunity
     description: >
-      The Company → Opportunity scoring seam (ADR-0020): load company
+      The Company → Opportunity scoring seam (ADR-0020/0021): load company
       facts, call the replaceable OpportunityScoringService
-      (mvp-deterministic-v1 placeholder), create the opportunity or
-      append an assessment (history append-only, fingerprint-idempotent).
-      The workflow orchestrates; it never computes scores.
+      (mvp-explainable-scoring-v1 + mvp-qualification-policy-v1), create
+      the opportunity or append an assessment (append-only; persisted
+      SHA-256 fingerprint + DB unique constraint for idempotency; events
+      drain only after successful commit). The workflow orchestrates; it
+      never computes scores.
     consumes: [CompanyIngested, CompanyFactsChanged]
     emits: [OpportunityCreated, OpportunityAssessmentApplied]
     status: implemented          # invoked directly until the event bus lands

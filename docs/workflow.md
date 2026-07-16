@@ -75,6 +75,16 @@ CompanyIngested | CompanyFactsChanged
 ```
 
 The workflow orchestrates and never computes scores; weights live in the
-scoring strategy. Idempotency: an assessment fingerprint (version +
-score + confidence + reasons + evidence claims) makes replayed events
-SKIP instead of duplicating history or events.
+scoring strategy. Idempotency (L9): a persisted SHA-256 assessment
+fingerprint makes replayed events SKIP before any write, and the
+database unique constraint (opportunity_id, fingerprint) closes the
+concurrency race — a losing writer gets SKIPPED, not a crash.
+
+Event ordering rule (L9): pending events are peeked before commit but
+drained only **after** a successful commit — a failed commit keeps them
+pending so retries publish exactly once; nothing external is called
+pre-commit. Scoring itself is dimensional and explainable
+(mvp-explainable-scoring-v1 + mvp-qualification-policy-v1, ADR-0021):
+8 weighted dimensions, evidence-required, unknown ≠ negative, hard
+gates separate from weights, decisions QUALIFIED / REVIEW /
+RESEARCH_MORE / DISQUALIFIED with policy-owned recommended actions.

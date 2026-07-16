@@ -6,10 +6,22 @@
 opportunity:
   judgment:
     score: { type: float, note: changes ONLY via rescore()/apply_outcome() — never assignment }
-    confidence: { type: float, note: capped when company profile is stale }
+    confidence: { type: float, note: evidence QUALITY — distinct from completeness }
+    data_completeness: { type: float, note: evidence COVERAGE — unknown lowers this, never the score }
     priority: { type: str, note: derived via versioned ScoringPolicy (thresholds are policy, not domain constants) — high / medium / low }
+    qualification_decision: { type: str, note: "qualified | review | research_more | disqualified (mvp-qualification-policy-v1)" }
     reasons: { type: "list[str]", required: true, note: evidence-linked; never empty }
-    recommended_action: { type: str, note: what the salesperson should do next }
+    recommended_action: { type: str, note: "policy-owned: prepare_outreach | human_review | collect_more_data | do_not_contact" }
+
+  scoring_dimensions:   # weights sum to 100 — owned by DimensionWeights (L9, ADR-0021)
+    import_activity: 20
+    china_dependency: 15
+    shipping_fit: 15
+    cargo_value_potential: 10
+    company_scale: 10
+    growth_signal: 10
+    contactability: 10
+    logistics_complexity: 10
 
   status:
     stage: { type: str, note: "identified | scored | qualified | disqualified | contacted | engaged | negotiating | won | lost | dormant" }
@@ -25,8 +37,13 @@ opportunity:
         evidence_refs: { type: "list[str]", note: source references / import record ids }
         recommended_action: { type: str }
         assessed_by: { type: str, note: which scorer produced this }
+        data_completeness: { type: float }
+        qualification_decision: { type: str }
+        score_breakdown: { type: json, note: immutable audit snapshot of the 8-dimension decomposition }
+        assessment_fingerprint: { type: str, required: true, note: SHA-256 over canonical judgment content; UNIQUE per opportunity }
         user_lens_version: { type: str }
-        scoring_version: { type: str, note: "current placeholder: mvp-deterministic-v1 — NOT for real sales decisions" }
+        scoring_version: { type: str, note: "current placeholder: mvp-explainable-scoring-v1 — NOT for real sales decisions" }
+        policy_version: { type: str, required: true, note: "mvp-qualification-policy-v1" }
         assessed_at: { type: datetime }
 
 invariants:

@@ -157,6 +157,11 @@ class Opportunity:
 
     # -- events -------------------------------------------------------
 
+    @property
+    def pending_events(self) -> tuple[DomainEvent, ...]:
+        """Peek without clearing — publish only after a successful commit."""
+        return tuple(self._events)
+
     def drain_events(self) -> tuple[DomainEvent, ...]:
         events = tuple(self._events)
         self._events.clear()

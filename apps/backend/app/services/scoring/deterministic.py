@@ -1,116 +1,243 @@
-"""Deterministic placeholder scorer — mvp-deterministic-v1.
+"""Explainable deterministic scorer — mvp-explainable-scoring-v1.
 
-⚠ NOT a business scoring model. This exists so the Company → Opportunity
-pipeline runs end-to-end with explainable, stable numbers. It uses only
-fields that actually exist today (website, verification, signals,
-provenance) and never invents import volume, cargo value or China
-dependency. Replace behind OpportunityScoringService when the real
-scoring dimensions are decided (open product question).
+⚠ NOT a business scoring model. Dimension weights, detectors and
+normalized values are MVP placeholders so the pipeline runs end-to-end
+with explainable, stable numbers; they will be recalibrated against real
+outcomes (ADR-0021).
+
+Honesty rules (tested):
+- every ASSESSED dimension carries Evidence built from real sources;
+- dimensions without evidence are UNKNOWN / INSUFFICIENT_EVIDENCE and
+  earn exactly 0 — unknown is never negative;
+- nothing is fabricated: no TEU, cargo value, China dependency, revenue
+  or import frequency is invented from thin air;
+- same input + same versions → identical assessment (and fingerprint).
+
+Two explicit steps behind one interface: (1) score the dimensions,
+(2) qualify via the versioned QualificationPolicy. The workflow only
+orchestrates; both policies are injected and replaceable.
 """
 
 from dataclasses import dataclass
 
+from app.domain.scoring import (
+    DimensionWeights,
+    HardGatePolicy,
+    QualificationPolicy,
+)
 from app.domain.services import OpportunityScoringInput
 from app.domain.values import (
     Confidence,
+    DataCompleteness,
+    DimensionAssessment,
+    DimensionStatus,
     Evidence,
     OpportunityAssessment,
     OpportunityScore,
+    ScoreBreakdown,
+    ScoringDimension,
     ScoringPolicy,
 )
 
-SCORING_VERSION = "mvp-deterministic-v1"
+SCORING_VERSION = "mvp-explainable-scoring-v1"
 
 _TRUSTED_SOURCES = frozenset({"importyeti"})
-_IMPORT_KEYWORDS = ("import", "shipment", "bol", "customs")
-_GROWTH_KEYWORDS = ("grow", "increas", "rising")
+
+# keyword detectors per dimension: (keywords, normalized_value_when_found).
+# normalized values are placeholder calibrations: a matched signal is treated
+# as strong-but-not-perfect evidence; with every dimension evidenced the
+# total lands just above the QUALIFIED threshold — signals, not certainty.
+_DETECTORS: dict[ScoringDimension, tuple[tuple[str, ...], float]] = {
+    ScoringDimension.IMPORT_ACTIVITY: (("import", "shipment", "bol", "customs"), 0.8),
+    ScoringDimension.CHINA_DEPENDENCY: (("china", "cnsha", "cn origin"), 0.7),
+    ScoringDimension.SHIPPING_FIT: (("fcl", "lcl", "ocean", "container", "air freight"), 0.8),
+    ScoringDimension.CARGO_VALUE_POTENTIAL: (("high value", "cargo value"), 0.6),
+    ScoringDimension.COMPANY_SCALE: (("employees", "warehouse", "facility"), 0.6),
+    ScoringDimension.GROWTH_SIGNAL: (("grow", "increas", "expand", "hiring", "funding"), 0.8),
+    ScoringDimension.LOGISTICS_COMPLEXITY: (
+        ("hazmat", "cold chain", "oversized", "multi-origin"),
+        0.7,
+    ),
+}
+_CONTACTABILITY_NORMALIZED = 0.5  # a reachable website is a path to contacts, nothing more
 
 
 @dataclass(frozen=True)
-class DeterministicScoringWeights:
-    """Every weight in one place — nothing hides in the workflow."""
+class DeterministicConfidenceWeights:
+    """Confidence (evidence quality) knobs — separate from completeness."""
 
-    base: float = 20.0
-    website_bonus: float = 15.0
-    verified_bonus: float = 10.0
-    import_signal_bonus: float = 20.0
-    growth_signal_bonus: float = 15.0
-    base_confidence: float = 0.2
-    per_source_confidence: float = 0.1
-    trusted_source_confidence: float = 0.2
-    max_confidence: float = 0.9
+    base: float = 0.2
+    per_source: float = 0.15
+    trusted_source: float = 0.2
+    maximum: float = 0.9
 
 
 class DeterministicOpportunityScoringService:
-    """Same input, same assessment — no I/O, no randomness, no LLM."""
-
     def __init__(
         self,
-        weights: DeterministicScoringWeights | None = None,
-        policy: ScoringPolicy | None = None,
+        weights: DimensionWeights | None = None,
+        qualification_policy: QualificationPolicy | None = None,
+        hard_gate_policy: HardGatePolicy | None = None,
+        priority_policy: ScoringPolicy | None = None,
+        confidence_weights: DeterministicConfidenceWeights | None = None,
     ) -> None:
-        self._weights = weights or DeterministicScoringWeights()
-        self._policy = policy or ScoringPolicy(version=SCORING_VERSION)
+        self._weights = weights or DimensionWeights()
+        self._qualification = qualification_policy or QualificationPolicy()
+        self._hard_gates = hard_gate_policy or HardGatePolicy()
+        self._priority_policy = priority_policy or ScoringPolicy(version=SCORING_VERSION)
+        self._confidence = confidence_weights or DeterministicConfidenceWeights()
 
     @property
     def scoring_version(self) -> str:
         return SCORING_VERSION
 
     async def assess(self, scoring_input: OpportunityScoringInput) -> OpportunityAssessment:
-        w = self._weights
-        score = w.base
-        reasons = [f"baseline for a discovered US importer (+{w.base:g})"]
-
-        if scoring_input.website_host:
-            score += w.website_bonus
-            reasons.append(f"reachable website {scoring_input.website_host} (+{w.website_bonus:g})")
-        if scoring_input.verified:
-            score += w.verified_bonus
-            reasons.append(f"company verified against sources (+{w.verified_bonus:g})")
-
-        lowered = [signal.lower() for signal in scoring_input.signals]
-        if any(any(k in s for k in _IMPORT_KEYWORDS) for s in lowered):
-            score += w.import_signal_bonus
-            reasons.append(f"import-related signal present (+{w.import_signal_bonus:g})")
-        if any(any(k in s for k in _GROWTH_KEYWORDS) for s in lowered):
-            score += w.growth_signal_bonus
-            reasons.append(f"growth-related signal present (+{w.growth_signal_bonus:g})")
-
-        distinct_sources = {ref.source for ref in scoring_input.sources}
-        confidence_value = w.base_confidence + w.per_source_confidence * len(distinct_sources)
-        if distinct_sources & _TRUSTED_SOURCES:
-            confidence_value += w.trusted_source_confidence
-        confidence_value = min(confidence_value, w.max_confidence)
-        if not scoring_input.sources:
-            reasons.append("no source references — confidence floor applied")
-
-        evidence = tuple(
-            Evidence(
-                claim=f"{ref.source} recorded this company at {ref.reference}",
-                sources=(ref,),
-            )
-            for ref in scoring_input.sources
+        # step 1 — score each dimension explainably
+        dimensions = tuple(
+            self._assess_dimension(dimension, scoring_input)
+            for dimension in ScoringDimension
         )
+        breakdown = ScoreBreakdown.from_dimensions(dimensions)
+        score = OpportunityScore(min(breakdown.total_score, 100.0))
+        completeness = DataCompleteness(
+            breakdown.assessed_weight / breakdown.maximum_score if breakdown.maximum_score else 0.0
+        )
+        confidence = self._overall_confidence(scoring_input)
 
-        new_score = OpportunityScore(min(score, 100.0))
-        priority = self._policy.priority_for(new_score)
+        reasons = self._reasons(dimensions, completeness, scoring_input)
+        evidence = tuple(e for d in dimensions for e in d.evidence)
+
+        # step 2 — qualification via the versioned policy (hard gates first)
+        hits = self._hard_gates.evaluate(scoring_input.signals, scoring_input.sources)
+        decision, action = self._qualification.decide(
+            score=score, confidence=confidence, completeness=completeness, hard_gate_hits=hits
+        )
+        if hits:
+            reasons += tuple(f"hard gate {hit.gate.value}: {hit.reason}" for hit in hits)
+            evidence += tuple(hit.evidence for hit in hits)
+
         return OpportunityAssessment(
-            new_score=new_score,
-            confidence=Confidence(confidence_value),
-            reasons=tuple(reasons),
+            new_score=score,
+            confidence=confidence,
+            data_completeness=completeness,
+            reasons=reasons,
             evidence=evidence,
-            priority=priority,
-            recommended_action=self._recommend(priority.value),
+            priority=self._priority_policy.priority_for(score),
+            qualification_decision=decision,
+            recommended_action=action.value,
+            score_breakdown=breakdown,
             assessed_by=type(self).__name__,
             scoring_version=SCORING_VERSION,
+            policy_version=self._qualification.version,
             user_lens_version=scoring_input.user_lens_version,
             assessed_at=scoring_input.assessed_at,
         )
 
+    # -- dimension evaluation -------------------------------------------
+
+    def _assess_dimension(
+        self, dimension: ScoringDimension, scoring_input: OpportunityScoringInput
+    ) -> DimensionAssessment:
+        weight = self._weights.of(dimension)
+        if not scoring_input.sources:
+            return DimensionAssessment(
+                dimension=dimension,
+                weight=weight,
+                status=DimensionStatus.INSUFFICIENT_EVIDENCE,
+                earned_score=0.0,
+                reasons=("no source references — cannot evidence this dimension",),
+            )
+
+        if dimension is ScoringDimension.CONTACTABILITY:
+            return self._assess_contactability(weight, scoring_input)
+
+        keywords, normalized = _DETECTORS[dimension]
+        match = self._first_match(scoring_input.signals, keywords)
+        if match is None:
+            return DimensionAssessment(
+                dimension=dimension,
+                weight=weight,
+                status=DimensionStatus.UNKNOWN,
+                earned_score=0.0,
+                reasons=(f"no {dimension.value} signal observed — unknown, not negative",),
+            )
+        return DimensionAssessment(
+            dimension=dimension,
+            weight=weight,
+            status=DimensionStatus.ASSESSED,
+            normalized_value=normalized,
+            earned_score=weight * normalized,
+            raw_value=match,
+            confidence=self._dimension_confidence(scoring_input),
+            reasons=(f"signal observed: {match!r} (+{weight * normalized:g})",),
+            evidence=(Evidence(claim=match, sources=scoring_input.sources),),
+        )
+
+    def _assess_contactability(
+        self, weight: float, scoring_input: OpportunityScoringInput
+    ) -> DimensionAssessment:
+        if not scoring_input.website_host:
+            return DimensionAssessment(
+                dimension=ScoringDimension.CONTACTABILITY,
+                weight=weight,
+                status=DimensionStatus.UNKNOWN,
+                earned_score=0.0,
+                reasons=("no website known — contact path unknown, not negative",),
+            )
+        normalized = _CONTACTABILITY_NORMALIZED
+        return DimensionAssessment(
+            dimension=ScoringDimension.CONTACTABILITY,
+            weight=weight,
+            status=DimensionStatus.ASSESSED,
+            normalized_value=normalized,
+            earned_score=weight * normalized,
+            raw_value=scoring_input.website_host,
+            confidence=self._dimension_confidence(scoring_input),
+            reasons=(
+                f"reachable website {scoring_input.website_host} — a contact path exists "
+                f"(+{weight * normalized:g})",
+            ),
+            evidence=(
+                Evidence(
+                    claim=f"website {scoring_input.website_host} recorded by sources",
+                    sources=scoring_input.sources,
+                ),
+            ),
+        )
+
+    # -- helpers ----------------------------------------------------------
+
     @staticmethod
-    def _recommend(priority: str) -> str:
-        return {
-            "high": "start outreach: select a contact and draft an email",
-            "medium": "enrich further before outreach (evidence is thin)",
-            "low": "deprioritize: monitor for new shipment signals",
-        }[priority]
+    def _first_match(signals: tuple[str, ...], keywords: tuple[str, ...]) -> str | None:
+        for signal in signals:
+            lowered = signal.lower()
+            if any(keyword in lowered for keyword in keywords):
+                return signal
+        return None
+
+    def _dimension_confidence(self, scoring_input: OpportunityScoringInput) -> float:
+        trusted = {ref.source for ref in scoring_input.sources} & _TRUSTED_SOURCES
+        return 0.8 if trusted else 0.5
+
+    def _overall_confidence(self, scoring_input: OpportunityScoringInput) -> Confidence:
+        w = self._confidence
+        distinct = {ref.source for ref in scoring_input.sources}
+        value = w.base + w.per_source * len(distinct)
+        if distinct & _TRUSTED_SOURCES:
+            value += w.trusted_source
+        return Confidence(min(value, w.maximum))
+
+    @staticmethod
+    def _reasons(
+        dimensions: tuple[DimensionAssessment, ...],
+        completeness: DataCompleteness,
+        scoring_input: OpportunityScoringInput,
+    ) -> tuple[str, ...]:
+        reasons = [reason for d in dimensions for reason in d.reasons]
+        reasons.append(
+            f"data completeness {completeness.value:.0%} — unknown dimensions lower "
+            "coverage, never the score"
+        )
+        if not scoring_input.sources:
+            reasons.append("no source references — confidence floor applied")
+        return tuple(reasons)

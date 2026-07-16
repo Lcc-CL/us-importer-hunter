@@ -16,6 +16,7 @@ Leaving the block without commit rolls the transaction back.
 
 from types import TracebackType
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database.repositories import (
@@ -24,6 +25,7 @@ from app.database.repositories import (
     SqlAlchemyOutreachRepository,
     SqlAlchemyTaskRepository,
 )
+from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
     CompanyRepository,
     OpportunityRepository,
@@ -68,7 +70,14 @@ class SqlAlchemyUnitOfWork:
 
     async def commit(self) -> None:
         assert self._session is not None, "commit outside the unit-of-work context"
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError as exc:
+            # unique-constraint races (e.g. duplicate assessment fingerprint,
+            # concurrent active task keys) surface as a domain-level duplicate
+            # so callers above the persistence boundary never import SQLAlchemy
+            await self._session.rollback()
+            raise DuplicateOperation(f"database rejected a duplicate: {exc.orig}") from exc
         self._committed = True
 
     async def rollback(self) -> None:

@@ -46,7 +46,7 @@ class TestEndToEnd:
         assert stored is not None
         assert len(stored.history) == 1
         latest = stored.history[0]
-        assert latest.scoring_version == "mvp-deterministic-v1"
+        assert latest.scoring_version == "mvp-explainable-scoring-v1"
         assert latest.priority is not None  # new columns round-trip
         assert latest.assessed_by == "DeterministicOpportunityScoringService"
         assert stored.drain_events() == ()  # reload never revives old events
@@ -92,7 +92,7 @@ class TestEndToEnd:
         assert stored is not None
         assert len(stored.history) == 2
         first, second = stored.history
-        assert first.scoring_version == "mvp-deterministic-v1"  # untouched
+        assert first.scoring_version == "mvp-explainable-scoring-v1"  # untouched
         assert second.new_score.value > first.new_score.value  # signals added points
 
     async def test_scorer_crash_rolls_back_everything(self, uow_factory: UowFactory) -> None:
@@ -116,6 +116,50 @@ class TestEndToEnd:
 
         async with uow_factory() as uow:
             assert await uow.opportunities.get_for_company_and_user(company.id, USER_ID) is None
+
+
+class TestFingerprintPersistence:
+    async def test_new_fields_and_breakdown_round_trip(
+        self, workflow: OpportunityApplicationWorkflow, uow_factory: UowFactory
+    ) -> None:
+        company = await persist_company(uow_factory)
+        outcome = await workflow.handle(ingested(company.id), user_id=USER_ID)
+
+        async with uow_factory() as uow:
+            assert outcome.opportunity_id is not None
+            stored = await uow.opportunities.get_by_id(outcome.opportunity_id)
+        assert stored is not None
+        latest = stored.history[-1]
+        assert latest.assessment_fingerprint and len(latest.assessment_fingerprint) == 64
+        assert latest.policy_version == "mvp-qualification-policy-v1"
+        assert latest.qualification_decision is not None
+        assert latest.data_completeness is not None
+        assert latest.score_breakdown is not None
+        assert len(latest.score_breakdown.dimensions) == 8
+        # JSONB round-trip is lossless: value-object equality end to end
+        assert latest.score_breakdown.total_score == latest.new_score.value
+
+    async def test_db_unique_fingerprint_surfaces_as_duplicate_operation(
+        self, uow_factory: UowFactory
+    ) -> None:
+        """Bypass the app-level check by appending the same assessment
+        twice on the aggregate — the database constraint is the backstop
+        and the UoW translates it into a domain-level duplicate."""
+        from app.domain.exceptions import DuplicateOperation
+        from app.domain.opportunity import Opportunity
+        from tests.domain.conftest import make_assessment
+
+        company = await persist_company(uow_factory)
+        opportunity = Opportunity.create_for_company(company_id=company.id, user_id=uuid4())
+        same = make_assessment(55.0)
+        opportunity.apply_assessment(same)
+        opportunity.apply_assessment(same)  # identical fingerprint twice
+        opportunity.drain_events()
+
+        async with uow_factory() as uow:
+            await uow.opportunities.add(opportunity)
+            with pytest.raises(DuplicateOperation):
+                await uow.commit()
 
 
 class TestChainedFromIngestion:

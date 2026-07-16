@@ -26,3 +26,4 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0018](ADR/0018-discovery-produces-events.md) | Discovery produces claims and events, never companies | 2026-07-16 |
 | [0019](ADR/0019-claim-to-company-ingestion.md) | Claim → Company ingestion at the application layer | 2026-07-16 |
 | [0020](ADR/0020-company-to-opportunity-scoring-boundary.md) | Company → Opportunity scoring boundary | 2026-07-16 |
+| [0021](ADR/0021-explainable-opportunity-scoring-policy.md) | Explainable opportunity scoring policy v1 | 2026-07-16 |

@@ -12,6 +12,7 @@ import pytest
 
 from app.domain.company import Company
 from app.domain.events import CompanyFactsChanged, CompanyIngested
+from app.domain.exceptions import DuplicateOperation
 from app.domain.opportunity import Opportunity
 from app.domain.repositories import (
     CompanyRepository,
@@ -23,9 +24,15 @@ from app.domain.services import OpportunityScoringInput
 from app.domain.values import (
     CompanyName,
     Confidence,
+    DataCompleteness,
+    DimensionAssessment,
+    DimensionStatus,
     OpportunityAssessment,
     OpportunityScore,
     Priority,
+    QualificationDecision,
+    ScoreBreakdown,
+    ScoringDimension,
     SourceReference,
     WebsiteUrl,
 )
@@ -100,6 +107,7 @@ class FakeUnitOfWork:
         self.companies = companies
         self.opportunities = opportunities
         self.committed = 0
+        self.commit_error: Exception | None = None  # raised once, then cleared
 
     async def __aenter__(self) -> "FakeUnitOfWork":
         return self
@@ -113,6 +121,9 @@ class FakeUnitOfWork:
         return None
 
     async def commit(self) -> None:
+        if self.commit_error is not None:
+            error, self.commit_error = self.commit_error, None
+            raise error
         self.committed += 1
 
     async def rollback(self) -> None:
@@ -120,14 +131,29 @@ class FakeUnitOfWork:
 
 
 def make_fake_assessment(score: float = 75.0) -> OpportunityAssessment:
+    breakdown = ScoreBreakdown.from_dimensions(
+        (
+            DimensionAssessment(
+                dimension=ScoringDimension.IMPORT_ACTIVITY,
+                weight=100.0,
+                status=DimensionStatus.UNKNOWN,
+                earned_score=0.0,
+                reasons=("fake breakdown",),
+            ),
+        )
+    )
     return OpportunityAssessment(
         new_score=OpportunityScore(score),
         confidence=Confidence(0.8),
+        data_completeness=DataCompleteness(0.6),
+        qualification_decision=QualificationDecision.REVIEW,
+        score_breakdown=breakdown,
         reasons=(f"fake rule fired at {score:g}",),
         priority=Priority.HIGH,
-        recommended_action="start outreach",
+        recommended_action="human_review",
         assessed_by="FakeScoringService",
         scoring_version="fake-v1",
+        policy_version="fake-policy-v1",
     )
 
 
@@ -214,6 +240,11 @@ class TestCreation:
         assert outcome.opportunity_id is not None
         assert outcome.score == 75.0
         assert outcome.confidence == 0.8
+        assert outcome.qualification_decision == "review"
+        assert outcome.data_completeness == 0.6
+        assert outcome.recommended_action == "human_review"
+        assert outcome.scoring_version == "fake-v1"
+        assert outcome.policy_version == "fake-policy-v1"
         assert outcome.emitted_events_count == 2  # OpportunityCreated + AssessmentApplied
         assert uow.committed == 1
         stored = opportunities.items[outcome.opportunity_id]
@@ -344,6 +375,69 @@ class TestNonConditions:
         with pytest.raises(RuntimeError, match="scorer exploded"):
             await workflow.handle(ingested(company.id), user_id=USER_ID)
         assert uow.committed == 0  # UoW exits uncommitted → rollback semantics
+
+
+class TestCommitEventOrdering:
+    """L9 follow-up: peek before commit, drain only after success."""
+
+    async def test_commit_failure_keeps_pending_events(
+        self,
+        workflow: OpportunityApplicationWorkflow,
+        companies: FakeCompanyRepository,
+        opportunities: FakeOpportunityRepository,
+        uow: FakeUnitOfWork,
+    ) -> None:
+        company = make_company()
+        await companies.add(company)
+        uow.commit_error = RuntimeError("connection lost mid-commit")
+
+        with pytest.raises(RuntimeError, match="connection lost"):
+            await workflow.handle(ingested(company.id), user_id=USER_ID)
+
+        stored = next(iter(opportunities.items.values()))
+        assert len(stored.pending_events) == 2  # events survived the failed commit
+        assert uow.committed == 0
+
+    async def test_retry_after_failure_publishes_exactly_once(
+        self,
+        workflow: OpportunityApplicationWorkflow,
+        companies: FakeCompanyRepository,
+        opportunities: FakeOpportunityRepository,
+        uow: FakeUnitOfWork,
+    ) -> None:
+        company = make_company()
+        await companies.add(company)
+        uow.commit_error = RuntimeError("transient")
+        with pytest.raises(RuntimeError):
+            await workflow.handle(ingested(company.id), user_id=USER_ID)
+
+        # retry: fake repo still holds the same aggregate → REASSESSED path
+        # is skipped by fingerprint, so replay the event fresh
+        opportunities.items.clear()
+        outcome = await workflow.handle(ingested(company.id), user_id=USER_ID)
+        assert outcome.emitted_events_count == 2  # published exactly once
+        stored = opportunities.items[outcome.opportunity_id]  # type: ignore[index]
+        assert stored.pending_events == ()  # drained after successful commit
+
+    async def test_db_duplicate_on_commit_becomes_skipped(
+        self,
+        workflow: OpportunityApplicationWorkflow,
+        companies: FakeCompanyRepository,
+        opportunities: FakeOpportunityRepository,
+        uow: FakeUnitOfWork,
+    ) -> None:
+        """Unique (opportunity_id, fingerprint) race → SKIPPED, not a crash."""
+        company = make_company()
+        await companies.add(company)
+        uow.commit_error = DuplicateOperation("uq_assessments_fingerprint")
+
+        outcome = await workflow.handle(ingested(company.id), user_id=USER_ID)
+
+        assert outcome.action is OpportunityProcessingAction.SKIPPED
+        assert "concurrent duplicate" in outcome.notes[0]
+        assert outcome.emitted_events_count == 0
+        stored = next(iter(opportunities.items.values()))
+        assert len(stored.pending_events) == 2  # never drained → never published
 
 
 class TestEventHygiene:

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -67,6 +68,18 @@ class OpportunityAssessmentModel(Base):
         CheckConstraint(
             "confidence >= 0 AND confidence <= 1", name="ck_assessments_confidence_range"
         ),
+        CheckConstraint(
+            "data_completeness IS NULL OR (data_completeness >= 0 AND data_completeness <= 1)",
+            name="ck_assessments_completeness_range",
+        ),
+        CheckConstraint(
+            "qualification_decision IS NULL OR qualification_decision IN "
+            "('qualified', 'review', 'research_more', 'disqualified')",
+            name="ck_assessments_qualification_controlled",
+        ),
+        UniqueConstraint(
+            "opportunity_id", "assessment_fingerprint", name="uq_assessments_fingerprint"
+        ),
     )
 
     opportunity_id: Mapped[UUID] = mapped_column(
@@ -80,7 +93,14 @@ class OpportunityAssessmentModel(Base):
     priority: Mapped[str | None] = mapped_column(String(10))
     recommended_action: Mapped[str | None] = mapped_column(Text)
     assessed_by: Mapped[str | None] = mapped_column(String(100))
+    data_completeness: Mapped[float | None] = mapped_column()
+    qualification_decision: Mapped[str | None] = mapped_column(String(20))
+    # immutable audit snapshot of the dimension decomposition; core
+    # searchable fields stay as real columns — JSONB is display/audit only
+    score_breakdown: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    assessment_fingerprint: Mapped[str] = mapped_column(String(64))
     scoring_version: Mapped[str] = mapped_column(String(50))
+    policy_version: Mapped[str] = mapped_column(String(50), server_default="unversioned")
     user_lens_version: Mapped[str | None] = mapped_column(String(50))
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

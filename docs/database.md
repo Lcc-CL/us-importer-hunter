@@ -125,9 +125,18 @@ will hook into the UoW after commit in a later lesson.
 | Constraint | Mirrors domain rule |
 |---|---|
 | CHECK score 0–100, confidence 0–1 (opportunities + assessments) | value object ranges |
+| CHECK data_completeness 0–1, qualification_decision controlled values | L9 scoring value objects |
+| UNIQUE (opportunity_id, assessment_fingerprint) | no duplicate judgment ever inserted (replay/concurrency backstop) |
+| NOT NULL assessment_fingerprint, policy_version | every judgment is identified and versioned |
 | Partial UNIQUE `tasks.idempotency_key WHERE status IN ('created','running')` | one active task per key |
 | UNIQUE `companies.normalized_name` | one canonical company per identity |
 | FK CASCADE inside aggregates, RESTRICT across | aggregate ownership vs id-only references |
+
+`opportunity_assessments.score_breakdown` is JSONB by design: it is an
+**immutable audit snapshot** of the dimensional decomposition, never a
+high-frequency relational query entry point — the searchable core
+fields (score, confidence, completeness, decision, versions,
+fingerprint) remain real columns.
 
 ## Commands
 

@@ -8,10 +8,10 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 
 from app.database.models.contact import ContactModel
 from app.domain.company import Company
+from app.domain.exceptions import DuplicateOperation
 from app.domain.opportunity import Opportunity, OpportunityStage
 from app.domain.outreach import OutcomeKind, Outreach, OutreachStatus
 from app.domain.task import Task, TaskStatus
@@ -85,7 +85,7 @@ class TestCompanyRepository:
         duplicate = Company.create(CompanyName("PACIFIC HOME GOODS INC."))
         async with uow_factory() as uow:
             await uow.companies.add(duplicate)
-            with pytest.raises(IntegrityError):
+            with pytest.raises(DuplicateOperation):
                 await uow.commit()
 
     async def test_rollback_discards_changes(self, uow_factory: UowFactory) -> None:
@@ -264,7 +264,7 @@ class TestTaskRepository:
             await uow.commit()
         async with uow_factory() as uow:
             await uow.tasks.add(Task.create("second", key))
-            with pytest.raises(IntegrityError):
+            with pytest.raises(DuplicateOperation):
                 await uow.commit()
 
     async def test_finished_task_frees_the_key(self, uow_factory: UowFactory) -> None:
