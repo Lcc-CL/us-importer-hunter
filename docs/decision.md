@@ -22,3 +22,4 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0014](ADR/0014-lazy-infra-clients.md) | Lazy infra clients, observable readiness | 2026-07-15 |
 | [0015](ADR/0015-domain-boundaries-and-events.md) | Domain boundaries, aggregates and domain events | 2026-07-15 |
 | [0016](ADR/0016-domain-model-and-invariants.md) | Domain model: value objects, aggregates, invariants | 2026-07-15 |
+| [0017](ADR/0017-domain-persistence-separation.md) | Domain–persistence separation: mappers, repositories, UoW | 2026-07-16 |

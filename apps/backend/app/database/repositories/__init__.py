@@ -1,7 +1,20 @@
-"""Repositories: the only place raw queries live.
+"""SQLAlchemy repository implementations of the domain protocols
+(app/domain/repositories.py).
 
-Rules:
-- Repositories receive an AsyncSession via constructor injection.
-- They return ORM models or typed schemas — never raw rows.
-- Services and tools depend on repositories, not on sessions directly.
+Rules (ADR-0017):
+- Accept and return domain aggregates — ORM models never cross this boundary.
+- Aggregate-oriented operations only; no generic CRUD base.
+- One AsyncSession per Unit of Work, injected via constructor.
 """
+
+from app.database.repositories.company import SqlAlchemyCompanyRepository
+from app.database.repositories.opportunity import SqlAlchemyOpportunityRepository
+from app.database.repositories.outreach import SqlAlchemyOutreachRepository
+from app.database.repositories.task import SqlAlchemyTaskRepository
+
+__all__ = [
+    "SqlAlchemyCompanyRepository",
+    "SqlAlchemyOpportunityRepository",
+    "SqlAlchemyOutreachRepository",
+    "SqlAlchemyTaskRepository",
+]

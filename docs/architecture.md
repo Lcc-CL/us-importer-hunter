@@ -71,7 +71,7 @@ each other by id only.
 | `memory/`      | Standalone memory layer: short_term, long_term, conversation, user |
 | `tasks/`       | Queue-executed entry points (Celery, later) — thin wrappers that invoke workflows, never orchestration |
 | `prompts/`     | Prompt templates + `versions/` archive |
-| `database/`    | ORM models, repositories, seed data, session factories, Alembic migrations |
+| `database/`    | ORM models, explicit mappers, repositories (domain in/out), Unit of Work, seed data, Alembic migrations |
 | `shared/`      | Cross-cutting primitives: constants, enums, exceptions, types — no logic, no I/O |
 
 ## Related docs

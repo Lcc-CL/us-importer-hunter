@@ -31,6 +31,23 @@
   domain.
 - Datetimes are always UTC-aware (`app.domain.clock`).
 
+### Persistence layer (`app/database/`) — additional rules (ADR-0017)
+
+- ORM models are persistence-only: they never cross the repository
+  boundary and domain classes never inherit from them.
+- All mapping lives in `app/database/mappers/` — never in aggregates or
+  API schemas. Reconstructed aggregates start with an empty event buffer.
+- Repositories implement the protocols in `app/domain/repositories.py`:
+  domain aggregates in and out, aggregate-oriented methods only, no
+  generic CRUD base.
+- One use case = one Unit of Work = one transaction; repositories never
+  commit.
+- Append-only history tables (`*_assessments`, `*_evidence`, `outcomes`,
+  `task_attempts`): rows are inserted, never updated.
+- Critical domain invariants are duplicated as DB constraints (CHECK,
+  partial unique, explicit FK ondelete) — defense in depth, never a
+  replacement for domain enforcement.
+
 ## Frontend (Next.js, TypeScript)
 
 - Feature-first structure under `src/features/` (see its README).
