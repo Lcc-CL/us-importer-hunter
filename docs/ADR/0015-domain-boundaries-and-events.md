@@ -62,10 +62,11 @@ producers. Fifteen initial events are defined in business-domain.md.
 The MVP runs single-process; an in-process EventBus (ADR-0004) is
 sufficient and adds zero infrastructure. Kafka/RabbitMQ/Celery-as-bus now
 would be premature optimization (Sprint constraint #8: no unnecessary
-packages). Event *definitions* are typed Pydantic schemas independent of
-transport, so swapping the bus for Redis pub/sub or a broker later
-changes plumbing, not meaning — producers and subscribers keep their
-signatures.
+packages). Event *definitions* are typed schemas independent of
+transport — implemented as immutable dataclasses in the domain layer
+(ADR-0016); transport-level wrappers may be added when a real bus lands.
+Swapping the bus for Redis pub/sub or a broker later changes plumbing,
+not meaning — producers and subscribers keep their signatures.
 
 ## Consequences
 

@@ -61,7 +61,7 @@ each other by id only.
 | `observability/` | Metrics, logging, tracing — agent/prompt failure diagnosis lives here |
 | `api/`         | FastAPI routes, DI providers, middleware |
 | `schemas/`     | Pydantic models: API contracts, agent outputs, tool I/O |
-| `domain/`      | Pure business entities & rules (company, contact, email, crm) |
+| `domain/`      | Pure business objects: value objects, 4 aggregates (company, opportunity, outreach, task), events, service protocols — zero infra imports, enforced by test |
 | `agents/`      | LLM reasoning units (planner, research, sales, report) |
 | `tools/`       | Agent capabilities (google, website, linkedin, importyeti, browser) |
 | `providers/`   | LLM vendor adapters (openai; anthropic/deepseek/gemini later) |

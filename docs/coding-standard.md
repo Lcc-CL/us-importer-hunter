@@ -17,6 +17,20 @@
   state.
 - Lint/format: `ruff check` + `ruff format` (line length 100).
 
+### Domain layer (`app/domain/`) — additional rules (ADR-0016)
+
+- **No infrastructure imports** — no FastAPI/SQLAlchemy/Redis/Celery/LLM
+  SDKs/HTTP clients/Pydantic; enforced by `tests/domain/test_purity.py`.
+- Value objects: frozen dataclasses, validated in `__post_init__`,
+  value-based equality. No bare primitives across aggregate boundaries.
+- Aggregates: private state, public read-only properties, state changes
+  only through behavior methods that enforce invariants and raise typed
+  `DomainError` subclasses. Entity identity = UUID.
+- Domain events: immutable, past-tense facts; aggregates buffer them,
+  `drain_events()` hands them to the application layer. No bus in the
+  domain.
+- Datetimes are always UTC-aware (`app.domain.clock`).
+
 ## Frontend (Next.js, TypeScript)
 
 - Feature-first structure under `src/features/` (see its README).

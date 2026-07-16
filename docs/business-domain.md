@@ -357,6 +357,40 @@ not meaning (ADR-0015).
 
 ---
 
+# Entities, value objects, invariants and domain services
+
+Four tactical terms, each defined by what it means in this product
+(implemented in `app/domain/` — Sprint 2 L4, ADR-0016):
+
+- **Entity** — something with identity that lives through change. "Pacific
+  Home Goods" stays the same company while its name, aliases and profile
+  evolve. Entities carry a UUID; equality is identity. Our aggregate roots
+  (Company, Opportunity, Outreach, Task) are entities guarding the smaller
+  ones (EmailDraft).
+- **Value Object** — a value with no identity: two equal ones are
+  interchangeable. `OpportunityScore(82)` *is* any other
+  `OpportunityScore(82)`. Immutable, validated at construction — an
+  invalid score cannot exist, so no code downstream ever checks ranges
+  again. Implemented: `CompanyName`, `WebsiteUrl`, `EmailAddress`,
+  `OpportunityScore`, `Confidence`, `Priority`, `SourceReference`,
+  `Evidence`, `OpportunityAssessment`, `IdempotencyKey`.
+- **Invariant** — a business rule that must *always* hold, enforced by the
+  aggregate root at the moment of change, never by the caller's
+  discipline: a score only moves with a history entry; nothing sends
+  without approval; a verified company has provenance; a completed task
+  never restarts. Violations raise typed domain exceptions
+  (`DomainError` hierarchy) and fail fast.
+- **Domain Service** — a business capability that doesn't belong to one
+  aggregate: scoring (needs company + user lens), contact selection
+  (ranks a company's contacts), deduplication (compares across
+  companies). Defined as Protocols in `app/domain/services.py`;
+  implementations live in `app/services` and are injected — the domain
+  states *what*, infrastructure decides *how*.
+
+State changes emit **domain events** collected inside the aggregate and
+drained by the application layer (`drain_events()`) — no bus in the
+domain, publishing is someone else's job.
+
 # Entity reference
 
 The per-entity detail (purpose, lifecycle, behaviors, relationships,
