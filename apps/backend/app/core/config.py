@@ -11,8 +11,21 @@ from typing import Literal
 from pydantic import PostgresDsn, RedisDsn, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# apps/backend/app/core/config.py -> repo root is four levels up
-REPO_ROOT = Path(__file__).resolve().parents[4]
+
+def _find_repo_root() -> Path:
+    """Walk upward to the monorepo root; fall back to the working directory.
+
+    Inside containers the backend is copied without its monorepo parents,
+    so no marker is found — configuration then comes from real environment
+    variables (and a ./.env if present).
+    """
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "docker-compose.yml").exists() or (parent / ".git").exists():
+            return parent
+    return Path.cwd()
+
+
+REPO_ROOT = _find_repo_root()
 
 
 class Settings(BaseSettings):
