@@ -38,7 +38,7 @@ services:
       target: dev
     env_file: .env
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     volumes:
       - ./apps/frontend/src:/app/src          # hot reload
       - ./apps/frontend/public:/app/public

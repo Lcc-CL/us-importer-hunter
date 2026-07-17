@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# US Importer Hunter frontend
 
-## Getting Started
+The frontend is one lean Next.js 16 page for the MVP prospect workflow. It can
+submit company evidence, display qualification and decision-maker results,
+review a generated draft, approve it, and reload the persisted result.
 
-First, run the development server:
+## Local development
 
 ```bash
+cp .env.example .env.local
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>. The backend defaults to
+`http://localhost:8000` through `NEXT_PUBLIC_API_BASE_URL`; the value is
+centralized in `src/lib/api.ts`. Never put an OpenAI key in frontend variables.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Start the backend and PostgreSQL first when running outside Compose. The backend
+can use `EMAIL_GENERATOR_PROVIDER=fake`, which requires no OpenAI key or network
+call.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Quality checks
 
-## Learn More
+```bash
+./node_modules/.bin/tsc --noEmit
+npm run lint
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+There is currently no frontend unit/E2E test runner. This MVP uses strict
+TypeScript, ESLint, the production build, and a manual Docker browser flow
+(Analyze → Refresh → Approve → Refresh) instead of introducing a large test
+dependency.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Page behavior
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `company.sources` supports one or more real source references; two independent
+  sources are recommended but never invented.
+- `PARTIAL`, `REJECTED`, `RESEARCH_MORE`, and warnings remain typed business
+  results rather than generic system errors.
+- Successful analysis writes `company_id` to the URL. Reloading that URL reads
+  the saved result through `GET /api/v1/mvp/prospects/{company_id}`.
+- Approval persists human-review metadata only. No email delivery exists in the
+  frontend.

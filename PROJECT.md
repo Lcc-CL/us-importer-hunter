@@ -73,8 +73,8 @@ Details: [docs/workflow.md](docs/workflow.md) · [docs/agents.md](docs/agents.md
 | Sprint | Theme | Status |
 |---|---|---|
 | 1 | Foundation: scaffold, layers, docs, specs, Docker stack verified | ✅ Done (2026-07-15) |
-| 2 | Data & first vertical slice: models, first tool, search → list | Planned |
-| 3 | AI pipeline: providers, agents, prompts, hunt workflow | Planned |
+| 2 | Core domain chain: ingestion, scoring, contact selection, draft generation | ✅ Done (2026-07-16) |
+| 3 | Minimal API facade and browser-facing MVP workflow | In progress |
 | Later | Celery, Qdrant/RAG, more providers, auth | Backlog |
 
 ## Current Progress
@@ -107,6 +107,14 @@ and retry.
 **Top open questions** (block Sprint 2 design): ImportYeti access method ·
 LinkedIn compliance approach · scoring dimensions · contact email sourcing.
 Full list: [docs/prd.md](docs/prd.md#open-product-questions).
+
+**Sprint 3 browser slice implemented (2026-07-16).** The backend exposes the
+three-endpoint MVP facade (analyze, reload, approve), with Fake email generation
+as the local default and durable approval metadata. The Next.js root page now
+provides one focused prospect form and result workspace: multiple real sources,
+optional signals/contact, qualification metrics, decision-maker selection,
+review-only draft approval, and URL-based persisted reload. This is intentionally
+not a Dashboard, CRM, authentication system, or sending client.
 
 ## Future Roadmap
 

@@ -70,3 +70,17 @@ configuration, not a production security system.
 `EMAIL_GENERATOR_PROVIDER=fake|openai` selects the generator and defaults to
 `fake`. OpenAI configuration is validated lazily only if an OpenAI generation is
 actually requested. Swagger at `/docs` contains request and response examples.
+
+## Browser client
+
+The single Next.js page at `http://localhost:3000` calls these three MVP routes
+through the typed client in `apps/frontend/src/lib/api.ts`. Its backend origin is
+configured by `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000`); route
+components do not construct API URLs. The page preserves typed business results
+such as `PARTIAL`, `REJECTED`, and `RESEARCH_MORE`, while HTTP/network failures
+show the safe `{code, message, request_id}` envelope.
+
+After analysis, the page stores `company_id` in the URL query. **Refresh result**
+and a browser reload both use the read endpoint, including durable
+`approval_status`, `approved_at`, and `approved_by_name`. Approval remains human
+review only and never calls an email-delivery service.
