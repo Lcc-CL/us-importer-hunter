@@ -74,8 +74,8 @@ Details: [docs/workflow.md](docs/workflow.md) · [docs/agents.md](docs/agents.md
 |---|---|---|
 | 1 | Foundation: scaffold, layers, docs, specs, Docker stack verified | ✅ Done (2026-07-15) |
 | 2 | Core domain chain: ingestion, scoring, contact selection, draft generation | ✅ Done (2026-07-16) |
-| 3 | Minimal API facade and browser-facing MVP workflow | In progress |
-| Later | Celery, Qdrant/RAG, more providers, auth | Backlog |
+| 3 | Minimal API facade, browser workflow, and v0.1 acceptance | ⚠ OpenAI smoke pending |
+| Next | Small real-user trial and validated workflow improvements | After v0.1 acceptance |
 
 ## Current Progress
 
@@ -116,15 +116,25 @@ optional signals/contact, qualification metrics, decision-maker selection,
 review-only draft approval, and URL-based persisted reload. This is intentionally
 not a Dashboard, CRM, authentication system, or sending client.
 
+**MVP v0.1 release acceptance in progress (2026-07-16).** The complete Fake
+Provider path has passed in Docker through the browser, including qualification,
+draft generation, approval, persisted refresh/reload, and exact-replay
+idempotency. Backend and frontend quality gates are green, and the local secret
+boundary has been tightened so the frontend container does not inherit the root
+`.env`. Final acceptance is waiting only for one real OpenAI generation with a
+valid local credential; no real call was made with the placeholder value. See
+[docs/mvp-acceptance.md](docs/mvp-acceptance.md).
+
 ## Future Roadmap
 
-- **Sprint 2** — resolve data-source decisions; `Company`/`Contact` models
-  + first migration; first tool implementation; vertical slice: search →
-  store → companies list in frontend.
-- **Sprint 3** — provider interface + OpenAI adapter; research agent +
-  scoring; sales agent + prompt v1; hunt workflow end-to-end.
-- **Beyond** — Celery batch runs; Qdrant + RAG over the knowledge base;
-  provider expansion (Anthropic/DeepSeek/Gemini); auth & multi-tenancy;
-  deployment hardening (nginx, flower, CI/CD).
+- **Complete v0.1 acceptance** — run one real OpenAI draft smoke test using the
+  existing adapter, then record the quality decision without retaining the key
+  or full sensitive content.
+- **Next: real-user trial** — put the evidence → qualification → draft → human
+  review loop in front of a small number of freight-forwarder users, collect
+  observed blockers, and prioritize only validated workflow improvements.
+- **Later backlog** — revisit broader platform capabilities only after the user
+  trial establishes a concrete need; architecture expansion is not the next
+  milestone.
 
 Details: [docs/roadmap.md](docs/roadmap.md)

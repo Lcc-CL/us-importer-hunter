@@ -81,7 +81,7 @@ class SqlAlchemyUnitOfWork:
             # concurrent active task keys) surface as a domain-level duplicate
             # so callers above the persistence boundary never import SQLAlchemy
             await self._session.rollback()
-            raise DuplicateOperation(f"database rejected a duplicate: {exc.orig}") from exc
+            raise DuplicateOperation("database rejected a duplicate record") from exc
         self._committed = True
 
     async def rollback(self) -> None:

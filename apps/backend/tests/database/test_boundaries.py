@@ -5,6 +5,7 @@ import typing
 
 import pytest
 
+from app.core.config import Settings
 from app.database.base import Base
 from app.database.repositories import (
     SqlAlchemyCompanyRepository,
@@ -12,6 +13,7 @@ from app.database.repositories import (
     SqlAlchemyOutreachRepository,
     SqlAlchemyTaskRepository,
 )
+from app.database.session import create_engine
 
 
 def _flatten(hint: object) -> list[object]:
@@ -39,3 +41,12 @@ def test_repository_signatures_never_mention_orm_models(repo_cls: type) -> None:
                 assert not (isinstance(candidate, type) and issubclass(candidate, Base)), (
                     f"{repo_cls.__name__}.{name} leaks ORM model {candidate!r}"
                 )
+
+
+async def test_database_engine_does_not_echo_bound_values() -> None:
+    settings = Settings(_env_file=None, debug=True)
+    engine = create_engine(settings.database_url)
+    try:
+        assert engine.echo is False
+    finally:
+        await engine.dispose()

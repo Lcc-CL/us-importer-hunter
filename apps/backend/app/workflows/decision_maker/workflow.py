@@ -86,8 +86,10 @@ class DecisionMakerSelectionWorkflow:
                     )
             try:
                 await uow.commit()
-            except DuplicateOperation as exc:
-                notes.append(f"concurrent duplicate assessment rejected: {exc}")
+            except DuplicateOperation:
+                notes.append(
+                    "concurrent duplicate assessment rejected — reused current ranking"
+                )
 
             best = ranked[0]
             if (

@@ -20,7 +20,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create and dispose shared infrastructure clients."""
     settings: Settings = app.state.settings
 
-    engine = create_engine(settings.database_url, echo=settings.debug)
+    # SQL echo includes bound values such as generated draft bodies. Keep it
+    # disabled even in debug mode so review-only content is not retained in logs.
+    engine = create_engine(settings.database_url)
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.state.redis = create_redis_client(settings.redis_url)

@@ -15,6 +15,7 @@ from app.domain.contact import (
     JobTitle,
     PersonName,
 )
+from app.domain.exceptions import DuplicateOperation
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import EmailDraftStatus, Outreach
 from app.domain.repositories import (
@@ -404,3 +405,20 @@ class TestFailureSemantics:
             )
         outreach = next(iter(uow.outreaches.items.values()))  # type: ignore[attr-defined]
         assert len(outreach.pending_events) >= 1  # EmailDraftGenerated survived
+
+    async def test_commit_duplicate_does_not_expose_database_details(
+        self, workflow: EmailDraftGenerationWorkflow, uow: FakeUnitOfWork
+    ) -> None:
+        opportunity, contact = await seed_qualified(uow)
+        uow.commit_error = DuplicateOperation(
+            "asyncpg.exceptions.UniqueViolationError: secret_constraint"
+        )
+
+        outcome = await workflow.handle(
+            opportunity_id=opportunity.id, contact_id=contact.id, sender=SENDER
+        )
+
+        assert outcome.action is EmailDraftAction.SKIPPED
+        assert "concurrent duplicate" in outcome.notes[0]
+        assert "asyncpg" not in outcome.notes[0]
+        assert "secret_constraint" not in outcome.notes[0]

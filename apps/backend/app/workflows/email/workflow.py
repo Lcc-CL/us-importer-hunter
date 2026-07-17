@@ -166,12 +166,14 @@ class EmailDraftGenerationWorkflow:
             pending = len(outreach.pending_events)
             try:
                 await uow.commit()
-            except DuplicateOperation as exc:
+            except DuplicateOperation:
                 return EmailDraftOutcome(
                     action=EmailDraftAction.SKIPPED,
                     opportunity_id=opportunity_id,
                     outreach_id=outreach.id,
-                    notes=(f"concurrent duplicate draft rejected by the database: {exc}",),
+                    notes=(
+                        "concurrent duplicate draft rejected — review the existing version",
+                    ),
                 )
             events: tuple[DomainEvent, ...] = outreach.drain_events()
             assert len(events) == pending

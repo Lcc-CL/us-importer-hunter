@@ -437,6 +437,7 @@ class TestCommitEventOrdering:
 
         assert outcome.action is OpportunityProcessingAction.SKIPPED
         assert "concurrent duplicate" in outcome.notes[0]
+        assert "uq_assessments_fingerprint" not in outcome.notes[0]
         assert outcome.emitted_events_count == 0
         stored = next(iter(opportunities.items.values()))
         assert len(stored.pending_events) == 2  # never drained → never published

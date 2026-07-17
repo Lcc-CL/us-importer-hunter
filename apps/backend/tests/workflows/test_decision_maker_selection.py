@@ -148,6 +148,27 @@ class TestSelection:
         assert outcome.action is DecisionMakerSelectionAction.SELECTED
         assert any("already recorded" in reason for reason in outcome.reasons)
 
+    async def test_commit_duplicate_does_not_expose_database_details(
+        self,
+        workflow: DecisionMakerSelectionWorkflow,
+        repo: FakeContactRepository,
+        uow: FakeUnitOfWork,
+    ) -> None:
+        seed_contact(
+            repo, "Lena Logistics", "Logistics Director", Department.LOGISTICS,
+            SeniorityLevel.DIRECTOR, email="l@x.com", verified=True,
+        )
+        uow.commit_error = DuplicateOperation(
+            "asyncpg.exceptions.UniqueViolationError: secret_constraint"
+        )
+
+        outcome = await workflow.handle(company_id=COMPANY_ID, opportunity_id=OPPORTUNITY_ID)
+
+        assert outcome.action is DecisionMakerSelectionAction.SELECTED
+        assert any("concurrent duplicate" in reason for reason in outcome.reasons)
+        assert "asyncpg" not in " ".join(outcome.reasons)
+        assert "secret_constraint" not in " ".join(outcome.reasons)
+
     async def test_policy_version_in_outcome(
         self, workflow: DecisionMakerSelectionWorkflow, repo: FakeContactRepository
     ) -> None:

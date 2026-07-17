@@ -148,14 +148,16 @@ class OpportunityApplicationWorkflow:
             pending_count = len(opportunity.pending_events)
             try:
                 await uow.commit()
-            except DuplicateOperation as exc:
+            except DuplicateOperation:
                 # unique (opportunity_id, fingerprint) race — someone else won;
                 # pending events stay undrained on the discarded aggregate
                 return OpportunityProcessingOutcome(
                     action=OpportunityProcessingAction.SKIPPED,
                     company_id=company.id,
                     opportunity_id=opportunity.id,
-                    notes=(f"concurrent duplicate rejected by the database: {exc}",),
+                    notes=(
+                        "concurrent duplicate assessment rejected — idempotent skip",
+                    ),
                 )
             events = opportunity.drain_events()
             assert len(events) == pending_count
