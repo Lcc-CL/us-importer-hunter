@@ -33,6 +33,14 @@ Not run. The local root `.env` contained only a short placeholder rather than a
 usable credential, so no OpenAI request was attempted. No key or complete email
 body was written to this document or to a long-lived test log.
 
+Second attempt (2026-07-17, baseline `e20acc6`): still blocked. The pre-flight
+check found `OPENAI_API_KEY` in `.env` unchanged (6-character placeholder) and
+no key in the shell environment. The provider switch was deliberately not made
+and no request was sent, so no invalid credential ever left the machine. The
+Fake-provider loop was independently re-verified the same day through the live
+stack (QUALIFIED → SELECTED → GENERATED → approved → reload, PostgreSQL rows
+confirmed). Result: **FAIL (blocked — no valid local credential)**.
+
 The following release acceptance evidence remains required after a valid key is
 installed locally: successful generation through the existing
 `OpenAIEmailDraftGenerator`, subject and body word count, one CTA, context-only
