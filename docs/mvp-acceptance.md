@@ -2,7 +2,7 @@
 
 - Acceptance date: 2026-07-16
 - Version: v0.1 release candidate
-- Status: Pending one real OpenAI smoke test
+- Status: Real LLM smoke test passed (2026-07-17, via OpenAI-compatible gateway)
 
 ## Core paths verified
 
@@ -41,11 +41,56 @@ Fake-provider loop was independently re-verified the same day through the live
 stack (QUALIFIED → SELECTED → GENERATED → approved → reload, PostgreSQL rows
 confirmed). Result: **FAIL (blocked — no valid local credential)**.
 
-The following release acceptance evidence remains required after a valid key is
-installed locally: successful generation through the existing
-`OpenAIEmailDraftGenerator`, subject and body word count, one CTA, context-only
-facts, no invented commercial or shipment claims, approval, and persisted
-refresh.
+Third attempt (2026-07-17, baseline `240c326`): a real request was sent for the
+first time, and it failed authentication. `.env` now held a 67-character
+`sk-`-prefixed value, so `EMAIL_GENERATOR_PROVIDER=openai` was enabled and the
+full analyze flow was run through the live Docker stack. The upstream chain
+succeeded against the real provider wiring (company CREATED, opportunity
+QUALIFIED at score 70.5, decision maker SELECTED), but the draft step returned
+the typed `FAILED` outcome: OpenAI answered `401 invalid_api_key` to the
+application's `chat/completions` call, and an independent direct check against
+`/v1/models` with the same key confirmed the rejection, ruling out application
+code. No draft was generated or persisted; upstream analysis was saved as
+designed. The provider override was then removed from `.env` and the stack was
+restored to the Fake default (health verified). Result: **FAIL (credential
+rejected by OpenAI — the configured key is not a valid OpenAI API key)**. Note:
+the configured `OPENAI_MODEL` value has still never been validated, because
+authentication fails before model resolution.
+
+Fourth attempt (2026-07-17, post-`240c326` working tree): **PASS**. The local
+`.env` was reconfigured to an OpenAI-compatible gateway
+(`OPENAI_BASE_URL=https://codeyu.shop/v1`, consumed by the OpenAI SDK's
+documented env-var fallback — no application code was changed) with
+`OPENAI_MODEL=gpt-5.6-terra` and `EMAIL_GENERATOR_PROVIDER=openai`. A
+pre-flight `GET /v1/models` against the gateway returned HTTP 200 and listed
+the configured model. The full analyze flow then ran through the live Docker
+stack:
+
+- Request result: HTTP 200, `overall_status=COMPLETED` — company CREATED,
+  opportunity QUALIFIED (score 70.5, confidence 0.7, completeness 1.0),
+  decision maker SELECTED (confidence 0.9), email draft **GENERATED** (v1).
+- Provider/model persisted on the draft: `provider=openai`,
+  `model=gpt-5.6-terra` (first time model resolution has been exercised).
+- Latency: 7.52 s end-to-end for the analyze request through the live stack
+  (LLM generation dominates; the same flow with the Fake provider is
+  sub-second).
+- Draft quality: subject "Asia-to-US inbound freight support" (5 words);
+  body 102 words; exactly one CTA (a 15-minute call request); every factual
+  statement traces to a submitted signal (customs shipment activity,
+  China-origin cargo, ocean FCL, high-value goods, warehouse operations,
+  growing multi-origin supply chain) and is hedged as observation ("may be
+  managing") rather than asserted; no invented commercial, volume, pricing,
+  or shipment claims; professional greeting and sign-off using the submitted
+  contact and sender names. Per established practice the full body is not
+  reproduced here.
+- Approval: the draft was approved (`approved_by_name` and `approved_at`
+  persisted) and a follow-up detail read confirmed the approved state,
+  provider, and model survive refresh.
+
+Caveat: the request was served by a third-party OpenAI-compatible relay, not
+`api.openai.com`, and `gpt-5.6-terra` is the gateway's model catalog name.
+Output quality through the official endpoint remains unexercised; the
+application-side wiring is now fully verified either way.
 
 ## Quality gates
 
@@ -74,8 +119,9 @@ refresh.
 
 ## Known limitations
 
-- Real OpenAI output quality is not accepted until the one blocked smoke test is
-  completed.
+- The real-LLM smoke test passed through an OpenAI-compatible gateway; output
+  quality via the official `api.openai.com` endpoint has not been separately
+  exercised.
 - This MVP has no authentication, multi-tenancy, email sending, follow-up,
   company list, or full CRM workflow.
 - Source quality remains the operator's responsibility; the application does
@@ -85,7 +131,9 @@ refresh.
 
 ## Decision
 
-MVP v0.1 is functionally ready under the Fake provider, but final release
-acceptance is **not yet granted**. Complete the single real OpenAI smoke test,
-record its quality result here, and then move to a small real-user trial rather
-than adding architecture or product breadth.
+MVP v0.1 is functionally ready under the Fake provider, and the previously
+blocking real-LLM smoke test has now passed with its quality evidence recorded
+above (2026-07-17, via an OpenAI-compatible gateway). All release acceptance
+evidence is complete; formal sign-off of v0.1 is Lcc's call, noting the
+gateway caveat. Next step remains a small real-user trial rather than adding
+architecture or product breadth.
