@@ -167,6 +167,17 @@ class OpportunityDisqualified(DomainEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
+class EmailDraftGenerated(DomainEvent):
+    """A draft is ready for human review — never auto-sent."""
+
+    outreach_id: UUID
+    draft_version: int
+    prompt_version: str
+    provider: str
+    model: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class OutreachApproved(DomainEvent):
     outreach_id: UUID
     draft_version: int

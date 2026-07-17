@@ -189,15 +189,19 @@ class Contact:
         )
 
     def activate(self) -> None:
-        """ACTIVE requires substance: a title or at least one usable channel."""
-        if self._status is ContactStatus.ACTIVE:
-            return  # idempotent
+        """ACTIVE requires substance: a title or at least one usable channel.
+
+        Re-validates every call (L11 fix): an already-ACTIVE contact whose
+        channels have since been invalidated fails instead of no-opping.
+        """
         if self._status is ContactStatus.INVALID:
             raise InvalidStateTransition("an invalid contact cannot be activated")
         if self._title is None and not self.usable_channels:
             raise InvalidStateTransition(
                 "activation requires a job title or at least one usable channel"
             )
+        if self._status is ContactStatus.ACTIVE:
+            return  # idempotent — but only after re-validation
         self._status = ContactStatus.ACTIVE
         self._touch()
         self._events.append(

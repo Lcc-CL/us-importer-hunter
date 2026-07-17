@@ -17,15 +17,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
-from app.domain.contact import ContactStatus, DecisionMakerFitAssessment
+from app.domain.contact import ContactStatus, DecisionMakerFitAssessment, SelectionThresholds
 from app.domain.events import DecisionMakerSelected
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import UnitOfWork
 from app.domain.services import DecisionMakerSelectionService
-
-SELECT_THRESHOLD = 55.0
-REVIEW_THRESHOLD = 35.0
-MIN_CONFIDENCE = 0.5
 
 
 class DecisionMakerSelectionAction(StrEnum):
@@ -54,9 +50,11 @@ class DecisionMakerSelectionWorkflow:
         self,
         uow_factory: Callable[[], UnitOfWork],
         selection_service: DecisionMakerSelectionService,
+        thresholds: SelectionThresholds | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._selection = selection_service
+        self._thresholds = thresholds or SelectionThresholds()
 
     async def handle(
         self, *, company_id: UUID, opportunity_id: UUID
@@ -92,7 +90,10 @@ class DecisionMakerSelectionWorkflow:
                 notes.append(f"concurrent duplicate assessment rejected: {exc}")
 
             best = ranked[0]
-            if best.total_score >= SELECT_THRESHOLD and best.confidence.value >= MIN_CONFIDENCE:
+            if (
+                best.total_score >= self._thresholds.select_score
+                and best.confidence.value >= self._thresholds.min_confidence
+            ):
                 return DecisionMakerSelectionOutcome(
                     action=DecisionMakerSelectionAction.SELECTED,
                     company_id=company_id,
@@ -115,7 +116,7 @@ class DecisionMakerSelectionWorkflow:
                         policy_version=policy,
                     ),
                 )
-            if best.total_score >= REVIEW_THRESHOLD:
+            if best.total_score >= self._thresholds.review_score:
                 return DecisionMakerSelectionOutcome(
                     action=DecisionMakerSelectionAction.REVIEW,
                     company_id=company_id,

@@ -9,6 +9,7 @@ process itself (ADR-0015). Invariants:
 - Won/lost are terminal — no behavior is allowed afterwards.
 """
 
+import dataclasses
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -17,6 +18,7 @@ from uuid import UUID, uuid4
 from app.domain.clock import utcnow
 from app.domain.events import (
     DomainEvent,
+    EmailDraftGenerated,
     OpportunityLost,
     OpportunityWon,
     OutreachApproved,
@@ -63,15 +65,26 @@ class Outcome:
             raise DomainError("outcome requires a detail")
 
 
-@dataclass(frozen=True)
+class EmailDraftStatus(StrEnum):
+    GENERATED = "generated"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+@dataclass(frozen=True, kw_only=True)
 class EmailDraft:
-    """One immutable draft version. New content = new version."""
+    """One immutable draft version. New content = new version; approved
+    drafts are never modified (regeneration appends, L11)."""
 
     version: int
     subject: str
     body: str
     prompt_version: str
-    created_at: datetime
+    generated_at: datetime
+    status: EmailDraftStatus = EmailDraftStatus.GENERATED
+    provider: str = "unknown"
+    model: str = "unknown"
+    context_fingerprint: str = ""  # empty = pre-L11 draft, exempt from dedup
 
     def __post_init__(self) -> None:
         if not self.subject.strip() or not self.body.strip():
@@ -117,16 +130,45 @@ class Outreach:
             raise InvalidStateTransition("cannot change the contact after approval")
         self._contact_id = contact_id
 
-    def add_draft(self, subject: str, body: str, prompt_version: str) -> EmailDraft:
+    def add_draft(
+        self,
+        subject: str,
+        body: str,
+        prompt_version: str,
+        *,
+        provider: str = "unknown",
+        model: str = "unknown",
+        context_fingerprint: str = "",
+    ) -> EmailDraft:
         self._ensure_not_terminal()
+        if context_fingerprint and any(
+            d.context_fingerprint == context_fingerprint and d.prompt_version == prompt_version
+            for d in self._drafts
+        ):
+            raise DuplicateOperation(
+                "a draft for this context and prompt version already exists — "
+                "regeneration requires new facts or a new prompt"
+            )
         draft = EmailDraft(
             version=len(self._drafts) + 1,
             subject=subject,
             body=body,
             prompt_version=prompt_version,
-            created_at=utcnow(),
+            provider=provider,
+            model=model,
+            context_fingerprint=context_fingerprint,
+            generated_at=utcnow(),
         )
         self._drafts.append(draft)
+        self._events.append(
+            EmailDraftGenerated(
+                outreach_id=self._id,
+                draft_version=draft.version,
+                prompt_version=prompt_version,
+                provider=provider,
+                model=model,
+            )
+        )
         return draft
 
     def approve_draft(self, version: int) -> None:
@@ -138,6 +180,10 @@ class Outreach:
         if version == self._sent_version:
             raise DuplicateOperation(f"draft v{version} was already sent")
         self._approved_version = version
+        index = next(i for i, d in enumerate(self._drafts) if d.version == version)
+        self._drafts[index] = dataclasses.replace(
+            self._drafts[index], status=EmailDraftStatus.APPROVED
+        )
         if self._status is OutreachStatus.CREATED:
             self._status = OutreachStatus.APPROVED
         self._events.append(OutreachApproved(outreach_id=self._id, draft_version=version))
@@ -205,6 +251,11 @@ class Outreach:
         )
 
     # -- events -------------------------------------------------------
+
+    @property
+    def pending_events(self) -> tuple[DomainEvent, ...]:
+        """Peek without clearing — publish only after a successful commit."""
+        return tuple(self._events)
 
     def drain_events(self) -> tuple[DomainEvent, ...]:
         events = tuple(self._events)

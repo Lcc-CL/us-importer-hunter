@@ -7,7 +7,7 @@ sent draft content is immutable by schema, not just by convention.
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -42,6 +42,23 @@ class OutreachModel(Base):
 
 class EmailDraftModel(Base):
     __tablename__ = "email_drafts"
+    __table_args__ = (
+        CheckConstraint("subject <> ''", name="ck_drafts_subject_not_empty"),
+        CheckConstraint("body <> ''", name="ck_drafts_body_not_empty"),
+        CheckConstraint(
+            "status IN ('generated', 'approved', 'rejected')",
+            name="ck_drafts_status_controlled",
+        ),
+        # same facts + same prompt never drafted twice (pre-L11 rows have '')
+        Index(
+            "uq_drafts_context_prompt",
+            "outreach_id",
+            "context_fingerprint",
+            "prompt_version",
+            unique=True,
+            postgresql_where="context_fingerprint <> ''",
+        ),
+    )
 
     outreach_id: Mapped[UUID] = mapped_column(
         ForeignKey("outreaches.id", ondelete="CASCADE"), primary_key=True
@@ -49,8 +66,12 @@ class EmailDraftModel(Base):
     version: Mapped[int] = mapped_column(primary_key=True)
     subject: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="generated")
+    provider: Mapped[str] = mapped_column(String(50), default="unknown")
+    model: Mapped[str] = mapped_column(String(100), default="unknown")
     prompt_version: Mapped[str] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    context_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class OutcomeModel(Base):

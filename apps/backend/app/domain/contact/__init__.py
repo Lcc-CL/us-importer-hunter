@@ -13,6 +13,7 @@ from app.domain.contact.values import (
     JobTitle,
     PersonName,
     RawContactSnapshot,
+    SelectionThresholds,
     SeniorityLevel,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "JobTitle",
     "PersonName",
     "RawContactSnapshot",
+    "SelectionThresholds",
     "SeniorityLevel",
 ]

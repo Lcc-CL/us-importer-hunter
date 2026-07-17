@@ -88,9 +88,14 @@ workflows:
 
   email:
     package: app.workflows.email
-    description: Generate / regenerate outreach drafts from existing analysis.
-    emits: [OutreachCreated, EmailDraftGenerated, EmailDraftApproved]
-    status: planned
+    description: >
+      MVP core chain's last hop (L11): QUALIFIED opportunity + ACTIVE
+      contact → minimal EmailGenerationContext → EmailDraftGenerator
+      (first-outreach-v1 prompt; fake or OpenAI adapter) → new draft
+      version on the Outreach, GENERATED status, human review required.
+      Context-fingerprint idempotent; never sends.
+    emits: [EmailDraftGenerated]
+    status: implemented          # invoked directly until the event bus lands
 
   followup:
     package: app.workflows.followup

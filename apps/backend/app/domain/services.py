@@ -5,6 +5,8 @@ Interfaces only — implementations live in app/services and are injected.
 No provider-, LLM- or storage-specific detail belongs here.
 """
 
+import hashlib
+import json
 from collections.abc import Sequence  # noqa: TC003 — used in protocol signatures
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from app.domain.clock import utcnow
+from app.domain.exceptions import DomainError
 from app.domain.values import (
     CompanyName,
     OpportunityAssessment,
@@ -69,6 +72,91 @@ class OpportunityScoringService(Protocol):
     def scoring_version(self) -> str: ...
 
     async def assess(self, scoring_input: OpportunityScoringInput) -> OpportunityAssessment: ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class SenderProfile:
+    """Who the email is from — the forwarder's selling identity (MVP slice)."""
+
+    name: str
+    company: str
+    value_proposition: str
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("name", self.name),
+            ("company", self.company),
+            ("value_proposition", self.value_proposition),
+        ):
+            if not value.strip():
+                raise DomainError(f"sender profile requires a non-empty {label}")
+
+
+@dataclass(frozen=True, kw_only=True)
+class EmailGenerationContext:
+    """Everything the email generator may look at — nothing else.
+
+    Deliberately minimal (L11): no ORM objects, no full aggregates, no
+    page HTML. Only facts that exist; the prompt forbids inventing more.
+    """
+
+    company_name: str
+    website: str | None
+    contact_name: str
+    contact_title: str | None
+    opportunity_score: float
+    qualification_decision: str
+    opportunity_reasons: tuple[str, ...]
+    available_evidence: tuple[str, ...]
+    sender_name: str
+    sender_company: str
+    sender_value_proposition: str
+
+    def fingerprint(self) -> str:
+        """SHA-256 over canonical content: same context → same fingerprint."""
+        canonical = json.dumps(
+            {
+                "company_name": self.company_name,
+                "website": self.website,
+                "contact_name": self.contact_name,
+                "contact_title": self.contact_title,
+                "opportunity_score": self.opportunity_score,
+                "qualification_decision": self.qualification_decision,
+                "opportunity_reasons": list(self.opportunity_reasons),
+                "available_evidence": list(self.available_evidence),
+                "sender_name": self.sender_name,
+                "sender_company": self.sender_company,
+                "sender_value_proposition": self.sender_value_proposition,
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class GeneratedEmail:
+    """The generator's output: subject + body, nothing provider-specific."""
+
+    subject: str
+    body: str
+
+    def __post_init__(self) -> None:
+        if not self.subject.strip() or not self.body.strip():
+            raise DomainError("generated email requires a subject and a body")
+
+
+class EmailDraftGenerator(Protocol):
+    """Turns an EmailGenerationContext into one draft. Implementations
+    (fake, OpenAI) live in app/services/email; SDK types never leak."""
+
+    @property
+    def provider_name(self) -> str: ...
+
+    @property
+    def model_name(self) -> str: ...
+
+    async def generate(self, context: EmailGenerationContext) -> GeneratedEmail: ...
 
 
 class ContactSelectionService(Protocol):

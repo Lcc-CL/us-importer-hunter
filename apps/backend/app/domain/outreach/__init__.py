@@ -3,6 +3,7 @@
 from app.domain.outreach.aggregate import (
     TERMINAL_STATUSES,
     EmailDraft,
+    EmailDraftStatus,
     Outcome,
     OutcomeKind,
     Outreach,
@@ -12,6 +13,7 @@ from app.domain.outreach.aggregate import (
 __all__ = [
     "TERMINAL_STATUSES",
     "EmailDraft",
+    "EmailDraftStatus",
     "Outcome",
     "OutcomeKind",
     "Outreach",

@@ -186,6 +186,24 @@ class TestAggregate:
         with pytest.raises(InvalidStateTransition):
             contact.activate()
 
+    def test_activate_revalidates_even_when_already_active(self) -> None:
+        """L11 fix: ACTIVE + channels later invalidated → activate() fails."""
+        contact = Contact.create_for_company(uuid4(), PersonName("Nobody Known"))
+        contact.add_channel(make_channel("n@x.com"))
+        contact.activate()
+        contact.invalidate_channel(ContactChannelType.EMAIL, "n@x.com", "hard bounce")
+        with pytest.raises(InvalidStateTransition):
+            contact.activate()
+
+    def test_selection_thresholds_versioned_and_validated(self) -> None:
+        from app.domain.contact import SelectionThresholds
+
+        assert SelectionThresholds().version == "mvp-selection-thresholds-v1"
+        with pytest.raises(DomainError):
+            SelectionThresholds(review_score=60.0, select_score=55.0)
+        with pytest.raises(DomainError):
+            SelectionThresholds(min_confidence=1.5)
+
     def test_deactivate_reactivate_cycle(self, contact: Contact) -> None:
         contact.activate()
         contact.deactivate()

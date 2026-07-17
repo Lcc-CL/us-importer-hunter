@@ -176,6 +176,25 @@ class ContactMatch:
             raise DomainError("contact match requires a reason")
 
 
+@dataclass(frozen=True)
+class SelectionThresholds:
+    """Versioned routing thresholds for decision-maker selection (L11 fix:
+    moved out of the workflow). MVP assumptions, recalibrated later."""
+
+    version: str = "mvp-selection-thresholds-v1"
+    select_score: float = 55.0
+    review_score: float = 35.0
+    min_confidence: float = 0.5
+
+    def __post_init__(self) -> None:
+        if not self.version.strip():
+            raise DomainError("selection thresholds require a version")
+        if not 0.0 < self.review_score < self.select_score <= 100.0:
+            raise DomainError("thresholds must satisfy 0 < review < select <= 100")
+        if not 0.0 <= self.min_confidence <= 1.0:
+            raise DomainError("min_confidence must be within 0–1")
+
+
 @dataclass(frozen=True, kw_only=True)
 class DecisionMakerFitAssessment:
     """Immutable judgment: how well does this person fit as the logistics

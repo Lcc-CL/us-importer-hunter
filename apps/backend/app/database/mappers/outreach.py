@@ -1,7 +1,14 @@
 """Outreach aggregate ↔ persistence mapping."""
 
 from app.database.models.outreach import EmailDraftModel, OutcomeModel, OutreachModel
-from app.domain.outreach import EmailDraft, Outcome, OutcomeKind, Outreach, OutreachStatus
+from app.domain.outreach import (
+    EmailDraft,
+    EmailDraftStatus,
+    Outcome,
+    OutcomeKind,
+    Outreach,
+    OutreachStatus,
+)
 
 
 class OutreachMapper:
@@ -23,8 +30,12 @@ class OutreachMapper:
                     version=draft.version,
                     subject=draft.subject,
                     body=draft.body,
+                    status=draft.status.value,
+                    provider=draft.provider,
+                    model=draft.model,
                     prompt_version=draft.prompt_version,
-                    created_at=draft.created_at,
+                    context_fingerprint=draft.context_fingerprint,
+                    generated_at=draft.generated_at,
                 )
                 for draft in outreach.drafts
             ],
@@ -57,8 +68,12 @@ class OutreachMapper:
                 version=row.version,
                 subject=row.subject,
                 body=row.body,
+                status=EmailDraftStatus(row.status),
+                provider=row.provider,
+                model=row.model,
                 prompt_version=row.prompt_version,
-                created_at=row.created_at,
+                context_fingerprint=row.context_fingerprint,
+                generated_at=row.generated_at,
             )
             for row in model.drafts
         ]

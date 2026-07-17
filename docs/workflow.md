@@ -99,7 +99,16 @@ dimension gets reassessed via the opportunity flow; contact workflows
 never modify OpportunityAssessment directly.
 
 The full chain now reads: Company → Contact Candidate → Contact →
-Decision Maker Selection → Email Draft (next lesson).
+Decision Maker Selection → **Email Draft (L11, implemented)**:
+
+```
+(opportunity_id, contact_id, sender profile)
+  → QUALIFIED opportunity only · ACTIVE contact only
+  → minimal EmailGenerationContext (facts only, fingerprinted)
+  → EmailDraftGenerator (first-outreach-v1; fake | OpenAI adapter)
+  → new EmailDraft version (GENERATED — human review; never sent)
+  → GENERATED | SKIPPED (same fingerprint) | REJECTED
+```
 
 The workflow orchestrates and never computes scores; weights live in the
 scoring strategy. Idempotency (L9): a persisted SHA-256 assessment
