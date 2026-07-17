@@ -28,3 +28,5 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0020](ADR/0020-company-to-opportunity-scoring-boundary.md) | Company → Opportunity scoring boundary | 2026-07-16 |
 | [0021](ADR/0021-explainable-opportunity-scoring-policy.md) | Explainable opportunity scoring policy v1 | 2026-07-16 |
 | [0022](ADR/0022-contact-and-decision-maker-model.md) | Contact and decision-maker model | 2026-07-16 |
+| [0023](ADR/0023-email-draft-generation-boundary.md) | Email draft generation and LLM provider boundary | 2026-07-16 |
+| [0024](ADR/0024-mvp-api-facade.md) | Minimal MVP prospect analysis API facade | 2026-07-16 |

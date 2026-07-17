@@ -15,7 +15,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from app.domain.clock import utcnow
+from app.domain.clock import ensure_utc, utcnow
 from app.domain.events import (
     DomainEvent,
     EmailDraftGenerated,
@@ -81,7 +81,9 @@ class EmailDraft:
     body: str
     prompt_version: str
     generated_at: datetime
-    status: EmailDraftStatus = EmailDraftStatus.GENERATED
+    approval_status: EmailDraftStatus = EmailDraftStatus.GENERATED
+    approved_at: datetime | None = None
+    approved_by_name: str | None = None
     provider: str = "unknown"
     model: str = "unknown"
     context_fingerprint: str = ""  # empty = pre-L11 draft, exempt from dedup
@@ -89,6 +91,24 @@ class EmailDraft:
     def __post_init__(self) -> None:
         if not self.subject.strip() or not self.body.strip():
             raise DomainError("draft requires a subject and a body")
+        if self.approved_at is not None:
+            object.__setattr__(
+                self,
+                "approved_at",
+                ensure_utc(self.approved_at, field="approved_at"),
+            )
+        if self.approved_by_name is not None:
+            cleaned = self.approved_by_name.strip()
+            if not cleaned:
+                raise DomainError("approved_by_name must not be blank")
+            if len(cleaned) > 200:
+                raise DomainError("approved_by_name exceeds 200 characters")
+            object.__setattr__(self, "approved_by_name", cleaned)
+
+    @property
+    def status(self) -> EmailDraftStatus:
+        """Backward-compatible alias for clients created before approval metadata."""
+        return self.approval_status
 
 
 class Outreach:
@@ -171,22 +191,38 @@ class Outreach:
         )
         return draft
 
-    def approve_draft(self, version: int) -> None:
+    def approve_draft(self, version: int, *, approved_by_name: str) -> None:
         self._ensure_not_terminal()
+        approved_by_name = approved_by_name.strip()
+        if not approved_by_name:
+            raise DomainError("draft approval requires an approver name")
         if not self._drafts:
             raise InvalidStateTransition("cannot approve without a draft")
         if not any(d.version == version for d in self._drafts):
             raise DomainError(f"no draft with version {version}")
         if version == self._sent_version:
             raise DuplicateOperation(f"draft v{version} was already sent")
-        self._approved_version = version
         index = next(i for i, d in enumerate(self._drafts) if d.version == version)
+        if self._drafts[index].approval_status is EmailDraftStatus.APPROVED:
+            return
+        self._approved_version = version
+        approved_at = utcnow()
         self._drafts[index] = dataclasses.replace(
-            self._drafts[index], status=EmailDraftStatus.APPROVED
+            self._drafts[index],
+            approval_status=EmailDraftStatus.APPROVED,
+            approved_at=approved_at,
+            approved_by_name=approved_by_name,
         )
         if self._status is OutreachStatus.CREATED:
             self._status = OutreachStatus.APPROVED
-        self._events.append(OutreachApproved(outreach_id=self._id, draft_version=version))
+        self._events.append(
+            OutreachApproved(
+                outreach_id=self._id,
+                draft_version=version,
+                approved_by_name=approved_by_name,
+                occurred_at=approved_at,
+            )
+        )
 
     def mark_sent(self) -> None:
         self._ensure_not_terminal()

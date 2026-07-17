@@ -17,7 +17,7 @@ from uuid import UUID
 
 from app.domain.contact import Contact, ContactMatchKind, Department, SeniorityLevel
 from app.domain.events import ContactCandidateDiscovered, DomainEvent
-from app.domain.exceptions import DomainError, DuplicateOperation
+from app.domain.exceptions import DomainError, DuplicateOperation, InvalidStateTransition
 from app.domain.repositories import UnitOfWork
 from app.services.contact import (
     ContactNormalizer,
@@ -86,7 +86,6 @@ class ContactIngestionWorkflow:
                     snapshot.company_id, candidate.name, candidate.title
                 )
                 self._apply_candidate(contact, candidate, event, notes)
-                await uow.contacts.add(contact)
                 action = ContactIngestionAction.CREATED
             else:
                 assert match.matched_contact_id is not None
@@ -94,9 +93,18 @@ class ContactIngestionWorkflow:
                 assert existing is not None, "deduplicator returned a vanished contact id"
                 contact = existing
                 self._merge_candidate(contact, candidate, event, notes)
-                await uow.contacts.save(contact)
                 action = ContactIngestionAction.MERGED
                 notes.append(match.reason)
+
+            try:
+                contact.activate()
+            except InvalidStateTransition as exc:
+                notes.append(f"contact remains discovered: {exc}")
+
+            if action is ContactIngestionAction.CREATED:
+                await uow.contacts.add(contact)
+            else:
+                await uow.contacts.save(contact)
 
             pending = len(contact.pending_events)
             await uow.commit()

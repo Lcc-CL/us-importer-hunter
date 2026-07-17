@@ -1,7 +1,7 @@
-"""Outreach aggregate persistence: the conversation + append-only outcomes.
+"""Outreach aggregate persistence: conversation, drafts and outcomes.
 
-email_drafts and outcomes rows are written once and never updated —
-sent draft content is immutable by schema, not just by convention.
+Draft content and outcomes are append-only. Human approval updates only the
+draft's approval metadata; it never rewrites generated subject/body content.
 """
 
 from datetime import datetime
@@ -46,8 +46,8 @@ class EmailDraftModel(Base):
         CheckConstraint("subject <> ''", name="ck_drafts_subject_not_empty"),
         CheckConstraint("body <> ''", name="ck_drafts_body_not_empty"),
         CheckConstraint(
-            "status IN ('generated', 'approved', 'rejected')",
-            name="ck_drafts_status_controlled",
+            "approval_status IN ('generated', 'approved', 'rejected')",
+            name="ck_drafts_approval_status_controlled",
         ),
         # same facts + same prompt never drafted twice (pre-L11 rows have '')
         Index(
@@ -66,7 +66,9 @@ class EmailDraftModel(Base):
     version: Mapped[int] = mapped_column(primary_key=True)
     subject: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(20), default="generated")
+    approval_status: Mapped[str] = mapped_column(String(20), default="generated")
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by_name: Mapped[str | None] = mapped_column(String(200))
     provider: Mapped[str] = mapped_column(String(50), default="unknown")
     model: Mapped[str] = mapped_column(String(100), default="unknown")
     prompt_version: Mapped[str] = mapped_column(String(50))

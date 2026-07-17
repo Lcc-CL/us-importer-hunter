@@ -181,6 +181,7 @@ class EmailDraftGenerated(DomainEvent):
 class OutreachApproved(DomainEvent):
     outreach_id: UUID
     draft_version: int
+    approved_by_name: str
 
 
 @dataclass(frozen=True, kw_only=True)

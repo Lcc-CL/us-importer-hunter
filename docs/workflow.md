@@ -116,6 +116,30 @@ fingerprint makes replayed events SKIP before any write, and the
 database unique constraint (opportunity_id, fingerprint) closes the
 concurrency race — a losing writer gets SKIPPED, not a crash.
 
+## Implemented: mvp_prospect_analysis facade (Sprint 3 L1)
+
+The first browser-facing vertical slice composes, rather than replaces, the
+existing workflows (ADR-0024):
+
+```
+Company source claims → company_ingestion (one call per real source)
+              → opportunity
+              → contact_ingestion (when supplied)
+              → decision_maker (when a canonical contact exists)
+              → email (only when qualified, selected and requested)
+```
+
+Each child workflow keeps its transaction boundary. A later failure returns a
+typed `PARTIAL` result and leaves committed upstream aggregates intact. Missing
+contacts, `RESEARCH_MORE` and `REVIEW` are normal business outcomes. The facade
+does not score, rank contacts, construct prompts, access ORM models or send mail.
+
+The paired read workflow reconstructs the saved result without events or
+re-execution. The approval workflow invokes `Outreach.approve_draft`, commits,
+then drains events. The approved status, UTC timestamp and approver display name
+are part of the EmailDraft value and survive a later read; sending remains a
+separate future use case.
+
 Event ordering rule (L9): pending events are peeked before commit but
 drained only **after** a successful commit — a failed commit keeps them
 pending so retries publish exactly once; nothing external is called

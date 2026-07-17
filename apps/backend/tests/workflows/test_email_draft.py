@@ -11,6 +11,7 @@ from app.domain.contact import (
     Contact,
     ContactChannel,
     ContactChannelType,
+    DecisionMakerFitAssessment,
     JobTitle,
     PersonName,
 )
@@ -153,6 +154,11 @@ class FakeContactRepository:
 
     async def record_fit_assessment(self, assessment: object) -> None:
         pass
+
+    async def list_fit_assessments_for_company(
+        self, company_id: UUID
+    ) -> list[DecisionMakerFitAssessment]:
+        return []
 
 
 class FakeOutreachRepository:

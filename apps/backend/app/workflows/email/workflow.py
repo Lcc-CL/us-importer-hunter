@@ -44,6 +44,8 @@ class EmailDraftOutcome:
     outreach_id: UUID | None = None
     draft_version: int | None = None
     subject: str | None = None
+    body: str | None = None
+    status: str | None = None
     notes: tuple[str, ...] = ()
     emitted_events_count: int = 0
 
@@ -109,14 +111,28 @@ class EmailDraftGenerationWorkflow:
             outreach = self._pick_outreach(
                 await uow.outreaches.list_for_opportunity(opportunity_id), contact_id
             )
-            if outreach is not None and any(
-                d.context_fingerprint == fingerprint and d.prompt_version == PROMPT_VERSION
-                for d in outreach.drafts
-            ):
+            existing_draft = (
+                next(
+                    (
+                        draft
+                        for draft in outreach.drafts
+                        if draft.context_fingerprint == fingerprint
+                        and draft.prompt_version == PROMPT_VERSION
+                    ),
+                    None,
+                )
+                if outreach is not None
+                else None
+            )
+            if outreach is not None and existing_draft is not None:
                 return EmailDraftOutcome(
                     action=EmailDraftAction.SKIPPED,
                     opportunity_id=opportunity_id,
                     outreach_id=outreach.id,
+                    draft_version=existing_draft.version,
+                    subject=existing_draft.subject,
+                    body=existing_draft.body,
+                    status=existing_draft.status.value,
                     notes=("identical context already drafted — review the existing version",),
                 )
 
@@ -166,6 +182,8 @@ class EmailDraftGenerationWorkflow:
                 outreach_id=outreach.id,
                 draft_version=draft.version,
                 subject=draft.subject,
+                body=draft.body,
+                status=draft.status.value,
                 notes=(f"draft awaits human review ({draft.status.value})",),
                 emitted_events_count=len(events),
             )

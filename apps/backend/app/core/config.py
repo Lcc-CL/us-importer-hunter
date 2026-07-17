@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     redis_db: int = 0
 
     # AI
+    email_generator_provider: Literal["fake", "openai"] = "fake"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 

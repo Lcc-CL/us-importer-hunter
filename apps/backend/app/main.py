@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.errors import register_error_handlers
+from app.api.request_id import RequestIdMiddleware
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.redis import create_redis_client
@@ -42,6 +44,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    app.add_middleware(RequestIdMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.backend_cors_origins,
@@ -51,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
+    register_error_handlers(app)
     return app
 
 

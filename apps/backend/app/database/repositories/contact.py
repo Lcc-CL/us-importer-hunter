@@ -6,7 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
-from app.database.models.contact import ContactChannelModel, ContactModel
+from app.database.models.contact import (
+    ContactChannelModel,
+    ContactFitAssessmentModel,
+    ContactModel,
+)
 from app.domain.contact import Contact, DecisionMakerFitAssessment
 
 
@@ -42,6 +46,16 @@ class SqlAlchemyContactRepository:
 
     async def record_fit_assessment(self, assessment: DecisionMakerFitAssessment) -> None:
         self._session.add(FitAssessmentMapper.to_model(assessment))
+
+    async def list_fit_assessments_for_company(
+        self, company_id: UUID
+    ) -> list[DecisionMakerFitAssessment]:
+        result = await self._session.execute(
+            select(ContactFitAssessmentModel)
+            .where(ContactFitAssessmentModel.company_id == company_id)
+            .order_by(ContactFitAssessmentModel.assessed_at.desc())
+        )
+        return [FitAssessmentMapper.to_domain(model) for model in result.scalars()]
 
     async def _find_by_channel(
         self, company_id: UUID, channel_type: str, normalized_value: str

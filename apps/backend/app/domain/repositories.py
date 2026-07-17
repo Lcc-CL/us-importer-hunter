@@ -82,6 +82,12 @@ class ContactRepository(Protocol):
         """Append-only; duplicates rejected by (contact_id, fingerprint)."""
         ...
 
+    async def list_fit_assessments_for_company(
+        self, company_id: UUID
+    ) -> list[DecisionMakerFitAssessment]:
+        """Persisted decision-maker judgments for the MVP prospect read model."""
+        ...
+
 
 class TaskRepository(Protocol):
     async def get_by_id(self, task_id: UUID) -> Task | None: ...

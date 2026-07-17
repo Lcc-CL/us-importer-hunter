@@ -101,7 +101,7 @@ class TestOutreachMapper:
         original.attach_contact(uuid4())
         original.add_draft("Subject A", "Body A", "sales-v1")
         original.add_draft("Subject B", "Body B", "sales-v1")
-        original.approve_draft(2)
+        original.approve_draft(2, approved_by_name="Alex")
         original.mark_sent()
         original.record_reply("positive")
         original.drain_events()

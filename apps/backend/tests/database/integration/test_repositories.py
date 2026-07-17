@@ -191,7 +191,7 @@ class TestOutreachRepository:
         outreach = Outreach.create(opportunity_id=opportunity.id)
         outreach.attach_contact(contact_id)
         outreach.add_draft("Cutting CNSHA-USLAX costs", "Hi Maria ...", "sales-v1")
-        outreach.approve_draft(1)
+        outreach.approve_draft(1, approved_by_name="Alex")
         outreach.mark_sent()
         outreach.record_reply("positive")
         outreach.drain_events()

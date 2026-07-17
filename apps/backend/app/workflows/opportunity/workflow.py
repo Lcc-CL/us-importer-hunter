@@ -52,6 +52,7 @@ class OpportunityProcessingOutcome:
     recommended_action: str | None = None
     scoring_version: str | None = None
     policy_version: str | None = None
+    reasons: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
     emitted_events_count: int = 0
 
@@ -122,6 +123,20 @@ class OpportunityApplicationWorkflow:
                     opportunity_id=opportunity.id,
                     score=opportunity.score.value if opportunity.score else None,
                     confidence=opportunity.confidence.value if opportunity.confidence else None,
+                    qualification_decision=(
+                        opportunity.history[-1].qualification_decision.value
+                        if opportunity.history[-1].qualification_decision
+                        else None
+                    ),
+                    data_completeness=(
+                        opportunity.history[-1].data_completeness.value
+                        if opportunity.history[-1].data_completeness
+                        else None
+                    ),
+                    recommended_action=opportunity.history[-1].recommended_action,
+                    scoring_version=opportunity.history[-1].scoring_version,
+                    policy_version=opportunity.history[-1].policy_version,
+                    reasons=opportunity.history[-1].reasons,
                     notes=("identical assessment fingerprint already recorded — idempotent skip",),
                 )
             else:
@@ -162,6 +177,7 @@ class OpportunityApplicationWorkflow:
                 recommended_action=assessment.recommended_action,
                 scoring_version=assessment.scoring_version,
                 policy_version=assessment.policy_version,
+                reasons=assessment.reasons,
                 emitted_events_count=len(events),
             )
 

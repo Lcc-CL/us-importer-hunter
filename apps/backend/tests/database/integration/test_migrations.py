@@ -46,6 +46,22 @@ async def _table_names(url: str) -> set[str]:
         await engine.dispose()
 
 
+async def _column_names(url: str, table_name: str) -> set[str]:
+    engine = create_async_engine(url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = :table_name"
+                ),
+                {"table_name": table_name},
+            )
+            return {row[0] for row in result}
+    finally:
+        await engine.dispose()
+
+
 EXPECTED_TABLES = {
     "companies",
     "company_aliases",
@@ -67,6 +83,9 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     run_alembic(["upgrade", "head"], MIGRATION_DB)
     tables = asyncio.run(_table_names(migration_db_url))
     assert EXPECTED_TABLES <= tables
+    draft_columns = asyncio.run(_column_names(migration_db_url, "email_drafts"))
+    assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns
+    assert "status" not in draft_columns
 
     run_alembic(["downgrade", "base"], MIGRATION_DB)
     tables_after_downgrade = asyncio.run(_table_names(migration_db_url))
@@ -75,3 +94,5 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     run_alembic(["upgrade", "head"], MIGRATION_DB)
     tables_again = asyncio.run(_table_names(migration_db_url))
     assert EXPECTED_TABLES <= tables_again
+    draft_columns_again = asyncio.run(_column_names(migration_db_url, "email_drafts"))
+    assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns_again

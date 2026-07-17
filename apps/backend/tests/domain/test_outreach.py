@@ -33,7 +33,7 @@ def drafted(outreach: Outreach) -> Outreach:
 
 def sent(outreach: Outreach) -> Outreach:
     drafted(outreach)
-    outreach.approve_draft(1)
+    outreach.approve_draft(1, approved_by_name="Alex")
     outreach.mark_sent()
     return outreach
 
@@ -57,22 +57,36 @@ class TestDrafts:
 class TestApproval:
     def test_cannot_approve_without_draft(self, outreach: Outreach) -> None:
         with pytest.raises(InvalidStateTransition):
-            outreach.approve_draft(1)
+            outreach.approve_draft(1, approved_by_name="Alex")
 
     def test_approve_emits_event(self, outreach: Outreach) -> None:
         drafted(outreach)
-        outreach.approve_draft(1)
+        outreach.approve_draft(1, approved_by_name="Alex")
         assert outreach.status is OutreachStatus.APPROVED
+        assert outreach.drafts[0].approval_status.value == "approved"
+        assert outreach.drafts[0].approved_at is not None
+        assert outreach.drafts[0].approved_by_name == "Alex"
         assert any(isinstance(e, OutreachApproved) for e in outreach.drain_events())
+
+    def test_repeated_approval_is_idempotent(self, outreach: Outreach) -> None:
+        drafted(outreach)
+        outreach.approve_draft(1, approved_by_name="Alex")
+        first = outreach.drafts[0]
+        outreach.drain_events()
+
+        outreach.approve_draft(1, approved_by_name="Someone Else")
+
+        assert outreach.drafts[0] == first
+        assert outreach.pending_events == ()
 
     def test_approve_unknown_version_rejected(self, outreach: Outreach) -> None:
         drafted(outreach)
         with pytest.raises(DomainError):
-            outreach.approve_draft(99)
+            outreach.approve_draft(99, approved_by_name="Alex")
 
     def test_cannot_change_contact_after_approval(self, outreach: Outreach) -> None:
         drafted(outreach)
-        outreach.approve_draft(1)
+        outreach.approve_draft(1, approved_by_name="Alex")
         with pytest.raises(InvalidStateTransition):
             outreach.attach_contact(uuid4())
 

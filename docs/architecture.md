@@ -66,13 +66,34 @@ each other by id only.
 | `tools/`       | Agent capabilities (google, website, linkedin, importyeti, browser) |
 | `providers/`   | LLM vendor adapters (openai; anthropic/deepseek/gemini later) |
 | `services/`    | Deterministic business logic (llm, email, search, company, scoring, rag) |
-| `workflows/`   | Multi-step orchestration (company_ingestion ✅, opportunity ✅, contact_ingestion ✅, decision_maker ✅, lead_generation, research, email, followup) |
+| `workflows/`   | Multi-step orchestration (company_ingestion ✅, opportunity ✅, contact_ingestion ✅, decision_maker ✅, email ✅, mvp_prospect_analysis ✅; lead_generation/research/followup later) |
 | `events/`      | Typed pub/sub between pipeline stages — stages never call each other directly |
 | `memory/`      | Standalone memory layer: short_term, long_term, conversation, user |
 | `tasks/`       | Queue-executed entry points (Celery, later) — thin wrappers that invoke workflows, never orchestration |
 | `prompts/`     | Prompt templates + `versions/` archive |
 | `database/`    | ORM models, explicit mappers, repositories (domain in/out), Unit of Work, seed data, Alembic migrations |
 | `shared/`      | Cross-cutting primitives: constants, enums, exceptions, types — no logic, no I/O |
+
+## Minimal MVP API facade
+
+The Sprint 3 browser boundary is deliberately narrow (ADR-0024):
+
+```
+FastAPI route → MvpProspectAnalysisWorkflow → existing child workflows
+              → each child owns one Unit of Work / transaction
+```
+
+Routes validate and map typed schemas only. The facade does not access ORM
+models or sessions and does not reimplement scoring, contact ranking or prompt
+composition. Later-stage failures produce a typed partial result without
+rolling back already committed aggregates. Query and approval are separate
+application workflows; approval metadata lives on `EmailDraft` and is persisted
+without changing its generated content. Approval never implies sending.
+
+One analyze command may carry multiple explicit Company source references. The
+facade submits each reference to the existing ingestion workflow, preserving its
+transaction boundary, and starts Opportunity scoring only after those facts have
+been merged. It never creates placeholder provenance or relaxes qualification.
 
 ## Related docs
 

@@ -4,6 +4,26 @@
 # EventBus (ADR-0004/0015); Execution context wraps every run in a Task.
 
 workflows:
+  mvp_prospect_analysis:
+    package: app.workflows.mvp_prospect_analysis
+    description: >
+      Minimal synchronous browser facade (ADR-0024). Converts typed API input
+      into existing Discovery and Contact claims. Each explicit real Company
+      SourceReference is ingested before opportunity scoring; no provenance is
+      fabricated. It then calls contact_ingestion, decision_maker and email in
+      order. Each child retains its own Unit of Work; later failure returns
+      PARTIAL and does not roll back committed upstream stages. Approval metadata
+      is persisted on EmailDraft. Never sends email.
+    steps:
+      - { id: ingest_company, workflow: company_ingestion }
+      - { id: assess_opportunity, workflow: opportunity }
+      - { id: ingest_contact, workflow: contact_ingestion, optional: true }
+      - { id: select_decision_maker, workflow: decision_maker, conditional: true }
+      - { id: generate_email_draft, workflow: email, conditional: true }
+    statuses: [COMPLETED, PARTIAL, REJECTED, FAILED]
+    execution: sync
+    status: implemented
+
   lead_generation:                   # aka "hunt" — main MVP pipeline
     package: app.workflows.lead_generation
     description: >

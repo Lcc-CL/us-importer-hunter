@@ -131,4 +131,8 @@ class CompanyIngestionWorkflow:
         else:
             company.add_source(source)
         for signal in event.result.signals:
-            company.add_signal(f"{signal.kind}: {signal.detail}")
+            rendered = f"{signal.kind}: {signal.detail}"
+            if rendered in company.signals:
+                notes.append(f"signal already recorded — skipped: {rendered!r}")
+            else:
+                company.add_signal(rendered)
