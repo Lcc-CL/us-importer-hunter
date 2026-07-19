@@ -197,6 +197,12 @@ export interface ProspectDetailResponse {
   draft_history: EmailDraftSummaryResponse[];
 }
 
+export interface RuntimeStatusResponse {
+  provider: "fake" | "openai";
+  model: string;
+  environment: string;
+}
+
 export interface DraftApprovalRequest {
   approver_name: string;
 }
@@ -306,6 +312,10 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return payload as T;
+}
+
+export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
+  return requestJson<RuntimeStatusResponse>("/health/runtime");
 }
 
 export function analyzeProspect(

@@ -15,6 +15,7 @@ import type {
   ProspectAnalysisResponse,
   ProspectDetailResponse,
 } from "@/lib/api";
+import { useI18n, type MessageKey } from "@/lib/i18n";
 import type { MvpPageState, SubmittedProspectContext } from "../types";
 import { EmailDraftCard } from "./email-draft-card";
 import { OpportunityCard } from "./opportunity-card";
@@ -50,6 +51,11 @@ function formatRatio(value: number | null | undefined) {
   return value == null ? "—" : `${Math.round(value * 100)}%`;
 }
 
+const TRANSLATED_ERROR_CODES: readonly string[] = [
+  "network_error",
+  "unexpected_client_error",
+];
+
 export function AnalysisResult({
   analysis,
   detail,
@@ -63,6 +69,7 @@ export function AnalysisResult({
   onRefresh,
   onApprove,
 }: AnalysisResultProps) {
+  const { t, label } = useI18n();
   const hasResult = analysis !== null || detail !== null;
   const overallStatus = analysis?.overall_status ?? (detail ? "SAVED RESULT" : null);
   const selectedContactId =
@@ -85,17 +92,20 @@ export function AnalysisResult({
       : (selectedRanking?.reasons ?? []);
   const isRefreshing = pageState === "refreshing";
   const isApproving = pageState === "approving";
+  const errorMessage = error
+    ? TRANSLATED_ERROR_CODES.includes(error.code)
+      ? t(`error.${error.code}` as MessageKey)
+      : error.message
+    : null;
 
   return (
     <div className="space-y-5" aria-live="polite">
       <div className="flex min-h-11 flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">
-            Analysis result
+            {t("result.kicker")}
           </p>
-          <p className="mt-1 text-sm text-slate-500">
-            Persisted workflow outcomes, not a live email delivery status.
-          </p>
+          <p className="mt-1 text-sm text-slate-500">{t("result.subtitle")}</p>
         </div>
         {companyId ? (
           <Button
@@ -109,7 +119,7 @@ export function AnalysisResult({
             ) : (
               <RefreshCw />
             )}
-            {isRefreshing ? "Refreshing…" : "Refresh result"}
+            {isRefreshing ? t("result.refreshing") : t("result.refresh")}
           </Button>
         ) : null}
       </div>
@@ -119,15 +129,17 @@ export function AnalysisResult({
           <div className="flex gap-3">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
             <div>
-              <p className="text-sm font-semibold">{error.message}</p>
+              <p className="text-sm font-semibold">{errorMessage}</p>
               <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
                 <div>
-                  <dt className="inline font-semibold">Code: </dt>
+                  <dt className="inline font-semibold">{t("result.error.code")}</dt>
                   <dd className="inline">{error.code}</dd>
                 </div>
                 <div>
-                  <dt className="inline font-semibold">Request ID: </dt>
-                  <dd className="inline break-all">{error.request_id ?? "not available"}</dd>
+                  <dt className="inline font-semibold">{t("result.error.requestId")}</dt>
+                  <dd className="inline break-all">
+                    {error.request_id ?? t("common.notAvailable")}
+                  </dd>
                 </div>
               </dl>
             </div>
@@ -141,11 +153,10 @@ export function AnalysisResult({
             <Route className="size-6" />
           </div>
           <h2 className="mt-5 text-lg font-semibold text-slate-950">
-            Your analysis will appear here
+            {t("result.empty.title")}
           </h2>
           <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
-            Submit a prospect to see company facts, opportunity qualification,
-            decision-maker selection, and a reviewable email draft.
+            {t("result.empty.body")}
           </p>
         </div>
       ) : (
@@ -154,7 +165,7 @@ export function AnalysisResult({
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Overall status
+                  {t("result.overallStatus")}
                 </p>
                 <div className="mt-2 flex items-center gap-2">
                   <CheckCircle2 className="size-5 text-teal-700" />
@@ -163,13 +174,13 @@ export function AnalysisResult({
                       overallStatus ?? "",
                     )}`}
                   >
-                    {overallStatus}
+                    {label("overall", overallStatus)}
                   </span>
                 </div>
               </div>
               {analysis ? (
                 <div className="text-right text-xs text-slate-500">
-                  <p>Request ID</p>
+                  <p>{t("result.requestId")}</p>
                   <p className="mt-1 max-w-56 break-all font-mono text-[11px] text-slate-700">
                     {analysis.request_id}
                   </p>
@@ -180,11 +191,11 @@ export function AnalysisResult({
             {analysis?.warnings.length ? (
               <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">
-                  Workflow notes
+                  {t("result.workflowNotes")}
                 </p>
                 <ul className="mt-2 space-y-1 text-sm leading-6 text-amber-950">
-                  {analysis.warnings.map((warning) => (
-                    <li key={warning}>• {warning}</li>
+                  {analysis.warnings.map((warning, index) => (
+                    <li key={`warning-${index}`}>• {warning}</li>
                   ))}
                 </ul>
               </div>
@@ -200,7 +211,7 @@ export function AnalysisResult({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Company
+                      {t("result.company")}
                     </p>
                     <h3 className="mt-1 text-lg font-semibold text-slate-950">
                       {detail?.company.name ?? analysis?.company.name}
@@ -208,7 +219,7 @@ export function AnalysisResult({
                   </div>
                   {analysis ? (
                     <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">
-                      {analysis.company.action}
+                      {label("stage", analysis.company.action)}
                     </span>
                   ) : null}
                 </div>
@@ -229,8 +240,8 @@ export function AnalysisResult({
                 ) : null}
                 {analysis?.company.notes.length ? (
                   <ul className="mt-4 space-y-1 text-sm text-slate-600">
-                    {analysis.company.notes.map((note) => (
-                      <li key={note}>• {note}</li>
+                    {analysis.company.notes.map((note, index) => (
+                      <li key={`note-${index}`}>• {note}</li>
                     ))}
                   </ul>
                 ) : null}
@@ -252,41 +263,54 @@ export function AnalysisResult({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Contact · Decision maker
+                      {t("result.contactDm")}
                     </p>
                     <h3 className="mt-1 font-semibold text-slate-950">
-                      {selectedContact?.name ?? context?.contact?.name ?? "No contact selected"}
+                      {selectedContact?.name ??
+                        context?.contact?.name ??
+                        t("result.noContact")}
                     </h3>
                     <p className="mt-0.5 text-sm text-slate-500">
-                      {selectedContact?.title ?? context?.contact?.title ?? "Title unavailable"}
+                      {selectedContact?.title ??
+                        context?.contact?.title ??
+                        t("result.noTitle")}
                     </p>
                   </div>
                   <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
-                    {analysis?.decision_maker.action ??
-                      (selectedContactId ? "SELECTED" : "RESEARCH MORE")}
+                    {label(
+                      "stage",
+                      analysis?.decision_maker.action ??
+                        (selectedContactId ? "SELECTED" : "RESEARCH_MORE"),
+                    )}
                   </span>
                 </div>
 
                 <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-3">
                   <div>
-                    <dt className="text-xs font-semibold text-slate-500">Contact status</dt>
-                    <dd className="mt-1 font-medium capitalize text-slate-900">
-                      {selectedContact?.status ?? analysis?.contact.action ?? "Not available"}
-                    </dd>
-                  </div>
-                  <div>
                     <dt className="text-xs font-semibold text-slate-500">
-                      Recommended channel
+                      {t("result.contactStatus")}
                     </dt>
-                    <dd className="mt-1 font-medium capitalize text-slate-900">
-                      {analysis?.decision_maker.recommended_channel ??
-                        selectedRanking?.recommended_channel ??
-                        "Not available"}
+                    <dd className="mt-1 font-medium text-slate-900">
+                      {selectedContact
+                        ? label("contactStatus", selectedContact.status)
+                        : label("stage", analysis?.contact.action)}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-xs font-semibold text-slate-500">
-                      Selection confidence
+                      {t("result.channel")}
+                    </dt>
+                    <dd className="mt-1 font-medium text-slate-900">
+                      {label(
+                        "channel",
+                        analysis?.decision_maker.recommended_channel ??
+                          selectedRanking?.recommended_channel,
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold text-slate-500">
+                      {t("result.dmConfidence")}
                     </dt>
                     <dd className="mt-1 font-medium text-slate-900">
                       {formatRatio(
@@ -298,13 +322,14 @@ export function AnalysisResult({
 
                 {selectedContactId ? (
                   <p className="mt-4 break-all font-mono text-[11px] text-slate-500">
-                    Selected contact: {selectedContactId}
+                    {t("result.selectedContact")}
+                    {selectedContactId}
                   </p>
                 ) : null}
                 {decisionReasons.length ? (
                   <ul className="mt-4 space-y-1 text-sm leading-6 text-slate-600">
-                    {decisionReasons.map((reason) => (
-                      <li key={reason}>• {reason}</li>
+                    {decisionReasons.map((reason, index) => (
+                      <li key={`reason-${index}`}>• {reason}</li>
                     ))}
                   </ul>
                 ) : null}

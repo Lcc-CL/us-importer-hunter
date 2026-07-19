@@ -92,10 +92,100 @@ Caveat: the request was served by a third-party OpenAI-compatible relay, not
 Output quality through the official endpoint remains unexercised; the
 application-side wiring is now fully verified either way.
 
+## v0.1.1 P0 — scorer signal-kind regression (2026-07-18/19)
+
+Root cause: `DeterministicOpportunityScoringService` recognized a dimension
+only by searching the signal text for **English** keywords. Chinese signal
+detail therefore matched nothing, and four dimensions
+(`shipping_fit`, `cargo_value_potential`, `company_scale`,
+`logistics_complexity`) scored 0 despite the signals existing in the database.
+The three dimensions that did score (`import_activity`, `china_dependency`,
+`growth_signal`) matched only by coincidence — their English *kind* prefix
+happens to contain a detector keyword. The score was capped at 39.5 (< 70), so
+qualification could only ever be REVIEW, and because drafts are gated on
+QUALIFIED (`workflows/email/workflow.py`), no email was ever generated.
+
+Fix (scoped to detection only): the scorer now resolves a dimension from the
+structured `"<kind>: …"` prefix through an alias table, and falls back to the
+existing English keyword detectors when the kind is unknown, so legacy
+free-text signals still score. **No qualification threshold, dimension weight,
+schema, state machine, email gate, or production row was changed.**
+`pain_point` maps to no dimension: it is stored, and never scores.
+
+Regression evidence on the reported company
+`7e1a93a8-84bb-49b1-857a-22d2852f4fb5` (JESKE), re-analyzed through the live
+Docker stack with an **empty** signals payload so only the 20 already-stored
+signals were re-scored — the signal count (20) and source count (4) were
+unchanged by the run:
+
+| | before | after |
+|---|---|---|
+| score | 39.5 | **70.5** |
+| data completeness | 0.55 | **1.00** |
+| qualification | review | **qualified** |
+| recommended action | human_review | **prepare_outreach** |
+| priority | low | **high** |
+| email draft | none (0 outreaches) | **generated v1** |
+
+The four previously blind dimensions now score from their Chinese detail:
+`shipping_fit` +12, `cargo_value` (alias → `cargo_value_potential`) +6,
+`company_scale` +6, `complexity` (alias → `logistics_complexity`) +7. The new
+assessment was appended at position 2 (append-only history preserved; the two
+historical REVIEW rows are intact). The draft persisted `provider=openai`,
+`model=gpt-5.6-terra`, `prompt_version=first-outreach-v1`, was approved in the
+browser, and survived reload.
+
+A second, independent proof used a brand-new company submitted through the UI
+with **100% Chinese signal detail** and canonical kinds chosen from the new
+dropdown: score 70.5, completeness 1.00, qualified, real LLM draft generated
+and approved. Before the fix that same input would have scored 39.5.
+
+Frontend: the signal-kind field became a controlled dropdown — Chinese labels,
+fixed English enum values on the wire (`import_activity`, `china_dependency`,
+`shipping_fit`, `cargo_value_potential`, `company_scale`, `growth_signal`,
+`logistics_complexity`, `pain_point`). Legacy stored values (`cargo_value`,
+`growth`, `complexity`) still render with their canonical meaning when editing,
+and any unrecognized value is shown explicitly as "未知信号类型 / Unknown signal
+type" rather than being silently dropped.
+
+## v0.1.1 — browser E2E regression harness
+
+The regression above was found by hand and verified with throwaway scripts. It
+is now a committed suite (`e2e/`, driven by `make e2e`) so the same class of
+defect fails a gate instead of reaching a user. The harness starts an
+**isolated** stack — backend `:8001`, frontend `:3001`, database
+`importer_hunter_e2e` — created and dropped per run. The dev database is never
+opened by a run, so isolation is structural rather than dependent on cleanup.
+
+Coverage: the qualified path (Chinese structured signals → QUALIFIED → decision
+maker → draft → approve → reload), the review path (thin evidence → REVIEW, no
+draft, explainable "unknown, not negative" reasons), i18n default/toggle/persist
+plus the signal-kind dropdown enum contract, and provider-badge correctness with
+assertions that no key or base URL reaches the browser. Every spec also fails on
+React duplicate-key warnings and unhandled page exceptions.
+
+Fixtures are synthetic — no real customers or contacts — and hard-code no
+database ids; company, assessment and draft ids are read back at runtime. Each
+run randomizes the website host as well as the company name, because company
+dedup matches on host and a fixed host silently merges consecutive runs.
+
+Results on 2026-07-19, from the current tree:
+
+- `make e2e` (Fake provider, no LLM cost): **6/6 passed**, teardown confirmed
+  `importer_hunter_e2e` rows in `pg_database` = 0.
+- `make e2e-real` (live provider): **1/1 passed** — draft persisted with
+  `provider=openai`, a model name and a prompt version. The credential is
+  presence-checked only and never printed.
+- Dev database after both runs: 9 companies, JESKE still 20 signals / 70.5,
+  and zero rows matching the E2E fixture naming — untouched.
+
 ## Quality gates
 
-- Backend: 373 tests passed, including real PostgreSQL migrations and the MVP
-  analyze/query/approve/replay E2E test.
+- Backend: 382 tests passed (v0.1.1: 373 → 374 runtime-status → 382 with eight
+  new scorer cases covering kind detection, keyword fallback, the three
+  aliases, unknown kinds, and `pain_point` not scoring), including real
+  PostgreSQL migrations and the MVP analyze/query/approve/replay E2E test.
+- Browser E2E: `make e2e` 6/6, `make e2e-real` 1/1 (2026-07-19).
 - Ruff: passed.
 - mypy strict: passed for 189 source files.
 - Frontend TypeScript check: passed.
@@ -122,6 +212,14 @@ application-side wiring is now fully verified either way.
 - The real-LLM smoke test passed through an OpenAI-compatible gateway; output
   quality via the official `api.openai.com` endpoint has not been separately
   exercised.
+- The v0.1.1 P0 fix addressed detection only. Two known issues were diagnosed
+  and deliberately left out of scope: (P1) signal kinds are not validated at
+  ingestion, so a typo such as the stored `ogistics_complexity` still maps to
+  no dimension and silently scores 0 — the new dropdown prevents this for new
+  input but does not repair stored rows; (P2) company deduplication merges on
+  website host, so a synthetic QA company sharing a real company's domain is
+  absorbed into it — this is how `[TEST ONLY]` signals entered the JESKE
+  record. No production rows were altered to work around either.
 - This MVP has no authentication, multi-tenancy, email sending, follow-up,
   company list, or full CRM workflow.
 - Source quality remains the operator's responsibility; the application does

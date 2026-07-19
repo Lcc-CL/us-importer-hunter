@@ -4,6 +4,7 @@ import type {
   AssessmentDetailResponse,
   OpportunityAnalysisResponse,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
 interface OpportunityCardProps {
   analysis: OpportunityAnalysisResponse | null;
@@ -39,6 +40,7 @@ function Metric({
 }
 
 export function OpportunityCard({ analysis, detail }: OpportunityCardProps) {
+  const { t, label } = useI18n();
   const score = detail?.score ?? analysis?.score;
   const confidence = detail?.confidence ?? analysis?.confidence;
   const completeness = detail?.data_completeness ?? analysis?.data_completeness;
@@ -57,41 +59,47 @@ export function OpportunityCard({ analysis, detail }: OpportunityCardProps) {
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Opportunity
+              {t("opp.kicker")}
             </p>
-            <h3 className="mt-0.5 font-semibold text-slate-950">Qualification assessment</h3>
+            <h3 className="mt-0.5 font-semibold text-slate-950">{t("opp.title")}</h3>
           </div>
         </div>
         <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800">
-          {action.replaceAll("_", " ")}
+          {label("stage", action)}
         </span>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        <Metric label="Score" value={formatScore(score)} hint="Fit score · 0–100" />
         <Metric
-          label="Confidence"
-          value={formatRatio(confidence)}
-          hint="Strength of evidence"
+          label={t("opp.score")}
+          value={formatScore(score)}
+          hint={t("opp.scoreHint")}
         />
         <Metric
-          label="Completeness"
+          label={t("opp.confidence")}
+          value={formatRatio(confidence)}
+          hint={t("opp.confidenceHint")}
+        />
+        <Metric
+          label={t("opp.completeness")}
           value={formatRatio(completeness)}
-          hint="Known decision inputs"
+          hint={t("opp.completenessHint")}
         />
       </div>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <div>
-          <p className="text-xs font-semibold text-slate-500">Qualification decision</p>
-          <p className="mt-1 text-sm font-medium capitalize text-slate-900">
-            {decision?.replaceAll("_", " ") ?? "Not available"}
+          <p className="text-xs font-semibold text-slate-500">{t("opp.decision")}</p>
+          <p className="mt-1 text-sm font-medium text-slate-900">
+            {label("decision", decision)}
           </p>
         </div>
         <div>
-          <p className="text-xs font-semibold text-slate-500">Recommended action</p>
-          <p className="mt-1 text-sm font-medium capitalize text-slate-900">
-            {recommendedAction?.replaceAll("_", " ") ?? "Not available"}
+          <p className="text-xs font-semibold text-slate-500">
+            {t("opp.recommendedAction")}
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-900">
+            {label("recommendedAction", recommendedAction)}
           </p>
         </div>
       </div>
@@ -99,21 +107,18 @@ export function OpportunityCard({ analysis, detail }: OpportunityCardProps) {
       {needsResearch ? (
         <div className="mt-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           <Telescope className="mt-0.5 size-4 shrink-0" />
-          <p>
-            More independent evidence is needed before this prospect can be qualified.
-            Add only sources you have actually verified.
-          </p>
+          <p>{t("opp.researchNotice")}</p>
         </div>
       ) : null}
 
       {reasons.length > 0 ? (
         <div className="mt-5 border-t border-slate-100 pt-4">
           <p className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <ShieldCheck className="size-4 text-teal-700" /> Why this decision
+            <ShieldCheck className="size-4 text-teal-700" /> {t("opp.why")}
           </p>
           <ul className="mt-2 space-y-1.5 text-sm leading-6 text-slate-600">
-            {reasons.map((reason) => (
-              <li className="flex gap-2" key={reason}>
+            {reasons.map((reason, index) => (
+              <li className="flex gap-2" key={`reason-${index}`}>
                 <span className="text-teal-700">•</span>
                 <span>{reason}</span>
               </li>

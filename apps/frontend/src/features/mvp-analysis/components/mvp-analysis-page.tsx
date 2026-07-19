@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Anchor, ExternalLink, ShieldCheck } from "lucide-react";
+import { Anchor, ExternalLink, Languages } from "lucide-react";
 
 import {
   API_BASE_URL,
@@ -15,9 +15,11 @@ import {
   type ProspectAnalysisResponse,
   type ProspectDetailResponse,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import type { MvpPageState, SubmittedProspectContext } from "../types";
 import { AnalysisResult } from "./analysis-result";
 import { ProspectForm } from "./prospect-form";
+import { ProviderBadge } from "./provider-badge";
 
 interface MvpAnalysisPageProps {
   initialCompanyId?: string;
@@ -31,6 +33,7 @@ function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
 }
 
 export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
+  const { t, lang, setLang } = useI18n();
   const [analysis, setAnalysis] = useState<ProspectAnalysisResponse | null>(null);
   const [detail, setDetail] = useState<ProspectDetailResponse | null>(null);
   const [approval, setApproval] = useState<DraftApprovalResponse | null>(null);
@@ -146,17 +149,26 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
               <p className="font-semibold tracking-tight text-slate-950">
                 US Importer Hunter
               </p>
-              <p className="text-xs text-slate-500">Evidence to outreach · MVP</p>
+              <p className="text-xs text-slate-500">{t("app.tagline")}</p>
             </div>
           </div>
-          <a
-            className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
-            href={`${API_BASE_URL}/docs`}
-            rel="noreferrer"
-            target="_blank"
-          >
-            API docs <ExternalLink className="size-3.5" />
-          </a>
+          <div className="flex items-center gap-1">
+            <button
+              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+              type="button"
+            >
+              <Languages className="size-3.5" /> {t("header.langSwitch")}
+            </button>
+            <a
+              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              href={`${API_BASE_URL}/docs`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {t("header.apiDocs")} <ExternalLink className="size-3.5" />
+            </a>
+          </div>
         </div>
       </header>
 
@@ -164,16 +176,13 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
         <div className="mb-8 grid gap-4 border-b border-slate-200 pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">
-              Prospect analysis workspace
+              {t("hero.kicker")}
             </p>
             <h1 className="mt-2 max-w-3xl text-3xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-4xl">
-              Turn verified importer evidence into a human-reviewed first draft.
+              {t("hero.title")}
             </h1>
           </div>
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-            <ShieldCheck className="size-4 text-teal-700" /> Fake provider by default · No
-            email delivery
-          </div>
+          <ProviderBadge />
         </div>
 
         <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">

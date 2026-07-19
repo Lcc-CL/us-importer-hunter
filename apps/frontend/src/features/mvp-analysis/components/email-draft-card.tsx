@@ -7,6 +7,7 @@ import type {
   EmailDraftAnalysisResponse,
   EmailDraftDetailResponse,
 } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
 interface EmailDraftCardProps {
   analysis: EmailDraftAnalysisResponse | null;
@@ -18,14 +19,6 @@ interface EmailDraftCardProps {
   onApprove: (outreachId: string, version: number) => Promise<void>;
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return null;
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
 export function EmailDraftCard({
   analysis,
   detail,
@@ -35,6 +28,7 @@ export function EmailDraftCard({
   onApproverNameChange,
   onApprove,
 }: EmailDraftCardProps) {
+  const { t, label, dateLocale } = useI18n();
   const [copied, setCopied] = useState<"subject" | "body" | null>(null);
   const outreachId = detail?.outreach_id ?? analysis?.outreach_id;
   const version = detail?.version ?? analysis?.version;
@@ -46,6 +40,13 @@ export function EmailDraftCard({
   const action = analysis?.action ?? (detail ? "GENERATED" : "SKIPPED");
   const canApprove =
     status?.toLowerCase() === "generated" && Boolean(outreachId) && version != null;
+
+  function formatDate(value: string) {
+    return new Intl.DateTimeFormat(dateLocale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
+  }
 
   async function copy(value: string, field: "subject" | "body") {
     try {
@@ -66,10 +67,10 @@ export function EmailDraftCard({
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Email draft
+              {t("draft.kicker")}
             </p>
             <h3 className="mt-0.5 font-semibold text-slate-950">
-              {version ? `Version ${version}` : "Not generated"}
+              {version ? t("draft.version", { n: version }) : t("draft.notGenerated")}
             </h3>
           </div>
         </div>
@@ -82,21 +83,23 @@ export function EmailDraftCard({
                 : "bg-slate-100 text-slate-700"
           }`}
         >
-          {(status ?? action).replaceAll("_", " ").toUpperCase()}
+          {status ? label("draftStatus", status) : label("stage", action)}
         </span>
       </div>
 
       <div className="px-5 py-5 sm:px-6">
         <div className="mb-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-950">
           <ShieldAlert className="mt-0.5 size-4 shrink-0" />
-          <p>This is a draft. No email has been sent.</p>
+          <p>{t("draftMode.notice")}</p>
         </div>
 
         {subject && body ? (
           <>
             <div>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-slate-500">Subject</p>
+                <p className="text-xs font-semibold text-slate-500">
+                  {t("draft.subject")}
+                </p>
                 <Button
                   onClick={() => copy(subject, "subject")}
                   size="sm"
@@ -104,7 +107,7 @@ export function EmailDraftCard({
                   variant="ghost"
                 >
                   {copied === "subject" ? <Check /> : <Clipboard />}
-                  {copied === "subject" ? "Copied" : "Copy subject"}
+                  {copied === "subject" ? t("draft.copied") : t("draft.copySubject")}
                 </Button>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900">
@@ -113,7 +116,7 @@ export function EmailDraftCard({
             </div>
             <div className="mt-5">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-slate-500">Body</p>
+                <p className="text-xs font-semibold text-slate-500">{t("draft.body")}</p>
                 <Button
                   onClick={() => copy(body, "body")}
                   size="sm"
@@ -121,7 +124,7 @@ export function EmailDraftCard({
                   variant="ghost"
                 >
                   {copied === "body" ? <Check /> : <Clipboard />}
-                  {copied === "body" ? "Copied" : "Copy body"}
+                  {copied === "body" ? t("draft.copied") : t("draft.copyBody")}
                 </Button>
               </div>
               <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-6 text-slate-700">
@@ -131,15 +134,14 @@ export function EmailDraftCard({
           </>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-600">
-            A draft was not generated for this result. Review the qualification and
-            decision-maker stages above.
+            {t("draft.empty")}
           </div>
         )}
 
         {approvedAt && approvedBy ? (
           <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <p className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
-              <Check className="size-4" /> Approved by {approvedBy}
+              <Check className="size-4" /> {t("draft.approvedBy", { name: approvedBy })}
             </p>
             <p className="mt-1 text-xs text-emerald-800">{formatDate(approvedAt)}</p>
           </div>
@@ -149,10 +151,10 @@ export function EmailDraftCard({
           <div className="mt-5 border-t border-slate-200 pt-5">
             <label>
               <span className="mb-1.5 block text-xs font-semibold text-slate-700">
-                Approver name
+                {t("draft.approverName")}
               </span>
               <input
-                aria-label="Approver name"
+                aria-label={t("draft.approverName")}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm outline-none focus:border-teal-600 focus:ring-3 focus:ring-teal-600/10"
                 maxLength={200}
                 onChange={(event) => onApproverNameChange(event.target.value)}
@@ -168,15 +170,15 @@ export function EmailDraftCard({
               type="button"
             >
               {isApproving ? <LoaderCircle className="animate-spin" /> : <Check />}
-              {isApproving ? "Approving…" : "Approve draft"}
+              {isApproving ? t("draft.approving") : t("draft.approve")}
             </Button>
           </div>
         ) : null}
 
         {analysis?.notes.length && status !== "approved" ? (
           <ul className="mt-5 space-y-1 text-xs leading-5 text-slate-500">
-            {analysis.notes.map((note) => (
-              <li key={note}>• {note}</li>
+            {analysis.notes.map((note, index) => (
+              <li key={`note-${index}`}>• {note}</li>
             ))}
           </ul>
         ) : null}

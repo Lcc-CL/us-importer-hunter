@@ -61,6 +61,25 @@ _DETECTORS: dict[ScoringDimension, tuple[tuple[str, ...], float]] = {
 }
 _CONTACTABILITY_NORMALIZED = 0.5  # a reachable website is a path to contacts, nothing more
 
+# Structured signal-kind → dimension. The pipeline stores every signal as
+# "<kind>: <detail>", so a dimension is recognized from its declared kind
+# regardless of the detail's language — the keyword detectors above are only a
+# fallback for legacy free-text signals that carry no recognizable kind.
+# Legacy/aliased kinds fold to the canonical dimension; kinds absent here
+# (e.g. pain_point) are stored but never score, and add no weight.
+_KIND_TO_DIMENSION: dict[str, ScoringDimension] = {
+    "import_activity": ScoringDimension.IMPORT_ACTIVITY,
+    "china_dependency": ScoringDimension.CHINA_DEPENDENCY,
+    "shipping_fit": ScoringDimension.SHIPPING_FIT,
+    "cargo_value": ScoringDimension.CARGO_VALUE_POTENTIAL,
+    "cargo_value_potential": ScoringDimension.CARGO_VALUE_POTENTIAL,
+    "company_scale": ScoringDimension.COMPANY_SCALE,
+    "growth": ScoringDimension.GROWTH_SIGNAL,
+    "growth_signal": ScoringDimension.GROWTH_SIGNAL,
+    "complexity": ScoringDimension.LOGISTICS_COMPLEXITY,
+    "logistics_complexity": ScoringDimension.LOGISTICS_COMPLEXITY,
+}
+
 
 @dataclass(frozen=True)
 class DeterministicConfidenceWeights:
@@ -152,7 +171,11 @@ class DeterministicOpportunityScoringService:
             return self._assess_contactability(weight, scoring_input)
 
         keywords, normalized = _DETECTORS[dimension]
-        match = self._first_match(scoring_input.signals, keywords)
+        # Prefer the structured signal kind (locale-independent); fall back to
+        # English keyword detection only for legacy signals with no known kind.
+        match = self._first_kind_match(scoring_input.signals, dimension)
+        if match is None:
+            match = self._first_match(scoring_input.signals, keywords)
         if match is None:
             return DimensionAssessment(
                 dimension=dimension,
@@ -206,6 +229,18 @@ class DeterministicOpportunityScoringService:
         )
 
     # -- helpers ----------------------------------------------------------
+
+    @staticmethod
+    def _first_kind_match(
+        signals: tuple[str, ...], dimension: ScoringDimension
+    ) -> str | None:
+        """Match by the signal's declared kind (the "<kind>:" prefix), mapped
+        through the alias table — language-independent, unlike keyword search."""
+        for signal in signals:
+            kind = signal.split(":", 1)[0].strip().lower()
+            if _KIND_TO_DIMENSION.get(kind) is dimension:
+                return signal
+        return None
 
     @staticmethod
     def _first_match(signals: tuple[str, ...], keywords: tuple[str, ...]) -> str | None:

@@ -10,7 +10,9 @@ from uuid import uuid4
 from app.domain.scoring import DEFAULT_DIMENSION_WEIGHTS, QualificationPolicy
 from app.domain.services import OpportunityScoringInput
 from app.domain.values import (
+    DimensionAssessment,
     DimensionStatus,
+    OpportunityAssessment,
     Priority,
     QualificationDecision,
     ScoringDimension,
@@ -185,6 +187,139 @@ class TestQualificationIntegration:
         assert default.new_score == strict.new_score
         assert default.priority is Priority.HIGH
         assert strict.priority is not Priority.HIGH
+
+
+def _dimension(
+    assessment: OpportunityAssessment, dimension: ScoringDimension
+) -> DimensionAssessment:
+    assert assessment.score_breakdown is not None
+    return next(
+        d for d in assessment.score_breakdown.dimensions if d.dimension is dimension
+    )
+
+
+class TestKindBasedDetection:
+    """P0 fix: recognize a dimension from the structured signal kind, so
+    non-English (e.g. Chinese) detail still scores; keyword search is only a
+    fallback for legacy signals with no recognizable kind."""
+
+    async def test_chinese_detail_with_kind_scores_via_kind(self) -> None:
+        # These details carry NO English detector keyword — before the fix all
+        # three were UNKNOWN; only the structured kind can match them now.
+        signals = (
+            "shipping_fit: 经常有DDP需求，没有固定货代",
+            "company_scale: 员工人数在50人以上，规模中等",
+            "logistics_complexity: 多供应商采购并向两个仓库补货",
+        )
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(signals=signals)
+        )
+        for dimension in (
+            ScoringDimension.SHIPPING_FIT,
+            ScoringDimension.COMPANY_SCALE,
+            ScoringDimension.LOGISTICS_COMPLEXITY,
+        ):
+            dim = _dimension(assessment, dimension)
+            assert dim.status is DimensionStatus.ASSESSED
+            assert dim.earned_score > 0.0
+
+    async def test_legacy_english_detail_without_kind_uses_keyword_fallback(self) -> None:
+        # kind "note" is unknown → the English keywords in the detail still win.
+        signals = ("note: FCL ocean containers from CNSHA suppliers",)
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(signals=signals)
+        )
+        assert _dimension(assessment, ScoringDimension.SHIPPING_FIT).status is (
+            DimensionStatus.ASSESSED
+        )
+        assert _dimension(assessment, ScoringDimension.CHINA_DEPENDENCY).status is (
+            DimensionStatus.ASSESSED
+        )
+
+    async def test_cargo_value_alias_maps_to_cargo_value_potential(self) -> None:
+        # Chinese detail with no keyword: only the alias can produce a score.
+        signals = ("cargo_value: 货值较高的五金产品",)
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(signals=signals)
+        )
+        dim = _dimension(assessment, ScoringDimension.CARGO_VALUE_POTENTIAL)
+        assert dim.status is DimensionStatus.ASSESSED
+        assert dim.earned_score == (
+            DEFAULT_DIMENSION_WEIGHTS[ScoringDimension.CARGO_VALUE_POTENTIAL] * 0.6
+        )
+
+    async def test_growth_alias_maps_to_growth_signal(self) -> None:
+        signals = ("growth: 最近在招聘新的采购，新开了仓库",)
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(signals=signals)
+        )
+        assert _dimension(assessment, ScoringDimension.GROWTH_SIGNAL).status is (
+            DimensionStatus.ASSESSED
+        )
+
+    async def test_complexity_alias_maps_to_logistics_complexity(self) -> None:
+        # No hazmat/cold chain/oversized/multi-origin keyword: alias only.
+        signals = ("complexity: 多供应商与多仓库补货协调",)
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(signals=signals)
+        )
+        assert _dimension(assessment, ScoringDimension.LOGISTICS_COMPLEXITY).status is (
+            DimensionStatus.ASSESSED
+        )
+
+    async def test_unknown_kind_does_not_score(self) -> None:
+        signals = ("mystery_kind: 一些无法识别的中文描述",)
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(signals=signals, website_host=None)
+        )
+        assert assessment.score_breakdown is not None
+        for dim in assessment.score_breakdown.dimensions:
+            assert dim.status is not DimensionStatus.ASSESSED
+        assert assessment.new_score.value == 0.0
+
+    async def test_pain_point_is_saved_but_not_scored(self) -> None:
+        # pain_point is a legitimate signal kind but maps to no dimension and
+        # adds no weight — it must never contribute to the score.
+        signals = ("pain_point: 旺季舱位波动和到仓时间不稳定",)
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(signals=signals, website_host=None)
+        )
+        assert assessment.score_breakdown is not None
+        for dim in assessment.score_breakdown.dimensions:
+            assert dim.status is not DimensionStatus.ASSESSED
+        assert assessment.new_score.value == 0.0
+
+    async def test_chinese_signals_with_kinds_reach_qualified(self) -> None:
+        # Regression mirror of the real JESKE data that previously capped at
+        # REVIEW / 39.5 because its Chinese detail matched no English keyword.
+        signals = (
+            "import_activity: 存在整柜运输记录 最近进口频率上升",
+            "china_dependency: 过去12个月有100次中国发货记录 主要进口五金",
+            "shipping_fit: 经常有DDP需求，没有固定货代",
+            "cargo_value: 货价单价高，一年内总进口金额约100万美金",
+            "company_scale: 公司成立64年，员工人数在50人以上",
+            "growth: 最近在招聘新的采购，新开了仓库，营业额翻倍",
+            "logistics_complexity: 最近在扩大市场，有新的供应商和新的海运需求",
+            "pain_point: 旺季舱位波动和到仓时间不稳定",
+        )
+        two_sources = (
+            SourceReference(
+                source="importyeti", reference="https://ref/bol/jeske", retrieved_at=FIXED_AT
+            ),
+            SourceReference(
+                source="company_website",
+                reference="https://jeskehardware.com/",
+                retrieved_at=FIXED_AT,
+            ),
+        )
+        assessment = await DeterministicOpportunityScoringService().assess(
+            make_input(
+                signals=signals, sources=two_sources, website_host="jeskehardware.com"
+            )
+        )
+        assert assessment.new_score.value >= 70.0
+        assert assessment.qualification_decision is QualificationDecision.QUALIFIED
+        assert assessment.recommended_action == "prepare_outreach"
 
 
 class TestWeightOwnership:

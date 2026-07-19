@@ -12,6 +12,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { ProspectAnalysisRequest } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import {
+  isCanonicalSignalKind,
+  LEGACY_SIGNAL_KINDS,
+  SIGNAL_KINDS,
+} from "../signal-kinds";
 
 interface EditableSource {
   id: number;
@@ -71,6 +77,7 @@ function FormSection({
 }
 
 export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
+  const { t, label } = useI18n();
   const nextSourceId = useRef(3);
   const nextSignalId = useRef(1);
   const [companyName, setCompanyName] = useState("");
@@ -178,26 +185,25 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
     >
       <div className="border-b border-slate-200 bg-slate-950 px-5 py-5 text-white sm:px-7">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300">
-          Prospect input
+          {t("form.kicker")}
         </p>
         <h1 className="mt-1.5 text-xl font-semibold tracking-tight">
-          Analyze a US importer
+          {t("form.title")}
         </h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-          Submit evidence-backed company facts. The workflow evaluates fit, selects a
-          decision maker, and prepares a review-only email draft.
+          {t("form.intro")}
         </p>
       </div>
 
       <fieldset disabled={disabled}>
         <FormSection
           icon={<Building2 className="size-4" />}
-          title="Company"
-          description="The importer you want to qualify. Website is optional."
+          title={t("form.company.title")}
+          description={t("form.company.desc")}
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
-              <span className={labelClass}>Company name *</span>
+              <span className={labelClass}>{t("form.company.name")}</span>
               <input
                 aria-label="Company name"
                 className={inputClass}
@@ -208,7 +214,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
               />
             </label>
             <label>
-              <span className={labelClass}>Website</span>
+              <span className={labelClass}>{t("form.company.website")}</span>
               <input
                 aria-label="Company website"
                 className={inputClass}
@@ -223,12 +229,11 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
 
         <FormSection
           icon={<Database className="size-4" />}
-          title="Evidence sources"
-          description="Use only references you actually consulted; no source is created for you."
+          title={t("form.sources.title")}
+          description={t("form.sources.desc")}
         >
           <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
-            Two independent sources are recommended for qualification. One source is
-            allowed and may return RESEARCH_MORE.
+            {t("form.sources.tip")}
           </div>
           <div className="space-y-3">
             {sources.map((item, index) => (
@@ -237,7 +242,9 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                 key={item.id}
               >
                 <label>
-                  <span className={labelClass}>Source {index + 1} name *</span>
+                  <span className={labelClass}>
+                    {t("form.sources.name", { n: index + 1 })}
+                  </span>
                   <input
                     aria-label={`Source ${index + 1} name`}
                     className={inputClass}
@@ -250,7 +257,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                   />
                 </label>
                 <label>
-                  <span className={labelClass}>Reference URL or record ID *</span>
+                  <span className={labelClass}>{t("form.sources.reference")}</span>
                   <input
                     aria-label={`Source ${index + 1} reference`}
                     className={inputClass}
@@ -263,7 +270,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                   />
                 </label>
                 <Button
-                  aria-label={`Remove source ${index + 1}`}
+                  aria-label={t("form.sources.remove", { n: index + 1 })}
                   className="self-end"
                   disabled={sources.length === 1}
                   onClick={() => removeSource(item.id)}
@@ -277,26 +284,17 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
             ))}
           </div>
           <Button className="mt-3" onClick={addSource} type="button" variant="outline">
-            <Plus /> Add source
+            <Plus /> {t("form.sources.add")}
           </Button>
         </FormSection>
 
         <FormSection
           icon={<SlidersHorizontal className="size-4" />}
-          title="Signals"
-          description="Optional factual signals already supported by the analysis API."
+          title={t("form.signals.title")}
+          description={t("form.signals.desc")}
         >
-          <datalist id="signal-kinds">
-            <option value="import_activity" />
-            <option value="china_dependency" />
-            <option value="shipping_fit" />
-            <option value="cargo_value" />
-            <option value="company_scale" />
-            <option value="growth" />
-            <option value="complexity" />
-          </datalist>
           {signals.length === 0 ? (
-            <p className="text-sm text-slate-500">No optional signals added.</p>
+            <p className="text-sm text-slate-500">{t("form.signals.empty")}</p>
           ) : (
             <div className="space-y-3">
               {signals.map((item, index) => (
@@ -305,21 +303,40 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                   key={item.id}
                 >
                   <label>
-                    <span className={labelClass}>Signal {index + 1} kind *</span>
-                    <input
+                    <span className={labelClass}>
+                      {t("form.signals.kind", { n: index + 1 })}
+                    </span>
+                    <select
                       aria-label={`Signal ${index + 1} kind`}
                       className={inputClass}
-                      list="signal-kinds"
                       value={item.kind}
                       onChange={(event) =>
                         updateSignal(item.id, "kind", event.target.value)
                       }
-                      placeholder="import_activity"
                       required
-                    />
+                    >
+                      <option value="" disabled>
+                        {t("form.signals.kindPlaceholder")}
+                      </option>
+                      {SIGNAL_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {label("signalKind", kind)}
+                        </option>
+                      ))}
+                      {item.kind && !isCanonicalSignalKind(item.kind) ? (
+                        <option value={item.kind}>
+                          {item.kind in LEGACY_SIGNAL_KINDS
+                            ? `${label(
+                                "signalKind",
+                                LEGACY_SIGNAL_KINDS[item.kind],
+                              )}（${t("form.signals.kindLegacy")}: ${item.kind}）`
+                            : `${t("form.signals.kindUnknown")}（${item.kind}）`}
+                        </option>
+                      ) : null}
+                    </select>
                   </label>
                   <label>
-                    <span className={labelClass}>Observed detail *</span>
+                    <span className={labelClass}>{t("form.signals.detail")}</span>
                     <input
                       aria-label={`Signal ${index + 1} detail`}
                       className={inputClass}
@@ -332,7 +349,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                     />
                   </label>
                   <Button
-                    aria-label={`Remove signal ${index + 1}`}
+                    aria-label={t("form.signals.remove", { n: index + 1 })}
                     className="self-end"
                     onClick={() => removeSignal(item.id)}
                     size="icon-lg"
@@ -346,14 +363,14 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
             </div>
           )}
           <Button className="mt-3" onClick={addSignal} type="button" variant="outline">
-            <Plus /> Add signal
+            <Plus /> {t("form.signals.add")}
           </Button>
         </FormSection>
 
         <FormSection
           icon={<UserRound className="size-4" />}
-          title="Contact"
-          description="Optional. Add a reachable person to enable decision-maker selection."
+          title={t("form.contact.title")}
+          description={t("form.contact.desc")}
         >
           <label className="mb-4 flex items-center gap-3 text-sm font-medium text-slate-800">
             <input
@@ -362,12 +379,12 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
               onChange={(event) => setIncludeContact(event.target.checked)}
               type="checkbox"
             />
-            Include a contact in this analysis
+            {t("form.contact.include")}
           </label>
           {includeContact ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <label>
-                <span className={labelClass}>Contact name *</span>
+                <span className={labelClass}>{t("form.contact.name")}</span>
                 <input
                   aria-label="Contact name"
                   className={inputClass}
@@ -380,7 +397,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                 />
               </label>
               <label>
-                <span className={labelClass}>Title</span>
+                <span className={labelClass}>{t("form.contact.jobTitle")}</span>
                 <input
                   aria-label="Contact title"
                   className={inputClass}
@@ -392,7 +409,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                 />
               </label>
               <label>
-                <span className={labelClass}>Email</span>
+                <span className={labelClass}>{t("form.contact.email")}</span>
                 <input
                   aria-label="Contact email"
                   className={inputClass}
@@ -405,7 +422,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                 />
               </label>
               <label>
-                <span className={labelClass}>LinkedIn URL</span>
+                <span className={labelClass}>{t("form.contact.linkedin")}</span>
                 <input
                   aria-label="Contact LinkedIn URL"
                   className={inputClass}
@@ -421,7 +438,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                 />
               </label>
               <label>
-                <span className={labelClass}>Phone</span>
+                <span className={labelClass}>{t("form.contact.phone")}</span>
                 <input
                   aria-label="Contact phone"
                   className={inputClass}
@@ -434,7 +451,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
                 />
               </label>
               <label>
-                <span className={labelClass}>Contact source *</span>
+                <span className={labelClass}>{t("form.contact.source")}</span>
                 <input
                   aria-label="Contact source"
                   className={inputClass}
@@ -452,12 +469,12 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
 
         <FormSection
           icon={<Send className="size-4" />}
-          title="Sender"
-          description="Used only to personalize the generated draft. Nothing is sent."
+          title={t("form.sender.title")}
+          description={t("form.sender.desc")}
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
-              <span className={labelClass}>Sender name *</span>
+              <span className={labelClass}>{t("form.sender.name")}</span>
               <input
                 aria-label="Sender name"
                 className={inputClass}
@@ -470,7 +487,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
               />
             </label>
             <label>
-              <span className={labelClass}>Sender company *</span>
+              <span className={labelClass}>{t("form.sender.company")}</span>
               <input
                 aria-label="Sender company"
                 className={inputClass}
@@ -483,7 +500,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
               />
             </label>
             <label className="sm:col-span-2">
-              <span className={labelClass}>Value proposition *</span>
+              <span className={labelClass}>{t("form.sender.valueProp")}</span>
               <textarea
                 aria-label="Value proposition"
                 className={`${inputClass} min-h-24 resize-y py-2.5`}
@@ -506,7 +523,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
               onChange={(event) => setGenerateEmail(event.target.checked)}
               type="checkbox"
             />
-            Generate an email draft when qualification conditions are met
+            {t("form.generateEmail")}
           </label>
         </FormSection>
       </fieldset>
@@ -519,7 +536,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
           type="submit"
         >
           {disabled ? <LoaderCircle className="animate-spin" /> : null}
-          {disabled ? "Running analysis…" : "Analyze prospect"}
+          {disabled ? t("form.submitting") : t("form.submit")}
         </Button>
       </div>
     </form>

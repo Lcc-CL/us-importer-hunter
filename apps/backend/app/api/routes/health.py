@@ -6,7 +6,12 @@ from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.api.deps import DbSessionDep, RedisDep, SettingsDep
-from app.schemas.health import DependencyStatus, HealthResponse, ReadinessResponse
+from app.schemas.health import (
+    DependencyStatus,
+    HealthResponse,
+    ReadinessResponse,
+    RuntimeStatusResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +22,17 @@ router = APIRouter(tags=["health"])
 async def health(settings: SettingsDep) -> HealthResponse:
     """Liveness probe — always succeeds if the process is up."""
     return HealthResponse(app=settings.app_name, environment=settings.app_env)
+
+
+@router.get("/health/runtime", response_model=RuntimeStatusResponse)
+async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
+    """Which email-draft provider and model this deployment runs."""
+    provider = settings.email_generator_provider
+    return RuntimeStatusResponse(
+        provider=provider,
+        model=settings.openai_model if provider == "openai" else "fake-static-v1",
+        environment=settings.app_env,
+    )
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)
