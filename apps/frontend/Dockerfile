@@ -17,7 +17,14 @@ FROM base AS build
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
+# next build inlines NEXT_PUBLIC_* into the client bundle, so these must be
+# present here — supplying them only at container runtime would bake the
+# defaults instead. Research stays off unless the caller passes true.
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ARG NEXT_PUBLIC_ENABLE_RESEARCH=false
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL} \
+    NEXT_PUBLIC_ENABLE_RESEARCH=${NEXT_PUBLIC_ENABLE_RESEARCH}
 RUN npm run build
 
 # ---------- prod: standalone output ----------

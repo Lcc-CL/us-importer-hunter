@@ -38,8 +38,18 @@ services:
     build:
       context: ./apps/frontend
       target: dev
+      # NEXT_PUBLIC_* values are compiled into the client bundle, so the prod
+      # target needs them at image-build time. The dev target reads them from
+      # the environment below; passing both keeps the two targets consistent.
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-false}
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      # Research is an internal surface: off unless .env sets it to true.
+      # The frontend deliberately has no env_file, so every variable it needs
+      # is listed here rather than inherited from the backend's secrets.
+      NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-false}
     volumes:
       - ./apps/frontend/src:/app/src          # hot reload
       - ./apps/frontend/public:/app/public
