@@ -34,8 +34,10 @@ class ResearchRun:
         company_name: str,
         website: str,
         started_at: datetime,
+        company_id: UUID | None = None,
     ) -> None:
         self._id = id
+        self._company_id = company_id
         self._company_name = company_name
         self._website = website
         self._started_at = started_at
@@ -55,13 +57,19 @@ class ResearchRun:
     # -- construction ---------------------------------------------------
 
     @classmethod
-    def start(cls, company_name: str, website: str) -> "ResearchRun":
+    def start(
+        cls, company_name: str, website: str, *, company_id: UUID | None = None
+    ) -> "ResearchRun":
+        """`company_id` is optional: research also runs on prospects that are
+        not in the database yet. company_name and website are always recorded
+        as a snapshot of what was researched."""
         if not company_name.strip():
             raise DomainError("research run requires a company name")
         if not website.strip():
             raise DomainError("research run requires a website")
         return cls(
             id=uuid4(),
+            company_id=company_id,
             company_name=company_name.strip(),
             website=website.strip(),
             started_at=utcnow(),
@@ -147,6 +155,10 @@ class ResearchRun:
     @property
     def id(self) -> UUID:
         return self._id
+
+    @property
+    def company_id(self) -> UUID | None:
+        return self._company_id
 
     @property
     def company_name(self) -> str:

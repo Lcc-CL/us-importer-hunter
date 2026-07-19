@@ -25,7 +25,13 @@ from app.domain.research import ResearchFailureCode, ResearchRun, ResearchRunSta
 from app.domain.values import CompanyName, WebsiteUrl
 from app.services.research import ClaimValidator, ExtractionInput, FakeResearchExtractor
 from app.tools.website import FetchedPage, FetchFailure, FetchOutcome, SiteScope
-from app.workflows.research import ResearchAction, ResearchLimits, ResearchWorkflow
+from app.workflows.research import (
+    ResearchAction,
+    ResearchInputError,
+    ResearchLimits,
+    ResearchRequest,
+    ResearchWorkflow,
+)
 
 WEBSITE = "https://acme.example"
 
@@ -103,6 +109,9 @@ class FakeResearchRunRepository:
 
     async def save(self, run: ResearchRun) -> None:
         self.saved.append(run)
+
+    async def list_for_company(self, company_id: UUID, *, limit: int = 20) -> list[ResearchRun]:
+        return [run for run in self.saved if run.company_id == company_id][:limit]
 
     async def list_for_website(self, website: str, *, limit: int = 10) -> list[ResearchRun]:
         return [run for run in self.saved if run.website == website][:limit]
@@ -240,7 +249,7 @@ class TestSuccessfulResearch:
             }
         )
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
 
         assert outcome.action is ResearchAction.COMPLETED
@@ -256,7 +265,9 @@ class TestSuccessfulResearch:
 
     async def test_every_claim_traces_to_a_fetched_page(self) -> None:
         harness = build({WEBSITE: page(WEBSITE, HOME_HTML)})
-        await harness.workflow.handle(company_id=harness.company.id, website=WEBSITE)
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
 
         saved = harness.runs.saved[0]
         fetched = {p.position for p in saved.pages}
@@ -277,7 +288,9 @@ class TestSuccessfulResearch:
                 ),
             }
         )
-        await harness.workflow.handle(company_id=harness.company.id, website=WEBSITE)
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
 
         assert not any("linkedin.com" in url for url in harness.fetcher.requested)
         assert not any("/cart" in url for url in harness.fetcher.requested)
@@ -286,7 +299,9 @@ class TestSuccessfulResearch:
         """The workflow proposes; it never writes company state."""
         harness = build({WEBSITE: page(WEBSITE, HOME_HTML)})
         before = harness.company.signals
-        await harness.workflow.handle(company_id=harness.company.id, website=WEBSITE)
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
         assert harness.company.signals == before == ()
         assert harness.company.sources == ()
 
@@ -295,7 +310,7 @@ class TestPartialResearch:
     async def test_subpage_failures_make_the_run_partial(self) -> None:
         harness = build({WEBSITE: page(WEBSITE, HOME_HTML)})  # sub-pages 404
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
 
         assert outcome.action is ResearchAction.PARTIAL
@@ -308,7 +323,7 @@ class TestPartialResearch:
     async def test_js_shell_reports_needs_browser(self) -> None:
         harness = build({WEBSITE: page(WEBSITE, JS_SHELL_HTML)})
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
 
         assert outcome.action is ResearchAction.PARTIAL
@@ -336,7 +351,7 @@ class TestPartialResearch:
             now=clock,
         )
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
 
         assert outcome.action is ResearchAction.PARTIAL
@@ -350,7 +365,7 @@ class TestPartialResearch:
             limits=ResearchLimits(max_page_chars=80),
         )
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
         assert any("truncated" in warning for warning in outcome.warnings)
 
@@ -409,7 +424,7 @@ class TestValidationRejection:
         harness.workflow.extractor = LyingExtractor()  # type: ignore[assignment]
 
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
 
         assert outcome.claims_extracted == 4
@@ -461,7 +476,7 @@ class TestValidationRejection:
         harness.workflow.extractor = MixedExtractor()  # type: ignore[assignment]
 
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
         assert outcome.claims_extracted == 2
         assert outcome.claims_validated == 1
@@ -473,7 +488,9 @@ class TestValidationRejection:
 class TestFailedResearch:
     async def test_unknown_company_is_rejected_without_a_run(self) -> None:
         harness = build({WEBSITE: page(WEBSITE, HOME_HTML)}, with_company=False)
-        outcome = await harness.workflow.handle(company_id=uuid4(), website=WEBSITE)
+        outcome = await harness.workflow.handle(
+            ResearchRequest(company_id=uuid4(), website=WEBSITE)
+        )
 
         assert outcome.action is ResearchAction.REJECTED
         assert outcome.research_id is None
@@ -483,7 +500,7 @@ class TestFailedResearch:
     async def test_unreachable_homepage_fails_the_run(self) -> None:
         harness = build({})  # nothing serves
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
 
         assert outcome.action is ResearchAction.FAILED
@@ -497,7 +514,7 @@ class TestFailedResearch:
     async def test_invalid_website_fails_before_any_request(self) -> None:
         harness = build({WEBSITE: page(WEBSITE, HOME_HTML)})
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website="not-a-url"
+            ResearchRequest(company_id=harness.company.id, website="not-a-url")
         )
 
         assert outcome.action is ResearchAction.FAILED
@@ -516,7 +533,7 @@ class TestFailedResearch:
             }
         )
         outcome = await harness.workflow.handle(
-            company_id=harness.company.id, website=WEBSITE
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
         )
         assert outcome.action is ResearchAction.FAILED
         assert any("private_address" in warning for warning in outcome.warnings)
@@ -525,7 +542,9 @@ class TestFailedResearch:
 class TestPersistence:
     async def test_run_is_committed_once(self) -> None:
         harness = build({WEBSITE: page(WEBSITE, HOME_HTML)})
-        await harness.workflow.handle(company_id=harness.company.id, website=WEBSITE)
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
         assert len(harness.runs.saved) == 1
 
     async def test_site_scope_comes_from_the_requested_website(self) -> None:
@@ -537,7 +556,9 @@ class TestPersistence:
             return harness.fetcher
 
         harness.workflow.fetcher_factory = capturing_factory
-        await harness.workflow.handle(company_id=harness.company.id, website=WEBSITE)
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
 
         assert captured and captured[0].bare_host == "acme.example"
 
@@ -547,5 +568,61 @@ class TestPersistence:
 )
 async def test_accepts_common_website_forms(website: str) -> None:
     harness = build({website: page(website, HOME_HTML)})
-    outcome = await harness.workflow.handle(company_id=harness.company.id, website=website)
+    outcome = await harness.workflow.handle(
+        ResearchRequest(company_id=harness.company.id, website=website)
+    )
     assert outcome.action in (ResearchAction.COMPLETED, ResearchAction.PARTIAL)
+
+
+class TestInputModes:
+    """Two ways in: a known company, or a prospect not in the database."""
+
+    async def test_existing_company_defaults_to_its_own_website(self) -> None:
+        harness = build({WEBSITE: page(WEBSITE, HOME_HTML)})
+        outcome = await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id)  # no website supplied
+        )
+        assert outcome.action in (ResearchAction.COMPLETED, ResearchAction.PARTIAL)
+        saved = harness.runs.saved[0]
+        assert saved.website == WEBSITE
+        assert saved.company_id == harness.company.id
+
+    async def test_explicit_website_overrides_the_company_website(self) -> None:
+        other = "https://acme.example/microsite"
+        harness = build({other: page(other, HOME_HTML)})
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=other)
+        )
+        assert harness.runs.saved[0].website == other
+
+    async def test_company_name_snapshot_comes_from_the_database(self) -> None:
+        """Even if the caller passes a different name, the DB wins."""
+        harness = build({WEBSITE: page(WEBSITE, HOME_HTML)})
+        await harness.workflow.handle(
+            ResearchRequest(
+                company_id=harness.company.id, company_name="Something Else", website=WEBSITE
+            )
+        )
+        assert harness.runs.saved[0].company_name == "Acme Hardware"
+
+    async def test_prospect_without_a_company_is_researched_and_creates_no_company(
+        self,
+    ) -> None:
+        harness = build({WEBSITE: page(WEBSITE, HOME_HTML)}, with_company=False)
+        outcome = await harness.workflow.handle(
+            ResearchRequest(company_name="Unknown Prospect", website=WEBSITE)
+        )
+        assert outcome.action in (ResearchAction.COMPLETED, ResearchAction.PARTIAL)
+        assert outcome.company_id is None
+        saved = harness.runs.saved[0]
+        assert saved.company_id is None
+        assert saved.company_name == "Unknown Prospect"
+
+    def test_prospect_request_requires_name_and_website(self) -> None:
+        with pytest.raises(ResearchInputError, match="company_name is required"):
+            ResearchRequest(website=WEBSITE)
+        with pytest.raises(ResearchInputError, match="website is required"):
+            ResearchRequest(company_name="Prospect")
+
+    def test_company_request_needs_neither(self) -> None:
+        assert ResearchRequest(company_id=uuid4()).website is None

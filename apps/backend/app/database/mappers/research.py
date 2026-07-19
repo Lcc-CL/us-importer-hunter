@@ -11,8 +11,10 @@ from app.database.models.research import (
     ResearchRunModel,
 )
 from app.domain.research import (
+    ClaimRejectionReason,
     ExtractorIdentity,
     PromotionDecision,
+    RejectedClaim,
     ResearchClaim,
     ResearchFailureCode,
     ResearchPage,
@@ -29,6 +31,7 @@ class ResearchRunMapper:
         extractor = run.extractor
         return ResearchRunModel(
             id=run.id,
+            company_id=run.company_id,
             company_name=run.company_name,
             website=run.website,
             status=run.status.value,
@@ -44,6 +47,15 @@ class ResearchRunMapper:
             prompt_version=extractor.prompt_version if extractor else None,
             profile_json=asdict(run.profile),
             warnings_json=list(run.warnings),
+            rejected_json=[
+                {
+                    "reason": rejection.reason.value,
+                    "kind": rejection.kind,
+                    "detail": rejection.detail,
+                    "warning": rejection.warning,
+                }
+                for rejection in run.rejected_claims
+            ],
             pages=[
                 ResearchPageModel(
                     research_id=run.id,
@@ -95,6 +107,7 @@ class ResearchRunMapper:
     def to_domain(model: ResearchRunModel) -> ResearchRun:
         run = ResearchRun(
             id=model.id,
+            company_id=model.company_id,
             company_name=model.company_name,
             website=model.website,
             started_at=model.started_at,
@@ -107,6 +120,15 @@ class ResearchRunMapper:
         run._pages_failed = model.pages_failed
         run._claims_extracted = model.claims_extracted
         run._warnings = list(model.warnings_json or [])
+        run._rejected = [
+            RejectedClaim(
+                reason=ClaimRejectionReason(entry["reason"]),
+                kind=entry["kind"],
+                detail=entry["detail"],
+                warning=entry["warning"],
+            )
+            for entry in (model.rejected_json or [])
+        ]
         run._profile = _profile_from_json(model.profile_json or {})
         if model.extractor_provider and model.extractor_model and model.prompt_version:
             run._extractor = ExtractorIdentity(

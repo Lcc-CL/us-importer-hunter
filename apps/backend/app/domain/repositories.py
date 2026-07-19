@@ -113,6 +113,10 @@ class ResearchRunRepository(Protocol):
 
     async def save(self, run: "ResearchRun") -> None: ...
 
+    async def list_for_company(
+        self, company_id: UUID, *, limit: int = 20
+    ) -> "list[ResearchRun]": ...
+
     async def list_for_website(
         self, website: str, *, limit: int = 10
     ) -> "list[ResearchRun]": ...

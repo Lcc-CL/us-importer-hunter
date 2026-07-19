@@ -56,10 +56,39 @@ class ResearchAction(StrEnum):
     REJECTED = "rejected"
 
 
+class ResearchInputError(Exception):
+    """The request cannot be turned into a runnable research command."""
+
+
+@dataclass(frozen=True)
+class ResearchRequest:
+    """Two ways to ask for research, validated here so the workflow body has
+    no branching on which one it got.
+
+    A. An existing company — `company_id` is given. The name snapshot comes
+       from the database, and `website` defaults to the company's own website.
+    B. A prospect not yet in the database — `company_name` and `website` are
+       given, `company_id` stays None. No Company is created.
+    """
+
+    company_id: UUID | None = None
+    company_name: str | None = None
+    website: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.company_id is None:
+            if not (self.company_name or "").strip():
+                raise ResearchInputError(
+                    "company_name is required when company_id is not given"
+                )
+            if not (self.website or "").strip():
+                raise ResearchInputError("website is required when company_id is not given")
+
+
 @dataclass(frozen=True)
 class ResearchOutcome:
     action: ResearchAction
-    company_id: UUID
+    company_id: UUID | None
     research_id: UUID | None = None
     status: ResearchRunStatus | None = None
     failure_code: ResearchFailureCode | None = None
@@ -108,27 +137,28 @@ class ResearchWorkflow:
     limits: ResearchLimits = field(default_factory=ResearchLimits)
     now: Callable[[], float] = time.monotonic
 
-    async def handle(self, *, company_id: UUID, website: str) -> ResearchOutcome:
-        company_name = await self._company_name(company_id)
-        if company_name is None:
+    async def handle(self, request: ResearchRequest) -> ResearchOutcome:
+        resolved = await self._resolve(request)
+        if resolved is None:
             return ResearchOutcome(
                 action=ResearchAction.REJECTED,
-                company_id=company_id,
+                company_id=request.company_id,
                 notes=("company not found — nothing to research",),
             )
+        company_name, website = resolved
 
-        run = ResearchRun.start(company_name, website)
+        run = ResearchRun.start(company_name, website, company_id=request.company_id)
         run.mark_running()
 
         try:
             scope = SiteScope.from_url(website)
         except ValueError:
             run.fail(ResearchFailureCode.INVALID_URL, f"unusable website url: {website!r}")
-            return await self._persist(run, company_id)
+            return await self._persist(run)
 
         pages, budget_exhausted, aborted = await self._collect_pages(run, website, scope)
         if aborted is not None:
-            return await self._persist(run, company_id)
+            return await self._persist(run)
 
         await self._extract_and_validate(run, company_name, website, pages)
 
@@ -136,14 +166,31 @@ class ResearchWorkflow:
         run.complete(
             partial=bool(failure_code) or run.pages_failed > 0, failure_code=failure_code
         )
-        return await self._persist(run, company_id)
+        return await self._persist(run)
 
     # -- steps ----------------------------------------------------------
 
-    async def _company_name(self, company_id: UUID) -> str | None:
+    async def _resolve(self, request: ResearchRequest) -> tuple[str, str] | None:
+        """(company_name, website), or None when a named company is missing.
+
+        Reading the company is the only thing this workflow ever does to
+        Company state — it never writes.
+        """
+        if request.company_id is None:
+            # ResearchRequest already guaranteed both are present.
+            return str(request.company_name), str(request.website)
+
         async with self.uow_factory() as uow:
-            company = await uow.companies.get_by_id(company_id)
-            return company.name.value if company else None
+            company = await uow.companies.get_by_id(request.company_id)
+        if company is None:
+            return None
+
+        website = (request.website or "").strip() or (
+            company.website.value if company.website else ""
+        )
+        if not website:
+            return None
+        return company.name.value, website
 
     async def _collect_pages(
         self, run: ResearchRun, website: str, scope: SiteScope
@@ -269,13 +316,13 @@ class ResearchWorkflow:
             return ResearchFailureCode.BUDGET_EXCEEDED
         return None
 
-    async def _persist(self, run: ResearchRun, company_id: UUID) -> ResearchOutcome:
+    async def _persist(self, run: ResearchRun) -> ResearchOutcome:
         async with self.uow_factory() as uow:
             await uow.research_runs.add(run)
             await uow.commit()
         return ResearchOutcome(
             action=_action_for(run.status),
-            company_id=company_id,
+            company_id=run.company_id,
             research_id=run.id,
             status=run.status,
             failure_code=run.failure_code,

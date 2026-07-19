@@ -47,9 +47,20 @@ class ResearchRunModel(Base):
         ),
         Index("ix_research_runs_status", "status"),
         Index("ix_research_runs_website", "website"),
+        Index("ix_research_runs_company_id", "company_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
+    # Optional link to a canonical company. Nullable because research also runs
+    # on prospects that are not in the database yet, and ON DELETE SET NULL so
+    # a run survives company deletion as an audit record of what was proposed.
+    # No unique constraint: a company may be researched many times.
+    company_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL", name="fk_research_runs_company"),
+        nullable=True,
+    )
+    # company_name and website stay as snapshots of what was researched, even
+    # if the company is later renamed or deleted.
     company_name: Mapped[str] = mapped_column(String(200))
     website: Mapped[str] = mapped_column(String(2048))
     status: Mapped[str] = mapped_column(String(20))
@@ -65,6 +76,10 @@ class ResearchRunModel(Base):
     prompt_version: Mapped[str | None] = mapped_column(String(50))
     profile_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     warnings_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    # Why proposals were refused. Stored so a reloaded run can explain itself:
+    # without this, rejection detail would exist only in the process that
+    # produced the run, and GET would degrade to bare warnings.
+    rejected_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
     pages: Mapped[list["ResearchPageModel"]] = relationship(
         cascade="all, delete-orphan", lazy="selectin", order_by="ResearchPageModel.position"

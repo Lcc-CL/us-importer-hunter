@@ -10,8 +10,10 @@ from app.workflows.research.workflow import (
     FetcherFactory,
     ReadPage,
     ResearchAction,
+    ResearchInputError,
     ResearchLimits,
     ResearchOutcome,
+    ResearchRequest,
     ResearchWorkflow,
 )
 
@@ -20,7 +22,9 @@ __all__ = [
     "FetcherFactory",
     "ReadPage",
     "ResearchAction",
+    "ResearchInputError",
     "ResearchLimits",
     "ResearchOutcome",
+    "ResearchRequest",
     "ResearchWorkflow",
 ]

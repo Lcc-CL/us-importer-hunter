@@ -352,16 +352,21 @@ class TestDatabaseConstraints:
             assert remaining.scalar_one() == 0
 
 
-class TestExistingDataUntouched:
-    async def test_research_tables_do_not_reference_company_tables(
+class TestCompanyLink:
+    """research_runs.company_id links a run to a company *without* making the
+    run depend on it. Phase 3.2 replaced the earlier no-foreign-key approach:
+    the FK gives referential integrity, and ON DELETE SET NULL preserves the
+    audit record. Deleting a company must never delete its research history.
+    """
+
+    async def test_the_only_link_out_of_research_is_the_nullable_company_fk(
         self, uow_factory: UowFactory
     ) -> None:
-        """company_id is deliberately not a foreign key: a run is an audit
-        record that must survive company deletion."""
         async with uow_factory() as uow:
             result = await session_of(uow).execute(
                 text(
-                    "SELECT count(*) FROM information_schema.table_constraints tc"
+                    "SELECT tc.constraint_name, ccu.table_name"
+                    " FROM information_schema.table_constraints tc"
                     " JOIN information_schema.constraint_column_usage ccu"
                     "   ON tc.constraint_name = ccu.constraint_name"
                     " WHERE tc.constraint_type = 'FOREIGN KEY'"
@@ -369,4 +374,48 @@ class TestExistingDataUntouched:
                     "   AND ccu.table_name NOT LIKE 'research%'"
                 )
             )
-            assert result.scalar_one() == 0
+            links = result.all()
+        assert [(name, table) for name, table in links] == [
+            ("fk_research_runs_company", "companies")
+        ]
+
+    async def test_company_fk_is_on_delete_set_null(self, uow_factory: UowFactory) -> None:
+        async with uow_factory() as uow:
+            result = await session_of(uow).execute(
+                text(
+                    "SELECT confdeltype::text FROM pg_constraint"
+                    " WHERE conname = 'fk_research_runs_company'"
+                )
+            )
+            assert result.scalar_one() == "n"  # 'n' = SET NULL
+
+    async def test_company_id_is_nullable_so_prospects_can_be_researched(
+        self, uow_factory: UowFactory
+    ) -> None:
+        run = build_run()  # built without a company_id
+        assert run.company_id is None
+        async with uow_factory() as uow:
+            await uow.research_runs.add(run)
+            await uow.commit()
+        async with uow_factory() as uow:
+            loaded = await uow.research_runs.get_by_id(run.id)
+        assert loaded is not None and loaded.company_id is None
+
+    async def test_rejected_claims_are_persisted_not_only_warned(
+        self, uow_factory: UowFactory
+    ) -> None:
+        """Rejection detail must survive a reload, otherwise a stored run
+        cannot explain why a proposal was refused."""
+        run = build_run()  # contains one rejected claim
+        async with uow_factory() as uow:
+            await uow.research_runs.add(run)
+            await uow.commit()
+        async with uow_factory() as uow:
+            loaded = await uow.research_runs.get_by_id(run.id)
+
+        assert loaded is not None
+        assert len(loaded.rejected_claims) == 1
+        rejection = loaded.rejected_claims[0]
+        assert rejection.reason is ClaimRejectionReason.SNIPPET_NOT_FOUND
+        assert rejection.kind == "cargo_value_potential"
+        assert "snippet_not_found" in rejection.warning

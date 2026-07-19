@@ -24,6 +24,15 @@ class SqlAlchemyResearchRunRepository:
     async def save(self, run: ResearchRun) -> None:
         await self._session.merge(ResearchRunMapper.to_model(run))
 
+    async def list_for_company(self, company_id: UUID, *, limit: int = 20) -> list[ResearchRun]:
+        result = await self._session.execute(
+            select(ResearchRunModel)
+            .where(ResearchRunModel.company_id == company_id)
+            .order_by(ResearchRunModel.started_at.desc())
+            .limit(limit)
+        )
+        return [ResearchRunMapper.to_domain(model) for model in result.scalars().all()]
+
     async def list_for_website(self, website: str, *, limit: int = 10) -> list[ResearchRun]:
         result = await self._session.execute(
             select(ResearchRunModel)
