@@ -156,6 +156,13 @@ W.W. Grainger 从稀薄页面产出 0 条 claim 与 8 个 unknown 维度——�
 正是反幻觉设计的目标行为。验收数据：
 [docs/validation/v0.2-real-company-evaluation.md](docs/validation/v0.2-real-company-evaluation.md)。
 
+**真实用户验证 Sprint 进行中（模板已就绪，等待数据）。** 上一轮十家公司验收由工程师
+选样、工程师判断，验证的是系统是否诚实；这一轮由真实货代销售选样与判断，验证的是产品
+是否有用。20–30 家真实公司、2–3 位测试者，每位先测自己的手工基线。发布 v0.2.2 的必要
+条件已在收集数据**之前**定死，其中两条是产品性的：中位数节省时间需达手工基线的 30%，
+且至少 2/3 测试者回答"下周还会用"。模板与判定标准：
+[docs/validation/v0.2.1-user-validation.md](docs/validation/v0.2.1-user-validation.md)。
+
 **已知限制**（完整列表见 [Release Notes](docs/release-notes.md)）：Research API
 不得匿名暴露公网；连接级 DNS/IP pinning 未实现；当前经第三方 OpenAI 兼容网关验证，
 官方端点未做成本验证；官网无法证明进口记录；多数 `china_dependency` 维持 Unknown；
