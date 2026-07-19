@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import {
   Building2,
   Database,
@@ -12,6 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { ProspectAnalysisRequest } from "@/lib/api";
+import type { ApplicationPayload } from "@/lib/research-api";
 import { useI18n } from "@/lib/i18n";
 import {
   isCanonicalSignalKind,
@@ -43,11 +44,23 @@ interface EditableContact {
 interface ProspectFormProps {
   disabled: boolean;
   onSubmit: (request: ProspectAnalysisRequest) => Promise<void>;
+  /**
+   * Company facts pushed in from the research panel. Only the company block is
+   * replaced — contact and sender are the user's own work and are left alone.
+   * `version` increments per application so a repeated payload still applies.
+   */
+  appliedPayload?: { version: number; payload: ApplicationPayload } | null;
 }
 
 const inputClass =
   "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-3 focus:ring-teal-600/10 disabled:bg-slate-100";
 const labelClass = "mb-1.5 block text-xs font-semibold tracking-wide text-slate-700";
+
+/** Ids derive from the rows themselves, so a payload applied from research
+ *  cannot collide with rows the user added by hand. */
+function nextRowId(rows: readonly { id: number }[]): number {
+  return rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+}
 
 function FormSection({
   icon,
@@ -76,10 +89,8 @@ function FormSection({
   );
 }
 
-export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
+export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFormProps) {
   const { t, label } = useI18n();
-  const nextSourceId = useRef(3);
-  const nextSignalId = useRef(1);
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
   const [sources, setSources] = useState<EditableSource[]>([
@@ -102,6 +113,32 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
     valueProposition: "",
   });
   const [generateEmail, setGenerateEmail] = useState(true);
+  const [appliedVersion, setAppliedVersion] = useState(0);
+
+  // Adjusting state while rendering when a prop changes — React's documented
+  // alternative to a useEffect+setState pair, which the lint rules forbid.
+  if (appliedPayload && appliedPayload.version !== appliedVersion) {
+    setAppliedVersion(appliedPayload.version);
+    const { payload } = appliedPayload;
+    setCompanyName(payload.company_name);
+    setWebsite(payload.website);
+    setSources(
+      payload.sources.length > 0
+        ? payload.sources.map((item, index) => ({
+            id: index + 1,
+            source: item.source,
+            reference: item.reference,
+          }))
+        : [{ id: 1, source: "", reference: "" }],
+    );
+    setSignals(
+      payload.signals.map((item, index) => ({
+        id: index + 1,
+        kind: item.kind,
+        detail: item.detail,
+      })),
+    );
+  }
 
   function updateSource(
     id: number,
@@ -114,8 +151,10 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
   }
 
   function addSource() {
-    const id = nextSourceId.current++;
-    setSources((current) => [...current, { id, source: "", reference: "" }]);
+    setSources((current) => [
+      ...current,
+      { id: nextRowId(current), source: "", reference: "" },
+    ]);
   }
 
   function removeSource(id: number) {
@@ -135,8 +174,7 @@ export function ProspectForm({ disabled, onSubmit }: ProspectFormProps) {
   }
 
   function addSignal() {
-    const id = nextSignalId.current++;
-    setSignals((current) => [...current, { id, kind: "", detail: "" }]);
+    setSignals((current) => [...current, { id: nextRowId(current), kind: "", detail: "" }]);
   }
 
   function removeSignal(id: number) {

@@ -20,6 +20,8 @@ import type { MvpPageState, SubmittedProspectContext } from "../types";
 import { AnalysisResult } from "./analysis-result";
 import { ProspectForm } from "./prospect-form";
 import { ProviderBadge } from "./provider-badge";
+import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
+import type { ApplicationPayload } from "@/lib/research-api";
 
 interface MvpAnalysisPageProps {
   initialCompanyId?: string;
@@ -44,6 +46,12 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   const [pageState, setPageState] = useState<MvpPageState>(
     initialCompanyId ? "refreshing" : "idle",
   );
+  // Research fills the form; it never submits it. The version counter lets the
+  // same payload be applied again after the user edits the fields.
+  const [appliedPayload, setAppliedPayload] = useState<{
+    version: number;
+    payload: ApplicationPayload;
+  } | null>(null);
 
   useEffect(() => {
     if (!initialCompanyId) return;
@@ -186,7 +194,23 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
         </div>
 
         <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <ProspectForm disabled={isBusy} onSubmit={handleAnalyze} />
+          <div>
+            {RESEARCH_ENABLED ? (
+              <ResearchPanel
+                onApply={(payload) =>
+                  setAppliedPayload((current) => ({
+                    version: (current?.version ?? 0) + 1,
+                    payload,
+                  }))
+                }
+              />
+            ) : null}
+            <ProspectForm
+              appliedPayload={appliedPayload}
+              disabled={isBusy}
+              onSubmit={handleAnalyze}
+            />
+          </div>
           <AnalysisResult
             analysis={analysis}
             approval={approval}
