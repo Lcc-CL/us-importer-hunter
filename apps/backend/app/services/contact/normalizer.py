@@ -19,10 +19,30 @@ from app.domain.contact import (
 from app.domain.exceptions import InvalidEmailAddress
 from app.domain.values import EmailAddress
 
+# Ordered, first match wins. Procurement deliberately outranks sales and
+# operations: "Sales and Purchasing" and "Purchasing & Operations" are the
+# people who choose a forwarder, and a combined title must not lose its buying
+# half to the word that happens to come first.
+#
+# The padded forms (" import ") are matched against a space-padded title, so
+# "Import Manager" classifies while "Important Accounts" does not.
 _DEPARTMENT_KEYWORDS: tuple[tuple[Department, tuple[str, ...]], ...] = (
     (Department.SUPPLY_CHAIN, ("supply chain",)),
     (Department.LOGISTICS, ("logistics", "shipping", "freight", "transport")),
-    (Department.PROCUREMENT, ("procurement", "purchasing", "sourcing", "buyer")),
+    (
+        Department.PROCUREMENT,
+        (
+            "procurement",
+            "purchasing",
+            "sourcing",
+            "buyer",
+            " import ",
+            " imports ",
+            " importing ",
+            " import/",
+            "/import ",
+        ),
+    ),
     (Department.OPERATIONS, ("operations", "ops")),
     (Department.FINANCE, ("finance", "accounting", "controller")),
     (Department.SALES_MARKETING, ("sales", "marketing", "growth")),
@@ -32,8 +52,20 @@ _DEPARTMENT_KEYWORDS: tuple[tuple[Department, tuple[str, ...]], ...] = (
 
 _SENIORITY_KEYWORDS: tuple[tuple[SeniorityLevel, tuple[str, ...]], ...] = (
     (
+        # The three-letter abbreviations are padded: unpadded, "coo" matches
+        # inside "coordinator" and every coordinator is read as a C-level
+        # executive, which then inflates their decision-maker ranking.
         SeniorityLevel.C_LEVEL,
-        ("ceo", "coo", "cfo", "cio", "chief", "president", "founder", "owner"),
+        (
+            " ceo ",
+            " coo ",
+            " cfo ",
+            " cio ",
+            "chief",
+            "president",
+            "founder",
+            "owner",
+        ),
     ),
     (SeniorityLevel.VP, ("vp", "vice president")),
     (SeniorityLevel.DIRECTOR, ("director",)),

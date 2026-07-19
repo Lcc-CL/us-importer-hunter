@@ -17,11 +17,34 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
-from app.domain.contact import ContactStatus, DecisionMakerFitAssessment, SelectionThresholds
+from app.domain.contact import (
+    ContactStatus,
+    DecisionMakerFitAssessment,
+    Department,
+    SelectionThresholds,
+)
 from app.domain.events import DecisionMakerSelected
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import UnitOfWork
 from app.domain.services import DecisionMakerSelectionService
+
+
+class NoSelectionReason(StrEnum):
+    """Why no decision maker was chosen, as a code the UI can localize.
+
+    A code rather than a sentence: the domain layer stays language-neutral,
+    and the reviewer still gets an explanation in their own language instead
+    of an empty result they have to guess about.
+    """
+
+    NO_CONTACTS = "no_contacts"
+    #: The best candidate is a pure sales role. Deliberately never auto-chosen:
+    #: an account manager does not decide who moves the freight.
+    SALES_ROLE_ONLY = "sales_role_only"
+    #: Plausible, but under the selection bar — a human decides.
+    BELOW_SELECTION_BAR = "below_selection_bar"
+    #: Too weak to act on at all.
+    INSUFFICIENT_ROLE_FIT = "insufficient_role_fit"
 
 
 class DecisionMakerSelectionAction(StrEnum):
@@ -41,6 +64,8 @@ class DecisionMakerSelectionOutcome:
     recommended_channel: str | None = None
     confidence: float | None = None
     reasons: tuple[str, ...] = ()
+    #: Why nothing was selected, as a code the UI localizes. None when selected.
+    no_selection_reason: NoSelectionReason | None = None
     policy_version: str = ""
     event: DecisionMakerSelected | None = None
 
@@ -72,6 +97,7 @@ class DecisionMakerSelectionWorkflow:
                     company_id=company_id,
                     opportunity_id=opportunity_id,
                     reasons=("no eligible contacts at this company — find people first",),
+                    no_selection_reason=NoSelectionReason.NO_CONTACTS,
                     policy_version=policy,
                 )
 
@@ -129,6 +155,7 @@ class DecisionMakerSelectionWorkflow:
                         "best candidate is plausible but below the selection bar — human review",
                         *notes,
                     ),
+                    no_selection_reason=_no_selection_reason(best),
                     policy_version=policy,
                 )
             return DecisionMakerSelectionOutcome(
@@ -142,5 +169,20 @@ class DecisionMakerSelectionWorkflow:
                     "collect better contacts",
                     *notes,
                 ),
+                no_selection_reason=_no_selection_reason(best),
                 policy_version=policy,
             )
+
+
+def _no_selection_reason(best: DecisionMakerFitAssessment) -> NoSelectionReason:
+    """Name the blocker so the UI can explain it rather than showing a blank.
+
+    A sales-only candidate is called out separately because it is not a data
+    problem the user can fix by finding a better email — it is the right
+    person for a different conversation.
+    """
+    if best.department is Department.SALES_MARKETING:
+        return NoSelectionReason.SALES_ROLE_ONLY
+    if best.total_score >= SelectionThresholds().review_score:
+        return NoSelectionReason.BELOW_SELECTION_BAR
+    return NoSelectionReason.INSUFFICIENT_ROLE_FIT
