@@ -1,0 +1,230 @@
+"""ResearchRun aggregate: one attempt to research one website.
+
+Owns its pages, claims, rejections and promotions. It never creates a Company
+and never scores anything — a run is a proposal (ADR-0025).
+"""
+
+from datetime import datetime
+from uuid import UUID, uuid4
+
+from app.domain.clock import utcnow
+from app.domain.exceptions import DomainError, InvalidStateTransition
+from app.domain.research.values import (
+    TERMINAL_RUN_STATUSES,
+    ClaimRejectionReason,
+    ExtractorIdentity,
+    PromotionDecision,
+    RejectedClaim,
+    ResearchClaim,
+    ResearchFailureCode,
+    ResearchPage,
+    ResearchProfile,
+    ResearchPromotion,
+    ResearchRunStatus,
+)
+
+
+class ResearchRun:
+    """Aggregate root. Status moves forward only."""
+
+    def __init__(
+        self,
+        *,
+        id: UUID,
+        company_name: str,
+        website: str,
+        started_at: datetime,
+    ) -> None:
+        self._id = id
+        self._company_name = company_name
+        self._website = website
+        self._started_at = started_at
+        self._completed_at: datetime | None = None
+        self._status = ResearchRunStatus.CREATED
+        self._failure_code: ResearchFailureCode | None = None
+        self._pages: list[ResearchPage] = []
+        self._claims: list[ResearchClaim] = []
+        self._rejected: list[RejectedClaim] = []
+        self._promotions: list[ResearchPromotion] = []
+        self._profile = ResearchProfile()
+        self._extractor: ExtractorIdentity | None = None
+        self._warnings: list[str] = []
+        self._pages_failed = 0
+        self._claims_extracted = 0
+
+    # -- construction ---------------------------------------------------
+
+    @classmethod
+    def start(cls, company_name: str, website: str) -> "ResearchRun":
+        if not company_name.strip():
+            raise DomainError("research run requires a company name")
+        if not website.strip():
+            raise DomainError("research run requires a website")
+        return cls(
+            id=uuid4(),
+            company_name=company_name.strip(),
+            website=website.strip(),
+            started_at=utcnow(),
+        )
+
+    # -- behaviors ------------------------------------------------------
+
+    def mark_running(self) -> None:
+        if self._status is not ResearchRunStatus.CREATED:
+            raise InvalidStateTransition(f"cannot start a {self._status.value} run")
+        self._status = ResearchRunStatus.RUNNING
+
+    def record_page(self, page: ResearchPage) -> None:
+        if self._status in TERMINAL_RUN_STATUSES:
+            raise InvalidStateTransition("cannot add pages to a finished run")
+        if any(existing.position == page.position for existing in self._pages):
+            raise DomainError(f"page position already recorded: {page.position}")
+        self._pages.append(page)
+
+    def record_page_failure(self, warning: str) -> None:
+        self._pages_failed += 1
+        self.add_warning(warning)
+
+    def record_extraction(
+        self, *, profile: ResearchProfile, extractor: ExtractorIdentity, proposed_count: int
+    ) -> None:
+        self._profile = profile
+        self._extractor = extractor
+        self._claims_extracted = proposed_count
+
+    def record_claim(self, claim: ResearchClaim) -> None:
+        """Add a claim that has already passed validation."""
+        if self._status in TERMINAL_RUN_STATUSES:
+            raise InvalidStateTransition("cannot add claims to a finished run")
+        if not any(page.position == claim.source_page_position for page in self._pages):
+            raise DomainError(
+                f"claim cites page {claim.source_page_position}, which is not in this run"
+            )
+        if any(existing.position == claim.position for existing in self._claims):
+            raise DomainError(f"claim position already recorded: {claim.position}")
+        self._claims.append(claim)
+
+    def record_rejection(self, rejection: RejectedClaim) -> None:
+        self._rejected.append(rejection)
+        self.add_warning(rejection.warning)
+
+    def add_warning(self, warning: str) -> None:
+        if warning.strip():
+            self._warnings.append(warning.strip())
+
+    def complete(
+        self, *, partial: bool = False, failure_code: ResearchFailureCode | None = None
+    ) -> None:
+        if self._status in TERMINAL_RUN_STATUSES:
+            raise InvalidStateTransition(f"run is already {self._status.value}")
+        self._status = ResearchRunStatus.PARTIAL if partial else ResearchRunStatus.COMPLETED
+        self._failure_code = failure_code
+        self._completed_at = utcnow()
+
+    def fail(self, code: ResearchFailureCode, reason: str) -> None:
+        if self._status in TERMINAL_RUN_STATUSES:
+            raise InvalidStateTransition(f"run is already {self._status.value}")
+        self._status = ResearchRunStatus.FAILED
+        self._failure_code = code
+        self._completed_at = utcnow()
+        self.add_warning(reason)
+
+    def record_promotion(self, promotion: ResearchPromotion) -> None:
+        """Persist a human decision about one claim. Rejections are recorded
+        too — they are the only evidence of extractor precision."""
+        if not any(claim.position == promotion.claim_position for claim in self._claims):
+            raise DomainError(
+                f"promotion references unknown claim position {promotion.claim_position}"
+            )
+        if any(p.claim_position == promotion.claim_position for p in self._promotions):
+            raise DomainError(
+                f"claim {promotion.claim_position} has already been reviewed"
+            )
+        self._promotions.append(promotion)
+
+    # -- read-only state ------------------------------------------------
+
+    @property
+    def id(self) -> UUID:
+        return self._id
+
+    @property
+    def company_name(self) -> str:
+        return self._company_name
+
+    @property
+    def website(self) -> str:
+        return self._website
+
+    @property
+    def status(self) -> ResearchRunStatus:
+        return self._status
+
+    @property
+    def failure_code(self) -> ResearchFailureCode | None:
+        return self._failure_code
+
+    @property
+    def started_at(self) -> datetime:
+        return self._started_at
+
+    @property
+    def completed_at(self) -> datetime | None:
+        return self._completed_at
+
+    @property
+    def pages(self) -> tuple[ResearchPage, ...]:
+        return tuple(self._pages)
+
+    @property
+    def claims(self) -> tuple[ResearchClaim, ...]:
+        return tuple(self._claims)
+
+    @property
+    def rejected_claims(self) -> tuple[RejectedClaim, ...]:
+        return tuple(self._rejected)
+
+    @property
+    def promotions(self) -> tuple[ResearchPromotion, ...]:
+        return tuple(self._promotions)
+
+    @property
+    def profile(self) -> ResearchProfile:
+        return self._profile
+
+    @property
+    def extractor(self) -> ExtractorIdentity | None:
+        return self._extractor
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        return tuple(self._warnings)
+
+    @property
+    def pages_fetched(self) -> int:
+        return len(self._pages)
+
+    @property
+    def pages_failed(self) -> int:
+        return self._pages_failed
+
+    @property
+    def claims_extracted(self) -> int:
+        return self._claims_extracted
+
+    @property
+    def claims_validated(self) -> int:
+        return len(self._claims)
+
+    def page_at(self, position: int) -> ResearchPage | None:
+        return next((page for page in self._pages if page.position == position), None)
+
+    def accepted_promotions(self) -> tuple[ResearchPromotion, ...]:
+        return tuple(
+            promotion
+            for promotion in self._promotions
+            if promotion.decision in (PromotionDecision.ACCEPTED, PromotionDecision.EDITED)
+        )
+
+    def rejection_reasons(self) -> tuple[ClaimRejectionReason, ...]:
+        return tuple(rejection.reason for rejection in self._rejected)

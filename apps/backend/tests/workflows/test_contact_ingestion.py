@@ -18,6 +18,7 @@ from app.domain.repositories import (
     ContactRepository,
     OpportunityRepository,
     OutreachRepository,
+    ResearchRunRepository,
     TaskRepository,
 )
 from app.domain.values import SourceReference
@@ -77,6 +78,7 @@ class FakeUnitOfWork:
     outreaches: OutreachRepository
     contacts: ContactRepository
     tasks: TaskRepository
+    research_runs: ResearchRunRepository
 
     def __init__(self, contacts: FakeContactRepository) -> None:
         self.contacts = contacts

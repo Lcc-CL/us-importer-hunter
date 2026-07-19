@@ -11,6 +11,7 @@ from app.database.repositories.company import SqlAlchemyCompanyRepository
 from app.database.repositories.contact import SqlAlchemyContactRepository
 from app.database.repositories.opportunity import SqlAlchemyOpportunityRepository
 from app.database.repositories.outreach import SqlAlchemyOutreachRepository
+from app.database.repositories.research import SqlAlchemyResearchRunRepository
 from app.database.repositories.task import SqlAlchemyTaskRepository
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "SqlAlchemyContactRepository",
     "SqlAlchemyOpportunityRepository",
     "SqlAlchemyOutreachRepository",
+    "SqlAlchemyResearchRunRepository",
     "SqlAlchemyTaskRepository",
 ]

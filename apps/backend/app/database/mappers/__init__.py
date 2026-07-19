@@ -11,6 +11,7 @@ from app.database.mappers.company import CompanyMapper
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
 from app.database.mappers.opportunity import OpportunityMapper
 from app.database.mappers.outreach import OutreachMapper
+from app.database.mappers.research import ResearchRunMapper
 from app.database.mappers.task import TaskMapper
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "FitAssessmentMapper",
     "OpportunityMapper",
     "OutreachMapper",
+    "ResearchRunMapper",
     "TaskMapper",
 ]
