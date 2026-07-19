@@ -74,8 +74,9 @@ Details: [docs/workflow.md](docs/workflow.md) · [docs/agents.md](docs/agents.md
 |---|---|---|
 | 1 | Foundation: scaffold, layers, docs, specs, Docker stack verified | ✅ Done (2026-07-15) |
 | 2 | Core domain chain: ingestion, scoring, contact selection, draft generation | ✅ Done (2026-07-16) |
-| 3 | Minimal API facade, browser workflow, and v0.1 acceptance | ⚠ OpenAI smoke pending |
-| Next | Small real-user trial and validated workflow improvements | After v0.1 acceptance |
+| 3 | Minimal API facade, browser workflow, and v0.1 acceptance | ✅ Done — tag `v0.1.0` (2026-07-17) |
+| 3.1 | Signal-kind scoring fix, Chinese-default UI, browser E2E suite | ✅ Done — tag `v0.1.1` (2026-07-19) |
+| v0.2 | Website Research Agent — name + website → traceable sources/profile/signals | 🔵 Design complete, implementation pending |
 
 ## Current Progress
 
@@ -124,6 +125,33 @@ boundary has been tightened so the frontend container does not inherit the root
 `.env`. Final acceptance is waiting only for one real OpenAI generation with a
 valid local credential; no real call was made with the placeholder value. See
 [docs/mvp-acceptance.md](docs/mvp-acceptance.md).
+
+**v0.1.1 released (2026-07-19, tag `v0.1.1`).** Fixed a P0 where the scorer
+identified dimensions by English keyword only, so Chinese-language prospects
+scored zero on four of eight dimensions, capped below the qualification bar,
+and never produced a draft (39.5 → 70.5, REVIEW → QUALIFIED on the reported
+company). Shipped alongside it: Chinese-default UI with an English toggle, a
+signal-kind dropdown submitting canonical enums, a live provider badge fed by
+`GET /api/v1/health/runtime`, and a committed browser E2E suite (`make e2e`,
+`make e2e-real`) running against an isolated stack that cannot touch the dev
+database. Thresholds, weights, schema, state machine and email gate unchanged.
+
+**v0.2 官网研究 Agent —— 设计已批准，分阶段实施中（2026-07-19）。** 用户只输入
+公司名称与官网；系统读取该官网并提出可追溯的 sources、company profile 与标准化
+signals —— 每条都携带来源 URL、支撑它的原句和置信度 —— 经人工确认后才进入现有
+的资格评估与草稿工作流。研究产出的是 **claim 而非公司事实**：不写 `Company`、
+不写 `Opportunity`，现有 analyze 端点仍是进入模型的唯一路径。人工确认通过
+`POST /api/v1/research/{research_id}/confirm` 落库，`research_promotions` 表保留
+claim 与最终 company signal 的完整追溯关系。网页正文一律视为不可信数据：页面
+发现由确定性 `page_ranker` 控制，LLM 不参与选页、不能新增抓取目标。
+
+设计文档：[docs/v0.2-research-agent.md](docs/v0.2-research-agent.md)、
+ADR-0025（研究边界与注入防护）、ADR-0026（安全出站抓取 / SSRF 策略）。
+
+实施分两阶段：**阶段 1** 为抓取基础设施（url_guard、SafeFetcher、robots、
+cleaner、page_ranker），不接 LLM、不写前端、不新增数据库表；**阶段 2** 为四张
+`research_*` 表、抽取器、API 与前端。Sprint 1 仅限官网：不含 Google Maps、
+ImportYeti、LinkedIn、邮箱发现、批量发现、Celery 与调度器。
 
 ## Future Roadmap
 

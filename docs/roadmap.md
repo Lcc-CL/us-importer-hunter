@@ -17,12 +17,38 @@
 3. First tool implementation (data source with lowest legal/technical risk).
 4. First end-to-end slice: search → store → list in frontend `companies`.
 
-## Sprint 3 — AI pipeline (proposed)
+## Sprint 3 — AI pipeline ✅ (2026-07-17, shipped as v0.1.0 / v0.1.1)
 
-1. Provider interface + OpenAI adapter; llm service.
-2. Research agent + scoring service (opportunity analysis).
-3. Sales agent (email generation) + prompt v1 set.
-4. Workflow orchestrating the full chain.
+1. Provider interface + OpenAI adapter (email drafts, fake + real).
+2. Explainable scoring service + versioned qualification policy.
+3. Sales agent (email generation) + `first-outreach-v1` prompt.
+4. MVP workflow orchestrating company → opportunity → decision maker → draft.
+5. v0.1.1: signal-kind scoring fix, Chinese-default UI, browser E2E suite.
+
+## v0.2 — Website Research Agent (design complete, implementation pending)
+
+Design: [v0.2-research-agent.md](v0.2-research-agent.md) ·
+ADR-0025 (research boundary) · ADR-0026 (safe outbound fetching)
+
+The user supplies only a company name and website; the system researches that
+website and proposes traceable sources, a profile and standardized signals for
+human confirmation before the existing qualification and draft workflow runs.
+
+分两阶段实施：
+
+- **阶段 1（进行中）—— 抓取基础设施，不接 LLM、不写前端：**
+  `url_guard` → SSRF 测试矩阵 → `SafeFetcher` → 重定向校验 → `robots` →
+  `cleaner` → `page_ranker`。不新增数据库表，不改动现有评分/邮件/审批工作流。
+- **阶段 2（需确认后开始）—— 领域模型与 LLM：** 四张 `research_*` 表与迁移 →
+  抽取器协议（fake + 真实）+ prompt v1 → 校验层 → 研究工作流 → 三个 API 端点
+  （含 `POST /api/v1/research/{research_id}/confirm` 人工确认）→ 前端面板 →
+  E2E 用例 → 十家公司验收。
+
+**Sprint 1 明确不做：** Google Maps、ImportYeti、LinkedIn、邮箱发现、批量发现、
+自动发送、Celery、调度器、多 Agent Planner、无头浏览器渲染。
+
+**v0.2.x 后续：** 研究任务异步化（消除同步 45 秒请求）、把证据提升到
+`company_signals`、重新研究与刷新、JS 站点的无头渲染。
 
 ## Later
 
