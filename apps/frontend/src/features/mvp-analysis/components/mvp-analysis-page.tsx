@@ -21,6 +21,15 @@ import { AnalysisResult } from "./analysis-result";
 import { ProspectForm } from "./prospect-form";
 import { ProviderBadge } from "./provider-badge";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
+import type { FlowStep, StepState } from "@/features/research/step-nav";
+import {
+  EMPTY_CONTACT,
+  MissingFieldsPrompt,
+  type MissingFields,
+  buildAnalysisRequest,
+  missingFieldsFor,
+  useGuidedFields,
+} from "./guided-flow";
 import type { ApplicationPayload } from "@/lib/research-api";
 
 interface MvpAnalysisPageProps {
@@ -52,6 +61,15 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
     version: number;
     payload: ApplicationPayload;
   } | null>(null);
+  // The confirmed research is held here so the guided flow can retry the
+  // analysis once the user supplies whatever was missing, without asking them
+  // to run the research again.
+  const [pendingResearch, setPendingResearch] = useState<ApplicationPayload | null>(null);
+  // Which blocks to show is snapshotted when the flow first stops. Deriving it
+  // live would unmount the prompt — and its Continue button — the moment the
+  // last field became valid, so the user could never actually continue.
+  const [awaitingFields, setAwaitingFields] = useState<MissingFields | null>(null);
+  const guided = useGuidedFields();
 
   useEffect(() => {
     if (!initialCompanyId) return;
@@ -76,10 +94,88 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
     };
   }, [initialCompanyId]);
 
+  const decision = analysis?.opportunity.qualification_decision ?? null;
+  const missing = missingFieldsFor(guided.contact, guided.sender);
+
+  const downstreamSteps: Partial<Record<FlowStep, StepState>> = {
+    analysis:
+      pageState === "submitting"
+        ? "current"
+        : awaitingFields
+          ? "blocked"
+          : analysis
+            ? "done"
+            : "todo",
+    draft: analysis?.email_draft.action === "GENERATED"
+      ? "done"
+      : analysis && decision && decision !== "qualified"
+        ? "blocked"
+        : analysis?.email_draft.action === "FAILED"
+          ? "blocked"
+          : "todo",
+  };
+
+  const guidedNextAction = awaitingFields
+    ? t(missing.contact ? "guided.missing.contact" : "guided.missing.sender")
+    : null;
+  const guidedBlockedBy = (() => {
+    if (awaitingFields && (missing.contact || missing.sender)) {
+      return missing.contact
+        ? t("guided.missing.contactHint")
+        : t("guided.missing.senderHint");
+    }
+    if (!analysis) return null;
+    if (decision === "review") return t("guided.result.review");
+    if (decision === "research_more") return t("guided.result.researchMore");
+    if (decision === "disqualified") return t("guided.result.disqualified");
+    if (analysis.email_draft.action === "FAILED") return t("guided.draft.failed");
+    return null;
+  })();
+
   const isBusy =
     pageState === "submitting" ||
     pageState === "refreshing" ||
     pageState === "approving";
+
+  /**
+   * The confirmed research drives the rest of the flow.
+   *
+   * The old behaviour stopped here — it filled the form and left the user to
+   * find the submit button. Now the payload is mapped and qualification runs
+   * immediately, unless a contact or sender is genuinely missing, in which
+   * case only that block is asked for.
+   */
+  async function handleResearchConfirmed(payload: ApplicationPayload) {
+    const isNewCompany = payload.company_name !== pendingResearch?.company_name;
+    if (isNewCompany) guided.resetContact();
+    setPendingResearch(payload);
+    // Still applied to the old form so Advanced editing starts pre-filled.
+    setAppliedPayload((current) => ({ version: (current?.version ?? 0) + 1, payload }));
+
+    const gap = missingFieldsFor(
+      isNewCompany ? EMPTY_CONTACT : guided.contact,
+      guided.sender,
+    );
+    if (gap.contact || gap.sender) {
+      setAwaitingFields(gap);
+      return;
+    }
+
+    setAwaitingFields(null);
+    await handleAnalyze(
+      buildAnalysisRequest(payload, guided.contact, guided.sender),
+    );
+  }
+
+  async function handleGuidedContinue() {
+    if (!pendingResearch || isBusy) return;
+    const gap = missingFieldsFor(guided.contact, guided.sender);
+    if (gap.contact || gap.sender) return;
+    setAwaitingFields(null);
+    await handleAnalyze(
+      buildAnalysisRequest(pendingResearch, guided.contact, guided.sender),
+    );
+  }
 
   async function handleAnalyze(request: ProspectAnalysisRequest) {
     if (isBusy) return;
@@ -197,19 +293,49 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
           <div>
             {RESEARCH_ENABLED ? (
               <ResearchPanel
-                onApply={(payload) =>
-                  setAppliedPayload((current) => ({
-                    version: (current?.version ?? 0) + 1,
-                    payload,
-                  }))
-                }
+                blockedBy={guidedBlockedBy}
+                downstreamSteps={downstreamSteps}
+                nextAction={guidedNextAction}
+                onConfirmed={handleResearchConfirmed}
               />
             ) : null}
-            <ProspectForm
-              appliedPayload={appliedPayload}
-              disabled={isBusy}
-              onSubmit={handleAnalyze}
-            />
+
+            {awaitingFields ? (
+              <div className="mb-6">
+                <MissingFieldsPrompt
+                  busy={isBusy}
+                  contact={guided.contact}
+                  missing={awaitingFields}
+                  stillMissing={missing}
+                  onContactChange={guided.patchContact}
+                  onContinue={handleGuidedContinue}
+                  onSenderChange={guided.patchSender}
+                  sender={guided.sender}
+                />
+              </div>
+            ) : null}
+
+            {/* The manual form stays as the compatibility and correction path,
+                but it is no longer the main road: collapsed by default so the
+                guided flow does not make the user read five sections to fix
+                two fields. */}
+            <details
+              className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+              data-testid="advanced-form"
+              open={!RESEARCH_ENABLED}
+            >
+              <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-800 sm:px-7">
+                {t("advanced.title")}
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  {t("advanced.hint")}
+                </span>
+              </summary>
+              <ProspectForm
+                appliedPayload={appliedPayload}
+                disabled={isBusy}
+                onSubmit={handleAnalyze}
+              />
+            </details>
           </div>
           <AnalysisResult
             analysis={analysis}
