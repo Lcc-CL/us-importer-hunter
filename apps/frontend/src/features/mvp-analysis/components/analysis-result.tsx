@@ -19,6 +19,7 @@ import { useI18n, type MessageKey } from "@/lib/i18n";
 import type { MvpPageState, SubmittedProspectContext } from "../types";
 import { EmailDraftCard } from "./email-draft-card";
 import { OpportunityCard } from "./opportunity-card";
+import { QualificationExplanationCard } from "./qualification-explanation";
 
 interface AnalysisResultProps {
   analysis: ProspectAnalysisResponse | null;
@@ -253,6 +254,13 @@ export function AnalysisResult({
             analysis={analysis?.opportunity ?? null}
             detail={detail?.latest_assessment ?? null}
           />
+
+          {detail?.latest_assessment?.explanation ? (
+            <QualificationExplanationCard
+              decision={detail.latest_assessment.qualification_decision}
+              explanation={detail.latest_assessment.explanation}
+            />
+          ) : null}
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-start gap-3">

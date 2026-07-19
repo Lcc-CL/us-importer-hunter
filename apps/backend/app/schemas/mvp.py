@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.domain.services import SenderProfile
+from app.domain.values import DimensionStatus, OpportunityAssessment
 from app.workflows.mvp_prospect_analysis import (
     DraftApprovalOutcome,
     MvpProspectAnalysisCommand,
@@ -327,6 +328,52 @@ class CompanyDetailResponse(BaseModel):
     signals: list[str]
 
 
+#: Dimensions a company website structurally cannot prove. Missing them is a
+#: gap in the *source*, not a verdict on the company — the UI must say so, or
+#: a reviewer reads REVIEW as "weak prospect" and drops a good one.
+IMPORT_EVIDENCE_DIMENSIONS = frozenset(
+    {"import_activity", "china_dependency", "cargo_value_potential"}
+)
+
+#: Not a qualification decision. It names the next action when the only thing
+#: standing between this company and a verdict is customs-grade evidence.
+IMPORT_EVIDENCE_REQUIRED = "IMPORT_EVIDENCE_REQUIRED"
+
+
+class DimensionExplanationResponse(BaseModel):
+    """One dimension, explained: what it contributed and why."""
+
+    dimension: str
+    status: str
+    weight: float
+    earned_score: float
+    #: Share of the total score this dimension actually contributed.
+    score_contribution: float
+    evidence_status: str
+    unknown_reason: str | None
+    needs_import_evidence: bool
+    reasons: list[str]
+
+
+class QualificationExplanationResponse(BaseModel):
+    """Why the verdict is what it is, without restating the verdict.
+
+    Derived from the stored breakdown — no weight, threshold or persisted
+    assessment is changed to produce it.
+    """
+
+    dimensions: list[DimensionExplanationResponse]
+    evidence_obtained: list[str]
+    missing_key_evidence: list[str]
+    #: Dimensions blocked on customs-grade data rather than on the company.
+    import_evidence_missing: list[str]
+    #: Score that is unreachable from a company website alone.
+    unreachable_weight: float
+    hard_gate_hits: list[str]
+    #: Suggested next step. Never a qualification decision.
+    next_action: str | None
+
+
 class AssessmentDetailResponse(BaseModel):
     opportunity_id: UUID
     score: float
@@ -338,6 +385,7 @@ class AssessmentDetailResponse(BaseModel):
     scoring_version: str
     policy_version: str
     assessed_at: datetime
+    explanation: QualificationExplanationResponse | None = None
 
 
 class ContactChannelResponse(BaseModel):
@@ -451,6 +499,7 @@ class ProspectDetailResponse(BaseModel):
                     reasons=list(assessment.reasons),
                     scoring_version=assessment.scoring_version,
                     policy_version=assessment.policy_version,
+                    explanation=_explain(assessment),
                     assessed_at=assessment.assessed_at,
                 )
                 if result.opportunity is not None and assessment is not None
@@ -570,3 +619,62 @@ class ApiErrorResponse(BaseModel):
     code: str
     message: str
     request_id: str
+
+
+def _explain(assessment: OpportunityAssessment) -> QualificationExplanationResponse | None:
+    """Turn a stored breakdown into something a salesperson can act on.
+
+    Read-only by construction: it reports what the scorer already decided and
+    changes no weight, threshold or persisted row.
+    """
+    breakdown = assessment.score_breakdown
+    if breakdown is None:
+        return None
+
+    total = assessment.new_score.value or 0.0
+    dimensions: list[DimensionExplanationResponse] = []
+    obtained: list[str] = []
+    missing: list[str] = []
+    import_missing: list[str] = []
+    unreachable = 0.0
+
+    for item in breakdown.dimensions:
+        name = item.dimension.value
+        assessed = item.status is DimensionStatus.ASSESSED
+        needs_import = not assessed and name in IMPORT_EVIDENCE_DIMENSIONS
+        if assessed:
+            obtained.append(name)
+        else:
+            missing.append(name)
+        if needs_import:
+            import_missing.append(name)
+            unreachable += item.weight
+
+        dimensions.append(
+            DimensionExplanationResponse(
+                dimension=name,
+                status=item.status.value,
+                weight=item.weight,
+                earned_score=item.earned_score,
+                score_contribution=(
+                    round(item.earned_score / total, 4) if total > 0 else 0.0
+                ),
+                evidence_status=("present" if assessed else "absent"),
+                unknown_reason=(None if assessed else item.status.value),
+                needs_import_evidence=needs_import,
+                reasons=list(item.reasons),
+            )
+        )
+
+    hard_gates = [hit for hit in getattr(breakdown, "hard_gate_hits", ()) or ()]
+    next_action = IMPORT_EVIDENCE_REQUIRED if import_missing else None
+
+    return QualificationExplanationResponse(
+        dimensions=dimensions,
+        evidence_obtained=obtained,
+        missing_key_evidence=missing,
+        import_evidence_missing=import_missing,
+        unreachable_weight=round(unreachable, 2),
+        hard_gate_hits=[str(hit) for hit in hard_gates],
+        next_action=next_action,
+    )

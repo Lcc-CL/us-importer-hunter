@@ -123,6 +123,28 @@ export interface CompanyDetailResponse {
   signals: string[];
 }
 
+export interface DimensionExplanation {
+  dimension: string;
+  status: string;
+  weight: number;
+  earned_score: number;
+  score_contribution: number;
+  evidence_status: string;
+  unknown_reason: string | null;
+  needs_import_evidence: boolean;
+  reasons: string[];
+}
+
+export interface QualificationExplanation {
+  dimensions: DimensionExplanation[];
+  evidence_obtained: string[];
+  missing_key_evidence: string[];
+  import_evidence_missing: string[];
+  unreachable_weight: number;
+  hard_gate_hits: string[];
+  next_action: string | null;
+}
+
 export interface AssessmentDetailResponse {
   opportunity_id: string;
   score: number;
@@ -134,6 +156,7 @@ export interface AssessmentDetailResponse {
   scoring_version: string;
   policy_version: string;
   assessed_at: string;
+  explanation: QualificationExplanation | null;
 }
 
 export interface ContactDetailResponse {
