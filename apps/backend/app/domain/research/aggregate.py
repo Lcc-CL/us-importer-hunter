@@ -150,6 +150,35 @@ class ResearchRun:
             )
         self._promotions.append(promotion)
 
+    def revise_promotion(self, promotion: ResearchPromotion) -> None:
+        """Replace a decision that has not yet written into a Company.
+
+        Once a promotion has produced company rows it is frozen: changing it
+        would orphan a signal whose provenance no longer matches. Callers get
+        a conflict instead (rule 7).
+        """
+        existing = self.promotion_for(promotion.claim_position)
+        if existing is None:
+            raise DomainError(
+                f"no promotion to revise for claim {promotion.claim_position}"
+            )
+        if existing.applied_to_company:
+            raise InvalidStateTransition(
+                f"claim {promotion.claim_position} was already applied to a company"
+            )
+        self._promotions = [
+            promotion if p.claim_position == promotion.claim_position else p
+            for p in self._promotions
+        ]
+
+    def promotion_for(self, claim_position: int) -> ResearchPromotion | None:
+        return next(
+            (p for p in self._promotions if p.claim_position == claim_position), None
+        )
+
+    def claim_at(self, position: int) -> ResearchClaim | None:
+        return next((claim for claim in self._claims if claim.position == position), None)
+
     # -- read-only state ------------------------------------------------
 
     @property

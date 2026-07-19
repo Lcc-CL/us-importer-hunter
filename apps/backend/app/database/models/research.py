@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -197,6 +198,17 @@ class ResearchPromotionModel(Base):
             name="ck_research_promotions_edited_detail_consistent",
         ),
         Index("ix_research_promotions_company_id", "company_id"),
+        # The primary key (research_id, claim_position) already guarantees at
+        # most one promotion per claim; this named constraint states that
+        # intent explicitly so it cannot be weakened by accident.
+        UniqueConstraint(
+            "research_id", "claim_position", name="uq_research_promotions_one_per_claim"
+        ),
+        CheckConstraint(
+            "(decision = 'rejected' AND company_signal_position IS NULL"
+            " AND company_source_position IS NULL) OR decision <> 'rejected'",
+            name="ck_research_promotions_rejected_never_promoted",
+        ),
     )
 
     research_id: Mapped[UUID] = mapped_column(
@@ -208,8 +220,13 @@ class ResearchPromotionModel(Base):
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reviewer_name: Mapped[str | None] = mapped_column(String(200))
     edited_detail: Mapped[str | None] = mapped_column(Text)
-    # Back-filled once the confirmed payload is submitted and a company exists.
-    # Intentionally NOT a foreign key: a research run must survive company
-    # deletion as an audit record of what was proposed and reviewed.
-    company_id: Mapped[UUID | None] = mapped_column()
+    edited_kind: Mapped[str | None] = mapped_column(String(30))
+    # Set when the decision is applied to a company. ON DELETE SET NULL keeps
+    # the run as an audit record of what was proposed and reviewed even after
+    # the company is deleted — matching research_runs.company_id.
+    company_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL", name="fk_research_promotions_company"),
+        nullable=True,
+    )
+    company_source_position: Mapped[int | None] = mapped_column(Integer)
     company_signal_position: Mapped[int | None] = mapped_column(Integer)

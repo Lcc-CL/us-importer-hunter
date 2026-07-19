@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.company import Company
 from app.domain.repositories import UnitOfWork
 from app.domain.research import (
     ClaimRejectionReason,
@@ -24,6 +25,7 @@ from app.domain.research import (
     ResearchRun,
     ResearchRunStatus,
 )
+from app.domain.values import CompanyName, WebsiteUrl
 from tests.database.integration.conftest import UowFactory
 
 
@@ -36,6 +38,7 @@ def session_of(uow: UnitOfWork) -> AsyncSession:
     return session
 
 FIXED_AT = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
+WEBSITE_FOR_TESTS = "https://promotion-target.example"
 
 
 def build_run() -> ResearchRun:
@@ -167,8 +170,11 @@ class TestPromotionTrace:
     async def test_promotions_persist_including_rejections(
         self, uow_factory: UowFactory
     ) -> None:
+        """company_id is a real foreign key since phase 3.3, so the promotion
+        must point at a company that exists."""
         run = build_run()
-        company_id = uuid4()
+        company = Company.create(CompanyName("Promotion Target"), WebsiteUrl(WEBSITE_FOR_TESTS))
+        company_id = company.id
         run.record_promotion(
             ResearchPromotion(
                 claim_position=0,
@@ -186,6 +192,7 @@ class TestPromotionTrace:
             )
         )
         async with uow_factory() as uow:
+            await uow.companies.add(company)
             await uow.research_runs.add(run)
             await uow.commit()
 
@@ -359,9 +366,11 @@ class TestCompanyLink:
     audit record. Deleting a company must never delete its research history.
     """
 
-    async def test_the_only_link_out_of_research_is_the_nullable_company_fk(
+    async def test_the_only_links_out_of_research_are_the_nullable_company_fks(
         self, uow_factory: UowFactory
     ) -> None:
+        """Two links since phase 3.3 — the run and the promotion each point at
+        a company, both nullable and both ON DELETE SET NULL."""
         async with uow_factory() as uow:
             result = await session_of(uow).execute(
                 text(
@@ -375,8 +384,9 @@ class TestCompanyLink:
                 )
             )
             links = result.all()
-        assert [(name, table) for name, table in links] == [
-            ("fk_research_runs_company", "companies")
+        assert sorted((name, table) for name, table in links) == [
+            ("fk_research_promotions_company", "companies"),
+            ("fk_research_runs_company", "companies"),
         ]
 
     async def test_company_fk_is_on_delete_set_null(self, uow_factory: UowFactory) -> None:

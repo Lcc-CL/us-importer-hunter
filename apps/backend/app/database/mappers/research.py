@@ -2,7 +2,6 @@
 
 from dataclasses import asdict
 from typing import Any
-from uuid import UUID
 
 from app.database.models.research import (
     ResearchClaimModel,
@@ -92,11 +91,9 @@ class ResearchRunMapper:
                     reviewed_at=promotion.reviewed_at,
                     reviewer_name=promotion.reviewer_name,
                     edited_detail=promotion.edited_detail,
-                    company_id=(
-                        promotion.company_id
-                        if isinstance(promotion.company_id, UUID)
-                        else None
-                    ),
+                    edited_kind=promotion.edited_kind,
+                    company_id=promotion.company_id,
+                    company_source_position=promotion.company_source_position,
                     company_signal_position=promotion.company_signal_position,
                 )
                 for promotion in run.promotions
@@ -169,7 +166,9 @@ class ResearchRunMapper:
                 reviewed_at=promotion.reviewed_at,
                 reviewer_name=promotion.reviewer_name,
                 edited_detail=promotion.edited_detail,
+                edited_kind=promotion.edited_kind,
                 company_id=promotion.company_id,
+                company_source_position=promotion.company_source_position,
                 company_signal_position=promotion.company_signal_position,
             )
             for promotion in model.promotions

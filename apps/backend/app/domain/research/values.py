@@ -8,6 +8,7 @@ and validates at construction.
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from uuid import UUID
 
 from app.domain.clock import ensure_utc, utcnow
 from app.domain.exceptions import DomainError
@@ -210,12 +211,28 @@ class ResearchPromotion:
     reviewed_at: datetime = field(default_factory=utcnow)
     reviewer_name: str | None = None
     edited_detail: str | None = None
-    company_id: object | None = None
+    edited_kind: str | None = None
+    company_id: UUID | None = None
+    company_source_position: int | None = None
     company_signal_position: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reviewed_at", ensure_utc(self.reviewed_at, field="reviewed_at"))
-        if self.decision is PromotionDecision.EDITED and not (self.edited_detail or "").strip():
-            raise DomainError("an edited promotion requires edited_detail")
-        if self.decision is not PromotionDecision.EDITED and self.edited_detail is not None:
-            raise DomainError("edited_detail is only valid for an edited promotion")
+        if self.decision is PromotionDecision.EDITED:
+            if not (self.edited_detail or "").strip():
+                raise DomainError("an edited promotion requires edited_detail")
+            if self.edited_kind is not None and self.edited_kind not in ALLOWED_CLAIM_KINDS:
+                raise DomainError(f"edited kind is not allowed: {self.edited_kind!r}")
+        elif self.edited_detail is not None or self.edited_kind is not None:
+            raise DomainError("edited_detail/edited_kind are only valid for an edited promotion")
+        if self.decision is PromotionDecision.REJECTED and (
+            self.company_signal_position is not None
+            or self.company_source_position is not None
+        ):
+            raise DomainError("a rejected promotion must never reference company data")
+
+    @property
+    def applied_to_company(self) -> bool:
+        """True once this decision has written rows into a Company. Such a
+        promotion is frozen: changing it would orphan the data it produced."""
+        return self.company_signal_position is not None
