@@ -185,7 +185,10 @@ class TestNormalOutput:
         await instance.extract(PAYLOAD)
         messages = calls_of(instance)[0]["messages"]
 
-        assert messages[0]["content"] == SYSTEM_PROMPT
+        # The system message is the base rules plus this run's language
+        # contract, so it starts with SYSTEM_PROMPT rather than equalling it.
+        assert messages[0]["content"].startswith(SYSTEM_PROMPT)
+        assert "Output language" in messages[0]["content"]
         user = messages[1]["content"]
         assert URL in user
         assert HOME in user

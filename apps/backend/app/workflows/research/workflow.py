@@ -25,6 +25,7 @@ import httpx
 from app.domain.clock import utcnow
 from app.domain.repositories import UnitOfWork
 from app.domain.research import (
+    OutputLanguage,
     ResearchFailureCode,
     ResearchPage,
     ResearchProfile,
@@ -76,6 +77,8 @@ class ResearchRequest:
     company_id: UUID | None = None
     company_name: str | None = None
     website: str | None = None
+    #: Language for conclusions. Evidence is never translated.
+    output_language: OutputLanguage = OutputLanguage.EN_US
 
     def __post_init__(self) -> None:
         if self.company_id is None:
@@ -150,7 +153,12 @@ class ResearchWorkflow:
             )
         company_name, website = resolved
 
-        run = ResearchRun.start(company_name, website, company_id=request.company_id)
+        run = ResearchRun.start(
+            company_name,
+            website,
+            company_id=request.company_id,
+            output_language=request.output_language,
+        )
         run.mark_running()
 
         try:
@@ -296,6 +304,7 @@ class ResearchWorkflow:
                     company_name=company_name,
                     website=website,
                     pages=tuple((page.record.url, page.cleaned.text) for page in pages),
+                    output_language=run.output_language,
                 )
             )
         except ExtractionError as exc:

@@ -12,6 +12,7 @@ from app.database.models.research import (
 from app.domain.research import (
     ClaimRejectionReason,
     ExtractorIdentity,
+    OutputLanguage,
     PromotionDecision,
     RejectedClaim,
     ResearchClaim,
@@ -47,6 +48,7 @@ class ResearchRunMapper:
             profile_json=asdict(run.profile),
             warnings_json=list(run.warnings),
             unknown_dimensions_json=list(run.unknown_dimensions),
+            output_language=run.output_language.value,
             rejected_json=[
                 {
                     "reason": rejection.reason.value,
@@ -109,6 +111,7 @@ class ResearchRunMapper:
             company_name=model.company_name,
             website=model.website,
             started_at=model.started_at,
+            output_language=OutputLanguage.parse(model.output_language),
         )
         run._status = ResearchRunStatus(model.status)
         run._failure_code = (

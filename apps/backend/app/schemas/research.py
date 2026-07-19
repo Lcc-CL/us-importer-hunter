@@ -42,6 +42,9 @@ class ResearchRunRequest(BaseModel):
     company_id: UUID | None = None
     company_name: NonBlank | None = None
     website: NonBlank | None = None
+    #: Language for the conclusions. Evidence snippets always keep the page's
+    #: own language so they stay verifiable.
+    output_language: Literal["zh-CN", "en-US"] = "en-US"
 
     @model_validator(mode="after")
     def require_identity(self) -> Self:
@@ -127,6 +130,8 @@ class ResearchRunResponse(BaseModel):
     #: Dimensions with no reliable evidence. Not a negative signal — the UI
     #: shows them as open research questions and scoring never sees them.
     unknown_dimensions: list[str]
+    #: Language the conclusions were written in, so a reload reads the same.
+    output_language: str
 
     @classmethod
     def from_run(cls, run: ResearchRun) -> "ResearchRunResponse":
@@ -202,6 +207,7 @@ class ResearchRunResponse(BaseModel):
             ],
             warnings=list(run.warnings),
             unknown_dimensions=list(run.unknown_dimensions),
+            output_language=run.output_language.value,
         )
 
 

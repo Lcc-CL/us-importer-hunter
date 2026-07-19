@@ -12,7 +12,7 @@ Two rules shape this prompt (ADR-0025 §6):
 Superseded versions get archived to app/prompts/versions/research/ (ADR-0008).
 """
 
-from app.domain.research import ALLOWED_CLAIM_KINDS
+from app.domain.research import ALLOWED_CLAIM_KINDS, OutputLanguage
 
 PROMPT_VERSION = "website-research-v1"
 
@@ -123,6 +123,37 @@ that are not listed above.
 
 #: Pages arrive in page_ranker order (homepage first). Never send more.
 MAX_PROMPT_PAGES = 5
+
+#: Per-language conclusion instructions. The split matters: conclusions are
+#: written for the reviewer, evidence is quoted for the validator, and only the
+#: first may be translated.
+_LANGUAGE_RULES: dict[OutputLanguage, str] = {
+    OutputLanguage.EN_US: """\
+## Output language
+
+Write `detail`, `company_profile` and `warnings` in English.
+
+`evidence_snippet` is the ONE exception: copy it verbatim from the page in
+whatever language the page uses. Never translate, transliterate or normalise
+it — it is checked character for character against the fetched text.""",
+    OutputLanguage.ZH_CN: """\
+## Output language
+
+Write `detail`, `company_profile` and `warnings` in **Simplified Chinese**
+(简体中文). Write naturally for a Chinese freight-forwarding salesperson: state
+what the company does, not a word-for-word translation of the English source.
+Keep proper nouns (company, brand and place names) in their original form.
+
+`evidence_snippet` is the ONE exception: copy it verbatim from the page in
+whatever language the page uses — usually English. **Never translate it.** It
+is checked character for character against the fetched text, so a translated
+snippet is discarded and the claim is lost.""",
+}
+
+
+def system_prompt_for(language: OutputLanguage) -> str:
+    """The base rules plus the language contract for this run."""
+    return f"{SYSTEM_PROMPT}\n{_LANGUAGE_RULES[language]}\n"
 
 
 def allocate_budget(lengths: tuple[int, ...], max_total_chars: int) -> tuple[int, ...]:

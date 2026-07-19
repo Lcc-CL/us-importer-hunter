@@ -29,6 +29,30 @@ ALLOWED_CLAIM_KINDS = frozenset(
 )
 
 
+class OutputLanguage(StrEnum):
+    """The language the extractor writes its *conclusions* in.
+
+    Only conclusions: `evidence_snippet` always stays in the page's own
+    language, because it must remain a verbatim substring of what we fetched
+    (ClaimValidator checks exactly that). Translating evidence would make it
+    unverifiable — the one thing the whole design exists to prevent.
+    """
+
+    ZH_CN = "zh-CN"
+    EN_US = "en-US"
+
+    @classmethod
+    def parse(cls, value: str | None) -> "OutputLanguage":
+        """Unknown or missing values fall back to English rather than raising:
+        a research run is too expensive to lose over a locale string."""
+        if value is None:
+            return cls.EN_US
+        try:
+            return cls(value.strip())
+        except ValueError:
+            return cls.EN_US
+
+
 class ResearchRunStatus(StrEnum):
     CREATED = "created"
     RUNNING = "running"

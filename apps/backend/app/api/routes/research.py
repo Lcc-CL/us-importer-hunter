@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import ClaimPromotionDep, ResearchWorkflowDep, UowFactoryDep
-from app.domain.research import PromotionDecision
+from app.domain.research import OutputLanguage, PromotionDecision
 from app.schemas.mvp import ApiErrorResponse
 from app.schemas.research import (
     ConfirmResearchRequest,
@@ -72,6 +72,7 @@ async def create_research_run(
             company_id=payload.company_id,
             company_name=payload.company_name,
             website=payload.website,
+            output_language=OutputLanguage.parse(payload.output_language),
         )
     )
 

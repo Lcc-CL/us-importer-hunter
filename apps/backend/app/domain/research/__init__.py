@@ -11,6 +11,7 @@ from app.domain.research.values import (
     ClaimRejectionReason,
     ExtractionResult,
     ExtractorIdentity,
+    OutputLanguage,
     PromotionDecision,
     ProposedClaim,
     RejectedClaim,
@@ -23,6 +24,7 @@ from app.domain.research.values import (
 )
 
 __all__ = [
+    "OutputLanguage",
     "ALLOWED_CLAIM_KINDS",
     "TERMINAL_RUN_STATUSES",
     "ClaimRejectionReason",

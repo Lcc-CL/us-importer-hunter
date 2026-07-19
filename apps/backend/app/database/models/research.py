@@ -87,6 +87,12 @@ class ResearchRunModel(Base):
     unknown_dimensions_json: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    # Language the conclusions were written in. Persisted so a reloaded run
+    # reads the same way it did when produced; evidence snippets are never
+    # translated and stay in the page's own language.
+    output_language: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="en-US", server_default="en-US"
+    )
 
     pages: Mapped[list["ResearchPageModel"]] = relationship(
         cascade="all, delete-orphan", lazy="selectin", order_by="ResearchPageModel.position"

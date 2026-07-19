@@ -14,6 +14,7 @@ from app.domain.research.values import (
     TERMINAL_RUN_STATUSES,
     ClaimRejectionReason,
     ExtractorIdentity,
+    OutputLanguage,
     PromotionDecision,
     RejectedClaim,
     ResearchClaim,
@@ -36,9 +37,11 @@ class ResearchRun:
         website: str,
         started_at: datetime,
         company_id: UUID | None = None,
+        output_language: OutputLanguage = OutputLanguage.EN_US,
     ) -> None:
         self._id = id
         self._company_id = company_id
+        self._output_language = output_language
         self._company_name = company_name
         self._website = website
         self._started_at = started_at
@@ -60,7 +63,12 @@ class ResearchRun:
 
     @classmethod
     def start(
-        cls, company_name: str, website: str, *, company_id: UUID | None = None
+        cls,
+        company_name: str,
+        website: str,
+        *,
+        company_id: UUID | None = None,
+        output_language: OutputLanguage = OutputLanguage.EN_US,
     ) -> "ResearchRun":
         """`company_id` is optional: research also runs on prospects that are
         not in the database yet. company_name and website are always recorded
@@ -75,6 +83,7 @@ class ResearchRun:
             company_name=company_name.strip(),
             website=website.strip(),
             started_at=utcnow(),
+            output_language=output_language,
         )
 
     # -- behaviors ------------------------------------------------------
@@ -226,6 +235,12 @@ class ResearchRun:
     @property
     def website(self) -> str:
         return self._website
+
+    @property
+    def output_language(self) -> OutputLanguage:
+        """Language of the conclusions, persisted so a reloaded run reads the
+        same way it did when it was produced."""
+        return self._output_language
 
     @property
     def status(self) -> ResearchRunStatus:

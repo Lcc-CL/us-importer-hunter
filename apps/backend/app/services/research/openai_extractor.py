@@ -41,8 +41,8 @@ from app.domain.research import (
 )
 from app.prompts.research.website_research import (
     PROMPT_VERSION,
-    SYSTEM_PROMPT,
     build_user_prompt,
+    system_prompt_for,
 )
 from app.services.research.extractors import ExtractionInput
 
@@ -139,13 +139,17 @@ class OpenAIResearchExtractor:
         )
 
         started = time.monotonic()
-        content, usage = await self._request(client, user_prompt)
+        content, usage = await self._request(
+            client, user_prompt, system_prompt_for(payload.output_language)
+        )
         self.last_usage = self._usage(usage, time.monotonic() - started)
         return self._parse(content)
 
     # -- provider call ----------------------------------------------------
 
-    async def _request(self, client: Any, user_prompt: str) -> tuple[str | None, Any]:
+    async def _request(
+        self, client: Any, user_prompt: str, system_prompt: str
+    ) -> tuple[str | None, Any]:
         """At most MAX_ATTEMPTS calls; only 429/5xx justify the second one."""
         last: ExtractionError | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -153,7 +157,7 @@ class OpenAIResearchExtractor:
                 response: Any = await client.chat.completions.create(
                     model=self._model,
                     messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                     response_format={"type": "json_object"},
