@@ -69,7 +69,11 @@ class Settings(BaseSettings):
     research_model: str = ""
     research_prompt_version: str = "website-research-v1"
     research_extractor_timeout_seconds: float = 30.0
-    research_extractor_max_input_chars: int = 24_000
+    #: Total prompt budget across pages, split by page_ranker order.
+    #: Measured, not estimated: 24k → 18k cut a quarter of the characters sent
+    #: with no loss of validated claims, while 13k cost 13% of them. See
+    #: docs/validation/v0.2-real-company-evaluation.md §token.
+    research_extractor_max_input_chars: int = 18_000
 
     # Website research (v0.2, ADR-0026). Limits are configuration, never
     # literals in the fetch loop.

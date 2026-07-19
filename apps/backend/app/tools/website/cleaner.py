@@ -6,6 +6,7 @@ which fails if inline elements silently concatenate neighbouring words.
 """
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from selectolax.parser import HTMLParser
@@ -60,6 +61,32 @@ INJECTION_HINTS = (
 
 _WHITESPACE = re.compile(r"[ \t ]+")
 _BLANK_LINES = re.compile(r"\n{3,}")
+
+# Short lines that are site furniture rather than statements about the company.
+# Matched only against SHORT lines: a paragraph that merely mentions "cookie"
+# or "privacy" is content, while a standalone "Cookie Settings" is chrome.
+_CHROME_LINE_MAX_CHARS = 120
+_CHROME_HINTS = (
+    "cookie",
+    "privacy policy",
+    "privacy choices",
+    "terms of use",
+    "terms of service",
+    "terms and conditions",
+    "all rights reserved",
+    "do not sell",
+    "accept all",
+    "reject all",
+    "sign up for our newsletter",
+    "subscribe to our",
+    "skip to content",
+    "skip to main",
+    "add to cart",
+    "view cart",
+    "log in",
+    "sign in",
+    "my account",
+)
 
 # Below this, a page is almost certainly a JS shell rather than content.
 # Policy, not a constant of nature — callers may pass their own threshold.
@@ -130,7 +157,35 @@ def _extract_text(node: object) -> str:
     parts: list[str] = []
     _walk(node, parts)
     lines = [_collapse(line) for line in "".join(parts).split("\n")]
-    return "\n".join(line for line in lines if len(line) >= 3)
+    return "\n".join(_denoise(line for line in lines if len(line) >= 3))
+
+
+def _denoise(lines: "Iterable[str]") -> list[str]:
+    """Drop repeated blocks and site chrome.
+
+    This runs inside the cleaner, not at prompt-build time, on purpose. The
+    cleaned text is what ClaimValidator checks evidence snippets against, so
+    removing text here keeps the model's view and the validator's view
+    identical. Stripping only from the prompt would let a model quote across a
+    hole and be rejected for text it faithfully copied.
+
+    Repetition is judged per line so a menu rendered outside <nav> collapses to
+    its first occurrence, while genuine prose — which does not repeat verbatim
+    — is untouched.
+    """
+    kept: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        marker = line.casefold()
+        if marker in seen:
+            continue
+        if len(line) <= _CHROME_LINE_MAX_CHARS and any(
+            hint in marker for hint in _CHROME_HINTS
+        ):
+            continue
+        seen.add(marker)
+        kept.append(line)
+    return kept
 
 
 def _walk(node: object, parts: list[str]) -> None:
