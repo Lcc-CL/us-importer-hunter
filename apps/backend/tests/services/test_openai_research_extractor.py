@@ -436,6 +436,62 @@ class TestPromptInjection:
         assert "unfetched_source" in outcome.warnings[0]
 
 
+class TestAbsentEvidence:
+    """Phase 6.2: an absence is not a fact.
+
+    Note what these two tests together establish: ClaimValidator *cannot*
+    catch a negative claim — the sentence is really on the page, the kind is
+    legal, the URL was fetched — so the prompt rule is the only defence, and
+    it is therefore worth testing that the model's own output shape is
+    correct rather than trusting the gate below it.
+    """
+
+    PAGE = "The website does not state where its products are sourced."
+    PAYLOAD = ExtractionInput(
+        company_name="Quiet Co", website="https://acme.example", pages=((URL, PAGE),)
+    )
+
+    async def test_absent_evidence_becomes_an_unknown_dimension_not_a_claim(self) -> None:
+        response = FakeResponse(
+            json.dumps(
+                {
+                    "company_profile": {"summary": None},
+                    "claims": [],
+                    "unknown_dimensions": ["china_dependency", "import_activity"],
+                    "warnings": [],
+                }
+            )
+        )
+        result = await extractor(response).extract(self.PAYLOAD)
+
+        assert result.claims == ()
+        assert "china_dependency" in result.unknown_dimensions
+
+    async def test_a_negative_claim_would_pass_validation_so_the_prompt_must_stop_it(
+        self,
+    ) -> None:
+        """Documents the gap deliberately: this claim is verifiable, legal and
+        useless. Only the prompt keeps it from being produced."""
+        response = FakeResponse(
+            body(
+                claims=[
+                    {
+                        "kind": "china_dependency",
+                        "detail": "The supplied text does not identify China as a source.",
+                        "source_url": URL,
+                        "evidence_snippet": self.PAGE,
+                        "confidence": 0.72,
+                    }
+                ]
+            )
+        )
+        result = await extractor(response).extract(self.PAYLOAD)
+        outcome = ClaimValidator().validate(result.claims, pages_for(self.PAGE))
+
+        assert len(outcome.accepted) == 1, "the validator has nothing to reject here"
+        assert "Absent evidence is never a claim" in SYSTEM_PROMPT
+
+
 # -- error mapping -------------------------------------------------------
 
 

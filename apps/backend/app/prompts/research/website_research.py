@@ -72,9 +72,22 @@ write any email or outreach copy.
 `kind` MUST be exactly one of:
 {_KIND_LIST}
 
-Any other kind is discarded. Dimensions with no supporting text go in
-`unknown_dimensions` — missing evidence is a normal, useful result, never a
-reason to guess.
+Any other kind is discarded.
+
+### Absent evidence is never a claim
+
+A claim reports something the page **states**. The absence of a statement is
+not a fact about the company, and must never become a claim.
+
+Never write a claim whose `detail` says the page does not mention something,
+that a fact could not be confirmed, or that nothing was found — for example
+"the website does not state where its products are sourced" is NOT a
+`china_dependency` claim. There is nothing to verify in an absence, and a
+reviewer cannot act on it.
+
+When a dimension has no supporting statement, put its name in
+`unknown_dimensions` and write no claim for it. Missing evidence is a normal,
+useful result: it tells the reviewer what to research next.
 
 ## Output
 
