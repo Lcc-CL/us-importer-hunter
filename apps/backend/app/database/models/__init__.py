@@ -18,6 +18,12 @@ from app.database.models.opportunity import (
     OpportunityModel,
 )
 from app.database.models.outreach import EmailDraftModel, OutcomeModel, OutreachModel
+from app.database.models.research import (
+    ResearchClaimModel,
+    ResearchPageModel,
+    ResearchPromotionModel,
+    ResearchRunModel,
+)
 from app.database.models.task import TaskAttemptModel, TaskModel
 
 __all__ = [
@@ -32,6 +38,10 @@ __all__ = [
     "OpportunityModel",
     "OutcomeModel",
     "OutreachModel",
+    "ResearchClaimModel",
+    "ResearchPageModel",
+    "ResearchPromotionModel",
+    "ResearchRunModel",
     "TaskAttemptModel",
     "TaskModel",
 ]

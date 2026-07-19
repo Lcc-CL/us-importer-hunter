@@ -1,0 +1,771 @@
+{
+  "model": "gpt-5.6-terra",
+  "prompt_version": "website-research-v1",
+  "stopped": null,
+  "business_rows_before": {
+    "companies": 9,
+    "opportunities": 9,
+    "contacts": 9,
+    "outreaches": 7,
+    "email_drafts": 8
+  },
+  "business_rows_after": {
+    "companies": 9,
+    "opportunities": 9,
+    "contacts": 9,
+    "outreaches": 7,
+    "email_drafts": 8
+  },
+  "side_effects": {},
+  "companies": [
+    {
+      "company": "Klein Tools",
+      "category": "hardware_tools",
+      "website": "https://www.kleintools.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "8d1c0292-4279-4132-949b-0e1a82a76d68",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 7,
+      "claims_validated": 7,
+      "unknown_dimensions": [
+        "cargo_value_potential",
+        "china_dependency",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 37.1,
+      "llm_calls": 1,
+      "prompt_tokens": 8849,
+      "completion_tokens": 1056,
+      "total_tokens": 9905,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "Klein Tools states that it has served professional tradesmen worldwide for more than 160 years.",
+          "evidence_snippet": "For over 160 years, Klein Tools has remained dedicated to professional tradesmen worldwide, with a commitment to manufacturing the world's finest hand tools right here in America.",
+          "source_url": "https://www.kleintools.com/catalog",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "company_scale",
+          "detail": "The company identifies itself as the only major global tool manufacturer focused on electrical and utility applications.",
+          "evidence_snippet": "Klein is the only major tool manufacturer worldwide focused on electrical and utility applications.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.93,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "Klein Tools reports planned investments exceeding $100 million to expand U.S. production and develop new USA-made products.",
+          "evidence_snippet": "Future planned investments in excess of $100 million will allow us to manufacture in the USA some of the products we currently source as well as make new USA-made products that would otherwise be imported without this investment.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "The company says it invested in four new U.S. manufacturing facilities during the past decade and expanded plant capacity and quality.",
+          "evidence_snippet": "We have invested in four new US manufacturing facilities in the past decade, and have invested heavily in new equipment and tooling in our plants to expand our capacity and quality.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.97,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "import_activity",
+          "detail": "Klein Tools states that it sources some products abroad.",
+          "evidence_snippet": "Like most global companies, we do source some products abroad, but Klein Tools makes 14 times more products here in the United States than we do in any other country.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "Klein Tools operates with both domestic manufacturing and overseas product sourcing.",
+          "evidence_snippet": "We live in an international business environment and Klein is expanding throughout the world selling products that are made in the USA.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.88,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "The company sells a broad catalog of professional tools, safety products, and equipment for electrical, utility, construction, and trade uses.",
+          "evidence_snippet": "Klein Tools is committed to American Manufacturing, since 1857. For over 160 years, Klein Tools has remained dedicated to professional tradesmen worldwide, with a commitment to manufacturing the world's finest hand tools right here in America.",
+          "source_url": "https://www.kleintools.com/catalog",
+          "confidence": 0.83,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "Great Neck Saw Manufacturers",
+      "category": "hardware_tools",
+      "website": "https://www.greatnecksaw.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "b0be3388-e99b-4038-93ed-802369a55048",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 5,
+      "claims_validated": 5,
+      "unknown_dimensions": [
+        "china_dependency",
+        "import_activity",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 34.56,
+      "llm_calls": 1,
+      "prompt_tokens": 6365,
+      "completion_tokens": 645,
+      "total_tokens": 7010,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "The company describes itself as a leading global supplier serving several major retail and industrial market segments.",
+          "evidence_snippet": "They have made GreatNeck a leading global supplier to the hardware, home improvement, sporting good, mass retail and automotive markets, and have distribution and manufacturing facilities around the world.",
+          "source_url": "https://www.greatnecksaw.com/about",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company states that it operates both distribution and manufacturing facilities worldwide, indicating a multi-location supply chain.",
+          "evidence_snippet": "They have made GreatNeck a leading global supplier to the hardware, home improvement, sporting good, mass retail and automotive markets, and have distribution and manufacturing facilities around the world.",
+          "source_url": "https://www.greatnecksaw.com/about",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "The company supplies hardware, home-improvement, sporting-goods, mass-retail, and automotive markets globally, which indicates broad product distribution requirements.",
+          "evidence_snippet": "They have made GreatNeck a leading global supplier to the hardware, home improvement, sporting good, mass retail and automotive markets, and have distribution and manufacturing facilities around the world.",
+          "source_url": "https://www.greatnecksaw.com/about",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "cargo_value_potential",
+          "detail": "The company manufactures and supplies durable hand-tool-related products for multiple large market segments.",
+          "evidence_snippet": "By 1971, Sam and his four sons built GreatNeck in to a major force in the hand tool business by purchasing Buck Bros., a Massachusetts chisel company, and Mayes Brothers, a level company from Tennessee. They also added a plastic extrusion plant.",
+          "source_url": "https://www.greatnecksaw.com/about",
+          "confidence": 0.82,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "The company expanded its hand-tool business through acquisitions and by adding a plastic extrusion plant.",
+          "evidence_snippet": "By 1971, Sam and his four sons built GreatNeck in to a major force in the hand tool business by purchasing Buck Bros., a Massachusetts chisel company, and Mayes Brothers, a level company from Tennessee. They also added a plastic extrusion plant.",
+          "source_url": "https://www.greatnecksaw.com/about",
+          "confidence": 0.9,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "Sauder Woodworking",
+      "category": "furniture_home",
+      "website": "https://www.sauder.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "8614fd82-4887-4352-8695-07f44254fc59",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 9,
+      "claims_validated": 9,
+      "unknown_dimensions": [
+        "china_dependency",
+        "growth_signal",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 41.95,
+      "llm_calls": 1,
+      "prompt_tokens": 9907,
+      "completion_tokens": 1073,
+      "total_tokens": 10980,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "The company identifies itself as North America's leading RTA furniture producer and one of the five largest residential furniture manufacturers in the United States.",
+          "evidence_snippet": "Sauder Woodworking Co. is North America’s leading producer of ready-to-assemble (RTA) furniture and one of the top five residential furniture manufacturers in the United States.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "company_scale",
+          "detail": "Sauder reports nearly four million square feet of local facilities and approximately 2,000 workers.",
+          "evidence_snippet": "With some of the most technologically advanced equipment in the world, our local facilities encompass nearly 4 million square feet of space, employ about 2,000 workers and house a wide variety of local and imported materials.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "company_scale",
+          "detail": "The Sauder family of companies reports 2,400 employees and more than $600 million in annual sales.",
+          "evidence_snippet": "With its 2,400 employees, the Sauder family of companies generates sales of over $600 million annually.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "cargo_value_potential",
+          "detail": "The company reports annual sales exceeding $600 million across the Sauder family of companies.",
+          "evidence_snippet": "With its 2,400 employees, the Sauder family of companies generates sales of over $600 million annually.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.96,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "import_activity",
+          "detail": "Sauder states that its local facilities contain imported materials.",
+          "evidence_snippet": "With some of the most technologically advanced equipment in the world, our local facilities encompass nearly 4 million square feet of space, employ about 2,000 workers and house a wide variety of local and imported materials.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.95,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "import_activity",
+          "detail": "Sauder states that it sources furniture from global partners.",
+          "evidence_snippet": "Sauder also sources furniture from a network of quality global partners, all supported by domestic warehouses in three strategic locations.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.96,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company describes a supply network involving global furniture partners and three domestic warehouse locations.",
+          "evidence_snippet": "Sauder also sources furniture from a network of quality global partners, all supported by domestic warehouses in three strategic locations.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.96,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "Sauder markets more than 60 ready-to-assemble furniture collections across multiple home furnishing categories.",
+          "evidence_snippet": "Sauder markets more than 60 distinct furniture collections in a full line of RTA furnishings for the home, including entertainment, home office, bedroom, kitchen and storage.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "The company serves additional office, cabinetry, and closet-system market segments, including residential and commercial uses.",
+          "evidence_snippet": "Other market segments include: Sauder Commercial Office™, a line of office furniture under the OfficeWorks® and Worksense® brands; Sauder Cabinetry™, a line of frameless kitchen cabinets for single and multi-family residential environments; and WoodTrac®, a line of closet systems for residential and commercial markets.",
+          "source_url": "https://www.sauder.com/about/about-sauder",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "Ashley Furniture Industries",
+      "category": "furniture_home",
+      "website": "https://www.ashleyfurniture.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "3de85b42-2ee4-43b7-ad01-60e1e889998a",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 4,
+      "claims_validated": 4,
+      "unknown_dimensions": [
+        "cargo_value_potential",
+        "china_dependency",
+        "import_activity",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 47.26,
+      "llm_calls": 1,
+      "prompt_tokens": 11003,
+      "completion_tokens": 949,
+      "total_tokens": 11952,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "Ashley states that it employs more than 35,000 people globally and is the world's largest furniture manufacturer.",
+          "evidence_snippet": "From 35 employees in 1970, we've grown to become the World's Largest Furniture Manufacturer and Largest Furniture Manufacturer in the United States, now employing over 35,000 team members globally.",
+          "source_url": "https://www.ashleyfurniture.com/about-us",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "Ashley reports a large combined manufacturing and distribution footprint that reaches 155 countries.",
+          "evidence_snippet": "Our family-driven values have expanded our manufacturing and distribution capacity to more than 30 million square feet, reaching 155 countries while maintaining our multi-generational commitment to our vision of being the best home furnishings company.",
+          "source_url": "https://www.ashleyfurniture.com/about-us",
+          "confidence": 0.98,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "Ashley describes substantial historical growth from 35 employees in 1970 to more than 35,000 global team members.",
+          "evidence_snippet": "From 35 employees in 1970, we've grown to become the World's Largest Furniture Manufacturer and Largest Furniture Manufacturer in the United States, now employing over 35,000 team members globally.",
+          "source_url": "https://www.ashleyfurniture.com/about-us",
+          "confidence": 0.97,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "Ashley has international reach and operates large-scale manufacturing and distribution capacity, indicating distribution requirements across many countries.",
+          "evidence_snippet": "Our family-driven values have expanded our manufacturing and distribution capacity to more than 30 million square feet, reaching 155 countries while maintaining our multi-generational commitment to our vision of being the best home furnishings company.",
+          "source_url": "https://www.ashleyfurniture.com/about-us",
+          "confidence": 0.93,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "Body-Solid",
+      "category": "fitness_equipment",
+      "website": "https://www.bodysolid.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "63118c88-27fa-4fb2-9ee0-79da1d5ef496",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 4,
+      "claims_validated": 4,
+      "unknown_dimensions": [
+        "china_dependency",
+        "growth_signal",
+        "import_activity",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 42.95,
+      "llm_calls": 1,
+      "prompt_tokens": 7225,
+      "completion_tokens": 504,
+      "total_tokens": 7729,
+      "claims": [
+        {
+          "kind": "shipping_fit",
+          "detail": "The company supports sales, customer support, and dealer inquiries for products outside the United States and Canada, indicating an international distribution need.",
+          "evidence_snippet": "Please use this contact if you are interested in Body-Solid information for sales, customer support, and dealer inquiries for products outside of the United States and Canada.",
+          "source_url": "https://bodysolid.com/contact",
+          "confidence": 0.96,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company uses a dealer channel, including authorized dealers and local dealers, which adds distribution-channel complexity.",
+          "evidence_snippet": "Please use this contact if you would like to become an Authorized Body-Solid Dealer.",
+          "source_url": "https://bodysolid.com/contact",
+          "confidence": 0.88,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "company_scale",
+          "detail": "The company operates multiple distinct fitness-equipment brands.",
+          "evidence_snippet": "Best Fitness\nBody-Solid\nBody-Solid Pro ClubLine\nBody-Solid Tools\nEndurance\nPowerline",
+          "source_url": "https://bodysolid.com/brands",
+          "confidence": 0.9,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "cargo_value_potential",
+          "detail": "The company sells durable gym equipment, including home gyms, benches, and accessories, which may represent substantial physical products for shipment.",
+          "evidence_snippet": "I own quite a few Body-Solid products (home gyms, benches, accessories).",
+          "source_url": "https://www.bodysolid.com",
+          "confidence": 0.77,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "Life Fitness",
+      "category": "fitness_equipment",
+      "website": "https://www.lifefitness.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "b80c4855-a6e9-4825-ad38-2f1c9c412ab7",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 8,
+      "claims_validated": 8,
+      "unknown_dimensions": [
+        "china_dependency",
+        "import_activity",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 34.51,
+      "llm_calls": 1,
+      "prompt_tokens": 8375,
+      "completion_tokens": 714,
+      "total_tokens": 9089,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "The company states that it operates experience hubs in seven locations worldwide.",
+          "evidence_snippet": "Our experience hubs are currently in seven locations around the world, with the flagship nestled within our Rosemont HQ, just outside of Chicago, IL.",
+          "source_url": "https://www.lifefitness.com/en-us/about",
+          "confidence": 0.93,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "company_scale",
+          "detail": "The catalog page lists 418 product results, indicating a broad equipment offering.",
+          "evidence_snippet": "Showing 418 results",
+          "source_url": "https://www.lifefitness.com/en-us/catalog",
+          "confidence": 0.91,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "The company reports two major launches in the current year.",
+          "evidence_snippet": "2 Major Launches This Year",
+          "source_url": "https://www.lifefitness.com",
+          "confidence": 0.9,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "The company is introducing a new Atmos cardio line at HFA 2026.",
+          "evidence_snippet": "Get a sneak peek at the new cardio line AtmosTM.",
+          "source_url": "https://www.lifefitness.com",
+          "confidence": 0.9,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company describes customization options involving color, materials, and weight selections.",
+          "evidence_snippet": "For additional customizations, including color, material selections, weight options, etc., a sales representative will follow up with you.",
+          "source_url": "https://www.lifefitness.com",
+          "confidence": 0.9,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company states that quality processes extend through manufacturing, final assembly, and final-line testing.",
+          "evidence_snippet": "Our desire to craft the highest quality product possible continues from conception and design through to manufacturing, final assembly and the final line testing.",
+          "source_url": "https://www.lifefitness.com/en-us/about",
+          "confidence": 0.89,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "The company offers commercial-grade fitness equipment for gym, hotel, and multi-unit housing applications.",
+          "evidence_snippet": "Atmos Treadmill is a commercial-grade small footprint treadmill designed for hotel gyms and multi—unit housing gyms.",
+          "source_url": "https://www.lifefitness.com",
+          "confidence": 0.88,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "cargo_value_potential",
+          "detail": "The company sells commercial-grade fitness equipment and provides customized product options, which supports the presence of specialized equipment offerings.",
+          "evidence_snippet": "The Life Fitness Universal Cable machine is versatile, built for every body, and brings dynamic training and commercial-grade durability into one compact gym equipment unit.",
+          "source_url": "https://www.lifefitness.com",
+          "confidence": 0.78,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "Global Industrial",
+      "category": "industrial_equipment",
+      "website": "https://www.globalindustrial.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "2c7dcdd7-acfc-44f3-b5de-8882395718bd",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 6,
+      "claims_validated": 6,
+      "unknown_dimensions": [
+        "cargo_value_potential",
+        "china_dependency",
+        "growth_signal",
+        "import_activity",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 38.24,
+      "llm_calls": 1,
+      "prompt_tokens": 6685,
+      "completion_tokens": 590,
+      "total_tokens": 7275,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "The company presents 2,396 promotional results across multiple industrial product categories.",
+          "evidence_snippet": "2396 Results",
+          "source_url": "https://www.globalindustrial.com/seasonal-deals",
+          "confidence": 0.91,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "The company offers free shipping on selected products without eligibility requirements.",
+          "evidence_snippet": "Select products ship for free with no eligibility requirements, just look for the green \"Free Shipping\" icon as you shop.",
+          "source_url": "https://www.globalindustrial.com/seasonal-deals",
+          "confidence": 0.97,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "The company supports bulk purchases through sales representatives, online ordering, or phone ordering.",
+          "evidence_snippet": "The more you buy, the more you save. We’ll get you the best pricing for bulk purchases through your sales rep, online, or by phone.",
+          "source_url": "https://www.globalindustrial.com/seasonal-deals",
+          "confidence": 0.96,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company serves a broad range of product categories including material handling, HVAC, safety, and facility maintenance.",
+          "evidence_snippet": "Storage & ShelvingSafety & SecurityCarts & TrucksMaterial HandlingFurniture & DecorHVAC & FansJanitorial & Facility MaintenanceView All",
+          "source_url": "https://www.globalindustrial.com/seasonal-deals",
+          "confidence": 0.88,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "company_scale",
+          "detail": "The company operates dedicated sales, reseller, public-sector, and international-sales contact channels.",
+          "evidence_snippet": "Reseller\nReseller\n844.671.1547\nPublic Sector\nPublic Sector\n800.607.8520\nInternational Sales\nInternational Sales\n888.277.6995",
+          "source_url": "https://www.globalindustrial.com/contactUs",
+          "confidence": 0.93,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company offers printed catalogs delivered through postal mail alongside a digital catalog.",
+          "evidence_snippet": "Select the catalog(s) to be delivered via postal mail.",
+          "source_url": "https://www.globalindustrial.com/catalog",
+          "confidence": 0.9,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "W.W. Grainger",
+      "category": "industrial_equipment",
+      "website": "https://www.grainger.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "2291ab49-e31b-4103-a6cf-95835d14a8ea",
+      "pages_fetched": 1,
+      "pages_failed": 0,
+      "claims_proposed": 0,
+      "claims_validated": 0,
+      "unknown_dimensions": [
+        "cargo_value_potential",
+        "china_dependency",
+        "company_scale",
+        "growth_signal",
+        "import_activity",
+        "logistics_complexity",
+        "pain_point",
+        "shipping_fit"
+      ],
+      "rejections": [],
+      "latency_seconds": 16.5,
+      "llm_calls": 1,
+      "prompt_tokens": 5904,
+      "completion_tokens": 99,
+      "total_tokens": 6003,
+      "claims": []
+    },
+    {
+      "company": "Feit Electric",
+      "category": "lighting_electrical",
+      "website": "https://www.feit.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "5b9e4f8e-5c12-469e-8a1f-2d8c58a8643a",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 9,
+      "claims_validated": 9,
+      "unknown_dimensions": [
+        "china_dependency",
+        "import_activity",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 33.85,
+      "llm_calls": 1,
+      "prompt_tokens": 9515,
+      "completion_tokens": 998,
+      "total_tokens": 10513,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "The company describes itself as a global leader in lighting.",
+          "evidence_snippet": "From humble beginnings as a family-owned business in California to a global leader in lighting.",
+          "source_url": "https://www.feit.com/pages/about-us",
+          "confidence": 0.97,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "company_scale",
+          "detail": "Feit Electric states that it has partnered with major retailers for more than 45 years.",
+          "evidence_snippet": "For over 45 years, Feit Electric has partnered with the world's leading retailers to provide high-performance lighting solutions.",
+          "source_url": "https://www.feit.com/pages/about-us",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "The company reports worldwide automated manufacturing facilities, indicating an international production footprint.",
+          "evidence_snippet": "Introduced automated manufacturing facilities worldwide to increase scale and quality.",
+          "source_url": "https://www.feit.com/pages/about-us",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "Feit Electric explicitly cites supply chain strength as part of its retailer partnership capabilities.",
+          "evidence_snippet": "With unmatched speed, supply chain strength, and retail expertise, we help our partners grow while meeting real consumer needs.",
+          "source_url": "https://www.feit.com/pages/about-us",
+          "confidence": 0.93,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "Feit Electric supplies high-performance lighting solutions through leading retail partners, suggesting a retail distribution model.",
+          "evidence_snippet": "For over 45 years, Feit Electric has partnered with the world's leading retailers to provide high-performance lighting solutions.",
+          "source_url": "https://www.feit.com/pages/about-us",
+          "confidence": 0.89,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "The company states that it acquired LIFX in 2022 to add premium Wi-Fi-enabled smart lighting and an app ecosystem.",
+          "evidence_snippet": "Acquired LIFX, integrating premium, Wi-Fi-enabled smart lighting and a powerful app ecosystem into the Feit family.",
+          "source_url": "https://www.feit.com/pages/about-us",
+          "confidence": 0.96,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "Feit Electric announced an acquisition of Good Earth Lighting assets and brand in January 2026.",
+          "evidence_snippet": "Feit Electric acquires the assets and brand of Good Earth Lighting, a pioneer in sustainable, everyday LED lighting.",
+          "source_url": "https://www.feit.com/blogs/press",
+          "confidence": 0.96,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "Feit Electric announced an acquisition of Universal Security Instruments assets and brand in June 2025, expanding into alarm technologies.",
+          "evidence_snippet": "Expanding beyond illumination, Feit Electric acquires Universal Security Instruments (USI) to bring trusted, patented alarm technologies into the smart home...",
+          "source_url": "https://www.feit.com/blogs/press",
+          "confidence": 0.95,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "cargo_value_potential",
+          "detail": "The company offers a broad range of smart home hardware, including lighting, cameras, doorbells, sensors, and locks.",
+          "evidence_snippet": "Feit Electric makes a complete range of smart home products including smart bulbs, LED strip lights, recessed downlights, ceiling fixtures, security cameras, video doorbells, floodlight cameras, smart plugs, dimmers, switches, sensors, and smart door locks — all Wi-Fi connected, no hub required.",
+          "source_url": "https://www.feit.com/collections/smart-products",
+          "confidence": 0.88,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    },
+    {
+      "company": "Westinghouse Lighting",
+      "category": "lighting_electrical",
+      "website": "https://www.westinghouselighting.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "c7c04e47-399f-46e0-aca1-43f386be7a2f",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 1,
+      "claims_validated": 1,
+      "unknown_dimensions": [
+        "cargo_value_potential",
+        "china_dependency",
+        "company_scale",
+        "growth_signal",
+        "import_activity",
+        "logistics_complexity",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 30.33,
+      "llm_calls": 1,
+      "prompt_tokens": 6222,
+      "completion_tokens": 180,
+      "total_tokens": 6402,
+      "claims": [
+        {
+          "kind": "shipping_fit",
+          "detail": "The company offers lighting products, indicating a product-based business with physical goods.",
+          "evidence_snippet": "Whether you’re looking for the latest technology or reliable quality products, we provide lighting choices that guide you in the right direction.",
+          "source_url": "https://www.westinghouselighting.com",
+          "confidence": 0.89,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    }
+  ]
+}

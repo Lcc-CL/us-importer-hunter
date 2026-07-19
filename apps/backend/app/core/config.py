@@ -59,6 +59,35 @@ class Settings(BaseSettings):
     email_generator_provider: Literal["fake", "openai"] = "fake"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    #: Optional OpenAI-compatible endpoint. Empty means the SDK default.
+    openai_base_url: str = ""
+
+    # Research extraction (v0.2 phase 5, ADR-0027). Fake stays the default so
+    # no code path reaches a paid provider without an explicit opt-in.
+    research_extractor_provider: Literal["fake", "openai"] = "fake"
+    #: Empty falls back to openai_model — never a literal in the extractor.
+    research_model: str = ""
+    research_prompt_version: str = "website-research-v1"
+    research_extractor_timeout_seconds: float = 30.0
+    #: Total prompt budget across pages, split by page_ranker order.
+    #: Measured, not estimated: 24k → 18k cut a quarter of the characters sent
+    #: with no loss of validated claims, while 13k cost 13% of them. See
+    #: docs/validation/v0.2-real-company-evaluation.md §token.
+    research_extractor_max_input_chars: int = 18_000
+
+    # Website research (v0.2, ADR-0026). Limits are configuration, never
+    # literals in the fetch loop.
+    research_max_pages: int = 5
+    research_max_page_bytes: int = 2 * 1024 * 1024
+    research_max_decompressed_bytes: int = 8 * 1024 * 1024
+    research_max_page_chars: int = 40_000
+    research_request_timeout_seconds: float = 10.0
+    research_total_budget_seconds: float = 45.0
+    research_max_redirects: int = 3
+    research_request_delay_seconds: float = 0.5
+    research_user_agent: str = (
+        "USImporterHunterBot/0.2 (+https://github.com/Lcc-CL/us-importer-hunter)"
+    )
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -73,6 +102,16 @@ class Settings(BaseSettings):
                 path=self.postgres_db,
             )
         )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def resolved_research_model(self) -> str:
+        """RESEARCH_MODEL, or OPENAI_MODEL when it is unset.
+
+        Resolution lives here rather than in the extractor so that no model
+        name is ever hard-coded next to the provider call.
+        """
+        return self.research_model.strip() or self.openai_model.strip()
 
     @computed_field  # type: ignore[prop-decorator]
     @property

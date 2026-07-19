@@ -1,5 +1,76 @@
 # Release Notes
 
+## v0.2.0 — Internal Beta — 2026-07-19
+
+The website research agent: point it at a US importer's own site and it returns
+evidence-backed claims a human reviews before anything enters the pipeline. It
+never writes a Company, never scores, never sends.
+
+### Added
+
+**Website research agent.** Safe fetching (SSRF guard, robots, byte/time
+budgets), deterministic page ranking, HTML cleaning, and a real LLM extractor
+(`website-research-v1`) that proposes claims — each carrying the kind, the
+verbatim sentence supporting it, the page URL it came from, and a confidence.
+
+**Anti-hallucination gate.** Every proposed claim is checked against what was
+actually fetched: kind whitelist, source URL fetched by this run, page belongs
+to this run, evidence snippet is a real substring of the cleaned text,
+confidence within 0–1. Failures are discarded with a recorded warning, never
+downgraded into a weak signal.
+
+**Human review and promotion.** Claims arrive pending. Accept, edit or reject
+each one; the decision is recorded — rejections included — and accepted claims
+fill the existing prospect form without submitting it.
+
+**Unknown dimensions are persisted.** Dimensions with no supporting evidence
+are named and survive a reload, so a saved run can say "we looked and found
+nothing" rather than appearing never to have considered them. Unknown is never
+a negative signal and never reaches scoring.
+
+### Validation
+
+Ten real US importers across five categories, one LLM request each: 10/10 safe
+completions, 100% evidence localisation, 100% source-URL verification, **zero
+fabricated facts**, 85.7% direct accept rate. Grainger returned zero claims and
+eight unknown dimensions from a thin page — refusing to invent is the designed
+behaviour. Full data: [docs/validation/](validation/v0.2-real-company-evaluation.md).
+
+### Changed
+
+- Extraction context budget is allocated in page-rank order rather than split
+  evenly, and capped at 18,000 characters — a 25% reduction with no loss of
+  validated claims.
+- `clean_html` collapses repeated lines and drops cookie/legal chrome.
+  `char_count` therefore counts deduplicated text: a page repeating one
+  sentence six times now reads as thin, because repetition is not content.
+
+### Known limitations
+
+See [Known limitations](#known-limitations-v020) below.
+
+<a id="known-limitations-v020"></a>
+### Known limitations (v0.2.0)
+
+- **The Research API must not be exposed anonymously on the public internet.**
+  It is an authenticated internal surface only (ADR-0026).
+- **Connection-level DNS/IP pinning is not implemented.** A residual DNS-rebinding
+  window remains; the deployment constraint above is what closes it.
+- **The validated provider is a third-party OpenAI-compatible gateway**
+  (`gpt-5.6-terra`). The official `api.openai.com` endpoint has not been
+  cost-validated, so the token figures here do not transfer to it.
+- **A company website cannot prove import records.** Volumes, customs history
+  and supplier identities are not verifiable from a marketing site.
+- **Most `china_dependency` dimensions stay Unknown.** Nine of ten evaluated
+  companies disclosed nothing about sourcing origin. This needs a customs data
+  source, not prompt tuning.
+- **Every claim requires human review.** Nothing is promoted automatically.
+- **No email is sent, ever.** Drafts wait for a human.
+- **JS-heavy sites may need browser rendering.** They return `needs_browser`
+  rather than silently empty results; headless rendering is out of scope.
+- **`reviewer_name` is not connected to a real identity system.** It is an
+  unauthenticated local operator label.
+
 ## v0.1.1 — 2026-07-19
 
 Two things ship together: a scoring defect that made the product unusable for

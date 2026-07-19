@@ -19,6 +19,7 @@ from app.domain.repositories import (
     ContactRepository,
     OpportunityRepository,
     OutreachRepository,
+    ResearchRunRepository,
     TaskRepository,
 )
 from app.domain.services import OpportunityScoringInput
@@ -102,6 +103,7 @@ class FakeUnitOfWork:
     outreaches: OutreachRepository
     contacts: ContactRepository
     tasks: TaskRepository
+    research_runs: ResearchRunRepository
 
     def __init__(
         self, companies: FakeCompanyRepository, opportunities: FakeOpportunityRepository

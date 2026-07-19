@@ -21,8 +21,14 @@ from app.domain.services import (
 )
 from app.services.contact import DeterministicDecisionMakerSelectionService
 from app.services.email import FakeEmailDraftGenerator, OpenAIEmailDraftGenerator
+from app.services.research import (
+    FakeResearchExtractor,
+    OpenAIResearchExtractor,
+    ResearchExtractor,
+)
 from app.services.scoring import DeterministicOpportunityScoringService
 from app.shared.exceptions import ProviderUnavailableError
+from app.tools.website import FetchLimits, SafeFetcher, SiteScope
 from app.workflows.company_ingestion import CompanyIngestionWorkflow
 from app.workflows.contact_ingestion import ContactIngestionWorkflow
 from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
@@ -34,6 +40,11 @@ from app.workflows.mvp_prospect_analysis import (
     UowFactory,
 )
 from app.workflows.opportunity import OpportunityApplicationWorkflow
+from app.workflows.research import (
+    ClaimPromotionWorkflow,
+    ResearchLimits,
+    ResearchWorkflow,
+)
 
 
 def get_request_settings(request: Request) -> Settings:
@@ -195,3 +206,75 @@ def get_approve_email_draft_workflow(uow_factory: UowFactoryDep) -> ApproveEmail
 ApproveEmailDraftDep = Annotated[
     ApproveEmailDraftWorkflow, Depends(get_approve_email_draft_workflow)
 ]
+
+
+def get_research_extractor(settings: SettingsDep) -> ResearchExtractor:
+    """Fake by default; the real extractor only on an explicit opt-in.
+
+    A misconfigured `openai` selection raises instead of falling back to the
+    Fake extractor — silently serving deterministic stub claims while the
+    operator believes a model ran would corrupt the evidence trail (ADR-0027).
+    """
+    if settings.research_extractor_provider == "fake":
+        return FakeResearchExtractor()
+    if settings.research_extractor_provider == "openai":
+        model = settings.resolved_research_model
+        if not model:
+            raise ProviderUnavailableError(
+                "research extractor is set to openai but no model is configured"
+            )
+        return OpenAIResearchExtractor(
+            model=model,
+            api_key=settings.openai_api_key or None,
+            base_url=settings.openai_base_url or None,
+            prompt_version=settings.research_prompt_version,
+            timeout_seconds=settings.research_extractor_timeout_seconds,
+            max_input_chars=settings.research_extractor_max_input_chars,
+        )
+    raise ProviderUnavailableError("configured research extractor is unavailable")
+
+
+ResearchExtractorDep = Annotated[ResearchExtractor, Depends(get_research_extractor)]
+
+
+def get_research_workflow(
+    uow_factory: UowFactoryDep,
+    extractor: ResearchExtractorDep,
+    settings: SettingsDep,
+) -> ResearchWorkflow:
+    limits = ResearchLimits(
+        max_pages=settings.research_max_pages,
+        max_page_chars=settings.research_max_page_chars,
+        total_budget_seconds=settings.research_total_budget_seconds,
+        request_delay_seconds=settings.research_request_delay_seconds,
+        user_agent=settings.research_user_agent,
+    )
+
+    def fetcher_factory(scope: SiteScope) -> SafeFetcher:
+        return SafeFetcher(
+            limits=FetchLimits(
+                max_page_bytes=settings.research_max_page_bytes,
+                max_decompressed_bytes=settings.research_max_decompressed_bytes,
+                request_timeout_seconds=settings.research_request_timeout_seconds,
+                max_redirects=settings.research_max_redirects,
+                user_agent=settings.research_user_agent,
+            ),
+            scope=scope,
+        )
+
+    return ResearchWorkflow(
+        uow_factory=uow_factory,
+        extractor=extractor,
+        fetcher_factory=fetcher_factory,
+        limits=limits,
+    )
+
+
+ResearchWorkflowDep = Annotated[ResearchWorkflow, Depends(get_research_workflow)]
+
+
+def get_claim_promotion_workflow(uow_factory: UowFactoryDep) -> ClaimPromotionWorkflow:
+    return ClaimPromotionWorkflow(uow_factory=uow_factory)
+
+
+ClaimPromotionDep = Annotated[ClaimPromotionWorkflow, Depends(get_claim_promotion_workflow)]

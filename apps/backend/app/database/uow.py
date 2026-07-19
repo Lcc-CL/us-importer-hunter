@@ -24,6 +24,7 @@ from app.database.repositories import (
     SqlAlchemyContactRepository,
     SqlAlchemyOpportunityRepository,
     SqlAlchemyOutreachRepository,
+    SqlAlchemyResearchRunRepository,
     SqlAlchemyTaskRepository,
 )
 from app.domain.exceptions import DuplicateOperation
@@ -32,6 +33,7 @@ from app.domain.repositories import (
     ContactRepository,
     OpportunityRepository,
     OutreachRepository,
+    ResearchRunRepository,
     TaskRepository,
 )
 
@@ -41,6 +43,7 @@ class SqlAlchemyUnitOfWork:
     contacts: ContactRepository
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
+    research_runs: ResearchRunRepository
     tasks: TaskRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -55,6 +58,7 @@ class SqlAlchemyUnitOfWork:
         self.contacts = SqlAlchemyContactRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)
         self.outreaches = SqlAlchemyOutreachRepository(self._session)
+        self.research_runs = SqlAlchemyResearchRunRepository(self._session)
         self.tasks = SqlAlchemyTaskRepository(self._session)
         return self
 

@@ -14,6 +14,7 @@ from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
+from app.domain.research import ResearchRun
 from app.domain.task import Task
 from app.domain.values import CompanyName, IdempotencyKey
 
@@ -102,6 +103,25 @@ class TaskRepository(Protocol):
         ...
 
 
+class ResearchRunRepository(Protocol):
+    """Persistence for research runs (v0.2). A run is an audit record of what
+    a website claimed and what a human decided — never company state."""
+
+    async def get_by_id(self, research_id: UUID) -> "ResearchRun | None": ...
+
+    async def add(self, run: "ResearchRun") -> None: ...
+
+    async def save(self, run: "ResearchRun") -> None: ...
+
+    async def list_for_company(
+        self, company_id: UUID, *, limit: int = 20
+    ) -> "list[ResearchRun]": ...
+
+    async def list_for_website(
+        self, website: str, *, limit: int = 10
+    ) -> "list[ResearchRun]": ...
+
+
 class UnitOfWork(Protocol):
     """One transaction per application use case (ADR-0017)."""
 
@@ -110,6 +130,7 @@ class UnitOfWork(Protocol):
     outreaches: OutreachRepository
     contacts: ContactRepository
     tasks: TaskRepository
+    research_runs: ResearchRunRepository
 
     async def __aenter__(self) -> "UnitOfWork": ...
 

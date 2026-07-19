@@ -53,6 +53,9 @@ services:
       target: dev
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8001
+      # The E2E suite exercises the research panel, so the flag is on here.
+      # It stays off by default everywhere else.
+      NEXT_PUBLIC_ENABLE_RESEARCH: "true"
     volumes:
       - ./apps/frontend/src:/app/src
       - ./apps/frontend/public:/app/public

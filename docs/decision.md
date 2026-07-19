@@ -30,3 +30,6 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0022](ADR/0022-contact-and-decision-maker-model.md) | Contact and decision-maker model | 2026-07-16 |
 | [0023](ADR/0023-email-draft-generation-boundary.md) | Email draft generation and LLM provider boundary | 2026-07-16 |
 | [0024](ADR/0024-mvp-api-facade.md) | Minimal MVP prospect analysis API facade | 2026-07-16 |
+| [0025](ADR/0025-website-research-boundary.md) | Website research produces auditable claims, not company facts | 2026-07-19 |
+| [0026](ADR/0026-safe-outbound-fetching.md) | Safe outbound fetching (SSRF, robots, budgets) | 2026-07-19 |
+| [0027](ADR/0027-real-research-extractor-boundary.md) | Real research extractor provider boundary | 2026-07-19 |
