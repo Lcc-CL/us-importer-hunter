@@ -11,6 +11,7 @@ from app.tools.website.fetcher import (
     FetchLimits,
     FetchOutcome,
     SafeFetcher,
+    create_research_client,
 )
 from app.tools.website.page_ranker import (
     LinkCandidate,
@@ -20,7 +21,14 @@ from app.tools.website.page_ranker import (
     rank_pages,
     score_url,
 )
-from app.tools.website.robots import RobotsPolicy, load_robots, robots_url_for
+from app.tools.website.robots import (
+    ROBOTS_TOKEN,
+    RobotsPolicy,
+    load_robots,
+    normalize_robots_text,
+    robots_token_from_user_agent,
+    robots_url_for,
+)
 from app.tools.website.site_scope import SiteScope
 from app.tools.website.url_guard import (
     HostResolver,
@@ -33,6 +41,7 @@ from app.tools.website.url_guard import (
 )
 
 __all__ = [
+    "ROBOTS_TOKEN",
     "CleanedPage",
     "FetchFailure",
     "FetchLimits",
@@ -49,11 +58,14 @@ __all__ = [
     "UrlRejected",
     "ValidatedUrl",
     "clean_html",
+    "create_research_client",
     "extract_links",
     "is_public_ip",
     "load_robots",
     "normalize_link",
+    "normalize_robots_text",
     "rank_pages",
+    "robots_token_from_user_agent",
     "robots_url_for",
     "score_url",
     "validate_url",

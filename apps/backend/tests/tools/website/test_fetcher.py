@@ -14,7 +14,13 @@ from threading import Thread
 import httpx
 import pytest
 
-from app.tools.website.fetcher import FetchedPage, FetchFailure, FetchLimits, SafeFetcher
+from app.tools.website.fetcher import (
+    FetchedPage,
+    FetchFailure,
+    FetchLimits,
+    SafeFetcher,
+    create_research_client,
+)
 from app.tools.website.site_scope import SiteScope
 from app.tools.website.url_guard import UrlGuardPolicy
 
@@ -253,6 +259,33 @@ class TestGuardStillApplies:
         result = await strict.fetch(client, f"{server}/")
         assert isinstance(result, FetchFailure)
         assert result.code in {"denied_hostname", "private_address", "bad_port"}
+
+
+class TestProxyIsolation:
+    async def test_host_proxy_env_does_not_reroute_research_traffic(
+        self, server: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A developer or container with ALL_PROXY set must not silently send
+        research requests through it: the proxy would resolve the host instead
+        of us, which is exactly what the SSRF guard's IP checks rely on."""
+        monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:9")
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+        monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+        async with create_research_client(timeout=5.0) as client:
+            result = await make_fetcher(server, timeout=5.0).fetch(client, f"{server}/")
+        assert isinstance(result, FetchedPage)
+        assert "Acme" in result.html
+
+    def test_client_does_not_trust_environment(self) -> None:
+        client = create_research_client()
+        assert client.trust_env is False
+
+    async def test_proxy_must_be_passed_explicitly(self, server: str) -> None:
+        """Opting in is possible — it just has to be a decision, not ambient."""
+        async with create_research_client(proxy="http://127.0.0.1:9", timeout=1.0) as client:
+            result = await make_fetcher(server, timeout=1.0).fetch(client, f"{server}/")
+        assert isinstance(result, FetchFailure)  # the dead proxy is actually used
 
 
 class TestConcurrencySafety:

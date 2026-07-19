@@ -22,6 +22,26 @@ from app.tools.website.url_guard import (
 HTML_CONTENT_TYPES = ("text/html", "application/xhtml+xml")
 
 
+def create_research_client(
+    *, proxy: str | None = None, timeout: float = 10.0
+) -> httpx.AsyncClient:
+    """The only sanctioned way to build a client for research fetching.
+
+    `trust_env=False` on purpose: with the default, `ALL_PROXY` / `HTTP_PROXY`
+    / `HTTPS_PROXY` in the host environment would silently reroute every
+    outbound research request through a proxy the operator never chose for this
+    purpose. That changes the egress path — and therefore what the SSRF guard's
+    IP checks actually mean, since the proxy resolves the host, not us. A proxy
+    must be an explicit decision, so it is a parameter here and nothing else.
+    """
+    return httpx.AsyncClient(
+        trust_env=False,
+        proxy=proxy,
+        timeout=timeout,
+        follow_redirects=False,  # redirects are validated hop by hop
+    )
+
+
 @dataclass(frozen=True)
 class FetchLimits:
     max_page_bytes: int = 2 * 1024 * 1024
