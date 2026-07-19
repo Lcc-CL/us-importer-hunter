@@ -21,9 +21,23 @@ from app.domain.repositories import (
     ResearchRunRepository,
     TaskRepository,
 )
-from app.domain.research import ResearchFailureCode, ResearchRun, ResearchRunStatus
+from app.domain.research import (
+    ExtractionResult,
+    ExtractorIdentity,
+    ResearchFailureCode,
+    ResearchProfile,
+    ResearchRun,
+    ResearchRunStatus,
+)
 from app.domain.values import CompanyName, WebsiteUrl
-from app.services.research import ClaimValidator, ExtractionInput, FakeResearchExtractor
+from app.services.research import (
+    ClaimValidator,
+    ExtractionError,
+    ExtractionErrorCode,
+    ExtractionInput,
+    FakeResearchExtractor,
+    ResearchExtractor,
+)
 from app.tools.website import FetchedPage, FetchFailure, FetchOutcome, SiteScope
 from app.workflows.research import (
     ResearchAction,
@@ -213,6 +227,7 @@ def build(
     with_company: bool = True,
     limits: ResearchLimits | None = None,
     now: Callable[[], float] | None = None,
+    extractor: ResearchExtractor | None = None,
 ) -> Harness:
     company = Company.create(CompanyName("Acme Hardware"), WebsiteUrl(WEBSITE))
     companies = FakeCompanyRepository({company.id: company} if with_company else {})
@@ -224,7 +239,7 @@ def build(
 
     workflow = ResearchWorkflow(
         uow_factory=uow_factory,
-        extractor=FakeResearchExtractor(),
+        extractor=extractor or FakeResearchExtractor(),
         fetcher_factory=lambda scope: fetcher,
         client_factory=StubClient,  # type: ignore[arg-type]
         validator=ClaimValidator(),
@@ -626,3 +641,80 @@ class TestInputModes:
 
     def test_company_request_needs_neither(self) -> None:
         assert ResearchRequest(company_id=uuid4()).website is None
+
+
+class FailingExtractor:
+    """A real extractor whose provider is down. Identity still resolves —
+    knowing *which* extractor failed is the point of recording it."""
+
+    def __init__(self, code: ExtractionErrorCode) -> None:
+        self._code = code
+        self.calls = 0
+
+    @property
+    def identity(self) -> ExtractorIdentity:
+        return ExtractorIdentity(
+            provider="openai", model="test-model", prompt_version="website-research-v1"
+        )
+
+    async def extract(self, payload: ExtractionInput) -> ExtractionResult:
+        self.calls += 1
+        raise ExtractionError(self._code, "provider is unavailable")
+
+
+class TestProviderFailureIsRecordedNotHidden:
+    async def test_extraction_failure_ends_partial_with_a_failure_code(self) -> None:
+        harness = build(
+            {WEBSITE: page(WEBSITE, HOME_HTML)},
+            extractor=FailingExtractor(ExtractionErrorCode.RATE_LIMITED),
+        )
+        outcome = await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
+
+        assert outcome.action is ResearchAction.PARTIAL
+        assert outcome.failure_code is ResearchFailureCode.EXTRACTION_FAILED
+        assert outcome.claims_validated == 0
+        assert any("extractor_rate_limited" in warning for warning in outcome.warnings)
+
+    async def test_pages_read_before_the_failure_are_still_persisted(self) -> None:
+        harness = build(
+            {WEBSITE: page(WEBSITE, HOME_HTML)},
+            extractor=FailingExtractor(ExtractionErrorCode.TIMEOUT),
+        )
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
+
+        saved = harness.runs.saved[0]
+        assert saved.pages_fetched >= 1
+        assert saved.claims == ()
+
+    async def test_failed_run_still_records_which_extractor_ran(self) -> None:
+        """Without this the audit trail cannot distinguish "the model found
+        nothing" from "the model was never reached"."""
+        harness = build(
+            {WEBSITE: page(WEBSITE, HOME_HTML)},
+            extractor=FailingExtractor(ExtractionErrorCode.PROVIDER_ERROR),
+        )
+        await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
+
+        saved = harness.runs.saved[0]
+        assert saved.extractor is not None
+        assert saved.extractor.provider == "openai"
+        assert saved.extractor.model == "test-model"
+        assert saved.profile == ResearchProfile()
+
+    async def test_failure_never_falls_back_to_the_fake_extractor(self) -> None:
+        failing = FailingExtractor(ExtractionErrorCode.AUTH_FAILED)
+        harness = build({WEBSITE: page(WEBSITE, HOME_HTML)}, extractor=failing)
+        outcome = await harness.workflow.handle(
+            ResearchRequest(company_id=harness.company.id, website=WEBSITE)
+        )
+
+        assert failing.calls == 1
+        assert outcome.claims_extracted == 0
+        assert harness.runs.saved[0].extractor is not None
+        assert harness.runs.saved[0].extractor.provider == "openai"
