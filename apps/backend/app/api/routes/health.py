@@ -26,11 +26,19 @@ async def health(settings: SettingsDep) -> HealthResponse:
 
 @router.get("/health/runtime", response_model=RuntimeStatusResponse)
 async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
-    """Which email-draft provider and model this deployment runs."""
+    """Which providers and models this deployment runs.
+
+    Names only — never a key or an endpoint URL.
+    """
     provider = settings.email_generator_provider
+    research = settings.research_extractor_provider
     return RuntimeStatusResponse(
         provider=provider,
         model=settings.openai_model if provider == "openai" else "fake-static-v1",
+        research_provider=research,
+        research_model=(
+            settings.resolved_research_model if research == "openai" else "fake-research-v1"
+        ),
         environment=settings.app_env,
     )
 

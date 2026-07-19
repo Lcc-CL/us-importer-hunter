@@ -23,8 +23,11 @@ async def test_runtime_status_reports_provider_without_secrets(
     assert body == {
         "provider": "fake",
         "model": "fake-static-v1",
+        "research_provider": "fake",
+        "research_model": "fake-research-v1",
         "environment": "development",
     }
     payload = response.text.lower()
     assert "key" not in payload
     assert "base_url" not in payload
+    assert "sk-" not in payload
