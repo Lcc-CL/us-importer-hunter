@@ -60,6 +60,20 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
+    # Website research (v0.2, ADR-0026). Limits are configuration, never
+    # literals in the fetch loop.
+    research_max_pages: int = 5
+    research_max_page_bytes: int = 2 * 1024 * 1024
+    research_max_decompressed_bytes: int = 8 * 1024 * 1024
+    research_max_page_chars: int = 40_000
+    research_request_timeout_seconds: float = 10.0
+    research_total_budget_seconds: float = 45.0
+    research_max_redirects: int = 3
+    research_request_delay_seconds: float = 0.5
+    research_user_agent: str = (
+        "USImporterHunterBot/0.2 (+https://github.com/Lcc-CL/us-importer-hunter)"
+    )
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
