@@ -7,10 +7,26 @@
 import type { Page } from "@playwright/test";
 import type { ProspectPayload } from "../fixtures/prospects";
 
+/**
+ * The manual form is collapsed behind "Advanced editing" once the guided
+ * research flow exists, so every direct-form journey has to open it first.
+ * Idempotent: opening an already-open disclosure is a no-op.
+ */
+export async function openAdvancedForm(page: Page): Promise<void> {
+  const advanced = page.getByTestId("advanced-form");
+  if (await advanced.count()) {
+    const isOpen = await advanced.evaluate(
+      (node) => (node as HTMLDetailsElement).open,
+    );
+    if (!isOpen) await advanced.locator("summary").click();
+  }
+}
+
 export async function fillProspectForm(
   page: Page,
   payload: ProspectPayload,
 ): Promise<void> {
+  await openAdvancedForm(page);
   await page.getByLabel("Company name").fill(payload.company.name);
   await page.getByLabel("Company website").fill(payload.company.website);
 

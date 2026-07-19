@@ -11,6 +11,7 @@ import {
   type ResearchRunFixture,
 } from "../fixtures/research";
 import { attachConsoleGuard } from "../utils/console-guard";
+import { openAdvancedForm } from "../utils/form";
 
 /**
  * The research API is intercepted so the panel's states can be driven exactly,
@@ -225,7 +226,7 @@ test.describe("research panel", () => {
     expect(body.target_company_id).toBeUndefined();
   });
 
-  test("application payload fills the existing form without submitting it", async ({
+  test("confirmed research fills the advanced form and asks only for what is missing", async ({
     page,
   }) => {
     const payload = confirmResponse(
@@ -242,6 +243,7 @@ test.describe("research panel", () => {
     await page.goto("/");
 
     // The user's own contact/sender work must survive the fill.
+    await openAdvancedForm(page);
     await page.getByLabel("Contact name").fill("Maria Chen");
     await page.getByLabel("Sender name").fill("Alex Morgan");
 
@@ -251,6 +253,11 @@ test.describe("research panel", () => {
     await page.getByTestId("research-confirm").click();
     await expect(page.getByTestId("research-applied")).toBeVisible();
 
+    // Guided flow collects contact/sender itself, so it stops and asks rather
+    // than spending an analysis it cannot complete.
+    await expect(page.getByTestId("guided-missing")).toBeVisible();
+
+    await openAdvancedForm(page);
     await expect(page.getByLabel("Company name")).toHaveValue("Acme Hardware");
     await expect(page.getByLabel("Company website")).toHaveValue("https://acme.example");
     await expect(page.getByLabel("Source 1 name")).toHaveValue("company_website");
@@ -266,9 +273,8 @@ test.describe("research panel", () => {
     await expect(page.getByLabel("Contact name")).toHaveValue("Maria Chen");
     await expect(page.getByLabel("Sender name")).toHaveValue("Alex Morgan");
 
-    // And the analysis was never triggered.
+    // Nothing was analyzed while a required field was still missing.
     expect(state.analyzeCalls).toBe(0);
-    await expect(page.getByText("分析结果将显示在这里")).toBeVisible();
   });
 
   test("filled fields remain editable", async ({ page }) => {
@@ -283,6 +289,7 @@ test.describe("research panel", () => {
     await page.getByTestId("research-confirm").click();
     await expect(page.getByTestId("research-applied")).toBeVisible();
 
+    await openAdvancedForm(page);
     await page.getByLabel("Signal 1 detail").fill("用户手动修改");
     await expect(page.getByLabel("Signal 1 detail")).toHaveValue("用户手动修改");
   });

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { attachConsoleGuard } from "../utils/console-guard";
+import { openAdvancedForm } from "../utils/form";
 
 test.describe("i18n", () => {
   test("defaults to Chinese, switches to English, and survives reload", async ({
@@ -11,12 +12,17 @@ test.describe("i18n", () => {
     // --- default is Simplified Chinese ---
     await page.goto("/");
     await expect(page.getByText("潜在客户分析工作台")).toBeVisible();
+    // The manual form's own heading sits inside the collapsed Advanced
+    // section now, so localization is checked where it is actually shown.
+    await expect(page.getByText("高级编辑 / 手动补充")).toBeVisible();
+    await openAdvancedForm(page);
     await expect(page.getByText("分析一家美国进口商")).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
 
     // --- switch to English ---
     await page.getByRole("button", { name: "English" }).click();
     await expect(page.getByText("Prospect analysis workspace")).toBeVisible();
+    await openAdvancedForm(page);
     await expect(page.getByText("Analyze a US importer")).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
 
@@ -40,6 +46,7 @@ test.describe("i18n", () => {
   }) => {
     const guard = attachConsoleGuard(page);
     await page.goto("/");
+    await openAdvancedForm(page);
     await page.getByRole("button", { name: "添加信号" }).click();
 
     const select = page.getByLabel("Signal 1 kind");
