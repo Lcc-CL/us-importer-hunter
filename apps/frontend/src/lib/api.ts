@@ -114,12 +114,18 @@ export interface ProspectAnalysisResponse {
   created_at: string;
 }
 
+export interface CompanySourceSummary {
+  source: string;
+  /** How many stored references carry this source name. */
+  reference_count: number;
+}
+
 export interface CompanyDetailResponse {
   company_id: string;
   name: string;
   website: string | null;
   verified: boolean;
-  sources: string[];
+  sources: CompanySourceSummary[];
   signals: string[];
 }
 

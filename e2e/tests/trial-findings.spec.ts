@@ -12,6 +12,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { COMPLETED_RUN, confirmResponse } from "../fixtures/research";
+import { attachConsoleGuard } from "../utils/console-guard";
 import { openAdvancedForm } from "../utils/form";
 
 const API = "**/api/v1/research/**";
@@ -195,8 +196,7 @@ test.describe("sender profile persistence", () => {
   });
 });
 
-test.describe("qualification explanation", () => {
-  const REVIEW_DETAIL = {
+const REVIEW_DETAIL = {
     company: {
       company_id: "22222222-2222-2222-2222-222222222222",
       name: "Acme Hardware",
@@ -267,6 +267,7 @@ test.describe("qualification explanation", () => {
     draft_history: [],
   };
 
+test.describe("qualification explanation", () => {
   async function stubDetail(page: Page): Promise<void> {
     await page.route("**/api/v1/mvp/prospects/*", async (route) => {
       await route.fulfill({
@@ -319,5 +320,74 @@ test.describe("qualification explanation", () => {
     await expect(page.getByTestId("qual-import-notice")).toContainText(
       "does not mean this is a low-quality prospect",
     );
+  });
+});
+
+test.describe("company source display", () => {
+  /** A detail payload whose sources repeat — the shape that crashed the page. */
+  function detailWithSources(sources: unknown[]): Record<string, unknown> {
+    return {
+      ...REVIEW_DETAIL,
+      company: { ...REVIEW_DETAIL.company, sources },
+    };
+  }
+
+  async function stubDetailWith(page: Page, sources: unknown[]): Promise<void> {
+    await page.route("**/api/v1/mvp/prospects/*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detailWithSources(sources)),
+      });
+    });
+  }
+
+  test("one site seen twice renders once, with a count", async ({ page }) => {
+    const guard = attachConsoleGuard(page);
+    await stubDetailWith(page, [{ source: "company_website", reference_count: 2 }]);
+    await page.goto("/?company_id=22222222-2222-2222-2222-222222222222");
+
+    const chips = page.getByTestId("company-sources").locator("span");
+    await expect(chips).toHaveCount(1);
+    await expect(chips.first()).toHaveText("company_website × 2");
+
+    expect(guard.duplicateKeyWarnings()).toEqual([]);
+    expect(guard.problems()).toEqual([]);
+  });
+
+  test("distinct sources are all shown", async ({ page }) => {
+    const guard = attachConsoleGuard(page);
+    await stubDetailWith(page, [
+      { source: "importyeti", reference_count: 1 },
+      { source: "company_website", reference_count: 3 },
+    ]);
+    await page.goto("/?company_id=22222222-2222-2222-2222-222222222222");
+
+    const chips = page.getByTestId("company-sources").locator("span");
+    await expect(chips).toHaveCount(2);
+    await expect(chips.nth(0)).toHaveText("importyeti");
+    await expect(chips.nth(1)).toHaveText("company_website × 3");
+
+    expect(guard.problems()).toEqual([]);
+  });
+
+  test("a legacy payload that still repeats a name cannot crash the page", async ({
+    page,
+  }) => {
+    // Rows written before the API deduplicated, or an older deployment.
+    const guard = attachConsoleGuard(page);
+    await stubDetailWith(page, [
+      { source: "company_website", reference_count: 1 },
+      { source: "company_website", reference_count: 1 },
+      { source: "importyeti", reference_count: 1 },
+    ]);
+    await page.goto("/?company_id=22222222-2222-2222-2222-222222222222");
+
+    const chips = page.getByTestId("company-sources").locator("span");
+    await expect(chips).toHaveCount(2);
+    await expect(chips.first()).toHaveText("company_website × 2");
+
+    expect(guard.duplicateKeyWarnings()).toEqual([]);
+    expect(guard.problems()).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 """Typed HTTP contracts for the minimal MVP prospect API."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated, Self
 from uuid import UUID
@@ -7,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.domain.services import SenderProfile
-from app.domain.values import DimensionStatus, OpportunityAssessment
+from app.domain.values import DimensionStatus, OpportunityAssessment, SourceReference
 from app.workflows.mvp_prospect_analysis import (
     DraftApprovalOutcome,
     MvpProspectAnalysisCommand,
@@ -319,12 +320,28 @@ class ProspectAnalysisResponse(BaseModel):
         )
 
 
+class CompanySourceSummaryResponse(BaseModel):
+    """One distinct source name, and how many references carry it.
+
+    The stored `company_sources` rows are the audit record and keep every
+    reference: two pages of the same site are two rows, correctly. This
+    summary is for display, so it collapses them by name — and reports the
+    count rather than silently hiding that there were several.
+    """
+
+    source: str
+    reference_count: int
+
+
 class CompanyDetailResponse(BaseModel):
     company_id: UUID
     name: str
     website: str | None
     verified: bool
-    sources: list[str]
+    #: Distinct source names in first-seen order, with their reference counts.
+    #: Deduplicated here rather than in the UI so every consumer gets a list
+    #: that is safe to key on; the audit rows are untouched.
+    sources: list[CompanySourceSummaryResponse]
     signals: list[str]
 
 
@@ -477,7 +494,7 @@ class ProspectDetailResponse(BaseModel):
                 name=company.name.value,
                 website=company.website.value if company.website else None,
                 verified=company.verified,
-                sources=[source.source for source in company.sources],
+                sources=_summarize_sources(company.sources),
                 signals=list(company.signals),
             ),
             latest_assessment=(
@@ -678,3 +695,23 @@ def _explain(assessment: OpportunityAssessment) -> QualificationExplanationRespo
         hard_gate_hits=[str(hit) for hit in hard_gates],
         next_action=next_action,
     )
+
+
+def _summarize_sources(
+    sources: "Sequence[SourceReference]",
+) -> list[CompanySourceSummaryResponse]:
+    """Collapse references by source name, preserving first-seen order.
+
+    Two references to the same site are two audit rows and stay that way in
+    the database. For display they are one source seen twice — which is what
+    the count says, instead of rendering the same name twice and leaving the
+    UI to key on a value that is not unique.
+    """
+    counts: dict[str, int] = {}
+    for reference in sources:
+        name = reference.source.strip()
+        counts[name] = counts.get(name, 0) + 1
+    return [
+        CompanySourceSummaryResponse(source=name, reference_count=count)
+        for name, count in counts.items()
+    ]

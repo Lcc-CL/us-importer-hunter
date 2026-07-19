@@ -14,6 +14,7 @@ import type {
   DraftApprovalResponse,
   ProspectAnalysisResponse,
   ProspectDetailResponse,
+  CompanySourceSummary,
 } from "@/lib/api";
 import { useI18n, type MessageKey } from "@/lib/i18n";
 import type { MvpPageState, SubmittedProspectContext } from "../types";
@@ -56,6 +57,30 @@ const TRANSLATED_ERROR_CODES: readonly string[] = [
   "network_error",
   "unexpected_client_error",
 ];
+
+
+/**
+ * Collapses repeats a second time, on the client.
+ *
+ * The API already deduplicates, but a run recorded before it did — or a
+ * response from an older deployment — must not be able to crash the page with
+ * a duplicate React key. Counts are summed rather than discarded, and the
+ * first-seen order is kept so the list does not reshuffle between renders.
+ */
+function dedupeSources(
+  sources: CompanySourceSummary[],
+): CompanySourceSummary[] {
+  const byName = new Map<string, CompanySourceSummary>();
+  for (const entry of sources) {
+    const existing = byName.get(entry.source);
+    if (existing) {
+      existing.reference_count += entry.reference_count;
+      continue;
+    }
+    byName.set(entry.source, { ...entry });
+  }
+  return [...byName.values()];
+}
 
 export function AnalysisResult({
   analysis,
@@ -228,13 +253,15 @@ export function AnalysisResult({
                   {detail?.company.company_id ?? analysis?.company.company_id}
                 </p>
                 {detail?.company.sources.length ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {detail.company.sources.map((source) => (
+                  <div className="mt-4 flex flex-wrap gap-2" data-testid="company-sources">
+                    {dedupeSources(detail.company.sources).map((source) => (
                       <span
                         className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600"
-                        key={source}
+                        key={source.source}
                       >
-                        {source}
+                        {source.reference_count > 1
+                          ? `${source.source} × ${source.reference_count}`
+                          : source.source}
                       </span>
                     ))}
                   </div>
