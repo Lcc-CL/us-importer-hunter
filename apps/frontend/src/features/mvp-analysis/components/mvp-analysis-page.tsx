@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Anchor, ExternalLink, Languages } from "lucide-react";
 
 import {
@@ -23,6 +23,14 @@ import { ProviderBadge } from "./provider-badge";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
 import type { FlowStep, StepState } from "@/features/research/step-nav";
 import { MissingFieldsPrompt } from "./guided-flow";
+import {
+  clearSenderProfile,
+  mergeSenderProfile,
+  saveSenderProfile,
+  senderProfileServerSnapshot,
+  senderProfileSnapshot,
+  subscribeSenderProfile,
+} from "../sender-profile";
 import {
   EMPTY_CONTACT,
   EMPTY_SENDER,
@@ -76,10 +84,27 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   // visible in the other and the analysis always reads what the user last saw.
   const [contact, setContact] = useState<ProspectContact>(EMPTY_CONTACT);
   const [sender, setSender] = useState<ProspectSender>(EMPTY_SENDER);
+  // The saved profile is external state, read through useSyncExternalStore so
+  // hydration sees the server's empty snapshot first and swaps in the stored
+  // values afterwards — no effect, no setState-during-render.
+  const storedSender = useSyncExternalStore(
+    subscribeSenderProfile,
+    senderProfileSnapshot,
+    senderProfileServerSnapshot,
+  );
+  const effectiveSender = mergeSenderProfile(sender, storedSender);
+
   const patchContact = (patch: Partial<ProspectContact>) =>
     setContact((current) => ({ ...current, ...patch }));
-  const patchSender = (patch: Partial<ProspectSender>) =>
-    setSender((current) => ({ ...current, ...patch }));
+  const patchSender = (patch: Partial<ProspectSender>) => {
+    const next = { ...effectiveSender, ...patch };
+    saveSenderProfile(next);
+    setSender(next);
+  };
+  const handleClearSenderProfile = () => {
+    clearSenderProfile();
+    setSender(EMPTY_SENDER);
+  };
 
   useEffect(() => {
     if (!initialCompanyId) return;
@@ -105,7 +130,7 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   }, [initialCompanyId]);
 
   const decision = analysis?.opportunity.qualification_decision ?? null;
-  const missing = missingFieldsFor(contact, sender);
+  const missing = missingFieldsFor(contact, effectiveSender);
 
   const downstreamSteps: Partial<Record<FlowStep, StepState>> = {
     analysis:
@@ -165,22 +190,22 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
     // Still applied to the old form so Advanced editing starts pre-filled.
     setAppliedPayload((current) => ({ version: (current?.version ?? 0) + 1, payload }));
 
-    const gap = missingFieldsFor(contact, sender);
+    const gap = missingFieldsFor(contact, effectiveSender);
     if (gap.contact || gap.sender || isNewCompany) {
       setAwaitingFields({ contact: gap.contact || isNewCompany, sender: gap.sender });
       return;
     }
 
     setAwaitingFields(null);
-    await handleAnalyze(buildAnalysisRequest(payload, contact, sender));
+    await handleAnalyze(buildAnalysisRequest(payload, contact, effectiveSender));
   }
 
   async function handleGuidedContinue() {
     if (!pendingResearch || isBusy) return;
-    const gap = missingFieldsFor(contact, sender);
+    const gap = missingFieldsFor(contact, effectiveSender);
     if (gap.contact || gap.sender) return;
     setAwaitingFields(null);
-    await handleAnalyze(buildAnalysisRequest(pendingResearch, contact, sender));
+    await handleAnalyze(buildAnalysisRequest(pendingResearch, contact, effectiveSender));
   }
 
   async function handleAnalyze(request: ProspectAnalysisRequest) {
@@ -313,9 +338,10 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
                   contact={contact}
                   missing={awaitingFields}
                   onContactChange={patchContact}
+                  onClearSenderProfile={handleClearSenderProfile}
                   onContinue={handleGuidedContinue}
                   onSenderChange={patchSender}
-                  sender={sender}
+                  sender={effectiveSender}
                   stillMissing={missing}
                 />
               </div>
@@ -343,7 +369,7 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
                 onContactChange={patchContact}
                 onSenderChange={patchSender}
                 onSubmit={handleAnalyze}
-                sender={sender}
+                sender={effectiveSender}
               />
             </details>
           </div>

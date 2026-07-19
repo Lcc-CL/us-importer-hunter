@@ -13,6 +13,8 @@ const inputClass =
 const labelClass = "mb-1.5 block text-xs font-semibold tracking-wide text-slate-700";
 
 interface MissingFieldsPromptProps {
+  /** Clears the browser-stored sender profile. */
+  onClearSenderProfile?: () => void;
   /** Which blocks to render — snapshotted when the flow stopped. */
   missing: MissingFields;
   /** What is still incomplete right now, which gates the Continue button. */
@@ -33,6 +35,7 @@ interface MissingFieldsPromptProps {
  * "finish this" and "start over".
  */
 export function MissingFieldsPrompt({
+  onClearSenderProfile,
   missing,
   stillMissing,
   contact,
@@ -146,6 +149,22 @@ export function MissingFieldsPrompt({
           </div>
         </div>
       ) : null}
+
+      {missing.sender ? null : (
+        <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span data-testid="sender-saved-note">{t("sender.saved")}</span>
+          {onClearSenderProfile ? (
+            <button
+              className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+              data-testid="sender-clear"
+              onClick={onClearSenderProfile}
+              type="button"
+            >
+              {t("sender.clear")}
+            </button>
+          ) : null}
+        </p>
+      )}
 
       <Button
         className="mt-4 h-10 bg-teal-700 text-white hover:bg-teal-800"
