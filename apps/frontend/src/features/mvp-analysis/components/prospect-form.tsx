@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { ProspectAnalysisRequest } from "@/lib/api";
 import type { ApplicationPayload } from "@/lib/research-api";
+import type { ProspectContact, ProspectSender } from "../prospect-state";
 import { useI18n } from "@/lib/i18n";
 import {
   isCanonicalSignalKind,
@@ -32,18 +33,18 @@ interface EditableSignal {
   detail: string;
 }
 
-interface EditableContact {
-  name: string;
-  title: string;
-  email: string;
-  linkedin_url: string;
-  phone: string;
-  source: string;
-}
-
 interface ProspectFormProps {
   disabled: boolean;
   onSubmit: (request: ProspectAnalysisRequest) => Promise<void>;
+  /**
+   * Contact and sender are owned by the page, not by this form. The guided
+   * flow edits the same values, so typing in either view is visible in the
+   * other immediately.
+   */
+  contact: ProspectContact;
+  sender: ProspectSender;
+  onContactChange: (patch: Partial<ProspectContact>) => void;
+  onSenderChange: (patch: Partial<ProspectSender>) => void;
   /**
    * Company facts pushed in from the research panel. Only the company block is
    * replaced — contact and sender are the user's own work and are left alone.
@@ -89,7 +90,15 @@ function FormSection({
   );
 }
 
-export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFormProps) {
+export function ProspectForm({
+  disabled,
+  onSubmit,
+  appliedPayload,
+  contact,
+  sender,
+  onContactChange,
+  onSenderChange,
+}: ProspectFormProps) {
   const { t, label } = useI18n();
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
@@ -99,19 +108,6 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
   ]);
   const [signals, setSignals] = useState<EditableSignal[]>([]);
   const [includeContact, setIncludeContact] = useState(true);
-  const [contact, setContact] = useState<EditableContact>({
-    name: "",
-    title: "",
-    email: "",
-    linkedin_url: "",
-    phone: "",
-    source: "",
-  });
-  const [sender, setSender] = useState({
-    name: "",
-    company: "",
-    valueProposition: "",
-  });
   const [generateEmail, setGenerateEmail] = useState(true);
   const [appliedVersion, setAppliedVersion] = useState(0);
 
@@ -428,7 +424,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                   className={inputClass}
                   value={contact.name}
                   onChange={(event) =>
-                    setContact((current) => ({ ...current, name: event.target.value }))
+                    onContactChange({ name: event.target.value })
                   }
                   placeholder="Maria Chen"
                   required
@@ -441,7 +437,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                   className={inputClass}
                   value={contact.title}
                   onChange={(event) =>
-                    setContact((current) => ({ ...current, title: event.target.value }))
+                    onContactChange({ title: event.target.value })
                   }
                   placeholder="Director of Supply Chain"
                 />
@@ -453,7 +449,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                   className={inputClass}
                   value={contact.email}
                   onChange={(event) =>
-                    setContact((current) => ({ ...current, email: event.target.value }))
+                    onContactChange({ email: event.target.value })
                   }
                   placeholder="maria@company.example"
                   type="email"
@@ -466,10 +462,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                   className={inputClass}
                   value={contact.linkedin_url}
                   onChange={(event) =>
-                    setContact((current) => ({
-                      ...current,
-                      linkedin_url: event.target.value,
-                    }))
+                    onContactChange({ linkedin_url: event.target.value })
                   }
                   placeholder="https://linkedin.com/in/..."
                   type="url"
@@ -482,7 +475,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                   className={inputClass}
                   value={contact.phone}
                   onChange={(event) =>
-                    setContact((current) => ({ ...current, phone: event.target.value }))
+                    onContactChange({ phone: event.target.value })
                   }
                   placeholder="+1 415 555 0100"
                   type="tel"
@@ -495,7 +488,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                   className={inputClass}
                   value={contact.source}
                   onChange={(event) =>
-                    setContact((current) => ({ ...current, source: event.target.value }))
+                    onContactChange({ source: event.target.value })
                   }
                   placeholder="company_website"
                   required
@@ -518,7 +511,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                 className={inputClass}
                 value={sender.name}
                 onChange={(event) =>
-                  setSender((current) => ({ ...current, name: event.target.value }))
+                  onSenderChange({ name: event.target.value })
                 }
                 placeholder="Alex Morgan"
                 required
@@ -531,7 +524,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                 className={inputClass}
                 value={sender.company}
                 onChange={(event) =>
-                  setSender((current) => ({ ...current, company: event.target.value }))
+                  onSenderChange({ company: event.target.value })
                 }
                 placeholder="Harbor Bridge Logistics"
                 required
@@ -544,10 +537,7 @@ export function ProspectForm({ disabled, onSubmit, appliedPayload }: ProspectFor
                 className={`${inputClass} min-h-24 resize-y py-2.5`}
                 value={sender.valueProposition}
                 onChange={(event) =>
-                  setSender((current) => ({
-                    ...current,
-                    valueProposition: event.target.value,
-                  }))
+                  onSenderChange({ valueProposition: event.target.value })
                 }
                 placeholder="We simplify Asia-to-US inbound freight."
                 required

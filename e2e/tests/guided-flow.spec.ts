@@ -147,6 +147,9 @@ async function acceptAndConfirm(page: Page): Promise<void> {
 async function fillGuidedFields(page: Page): Promise<void> {
   await page.getByTestId("guided-contact-name").fill("Maria Chen");
   await page.getByTestId("guided-contact-email").fill("maria@acme.example");
+  // Provenance is never defaulted: a contact found on LinkedIn must not be
+  // labelled as coming from the company website.
+  await page.getByTestId("guided-contact-source").fill("company_website");
   await page.getByTestId("guided-sender-name").fill("Alex Morgan");
   await page.getByTestId("guided-sender-company").fill("Harbor Bridge Logistics");
   await page.getByTestId("guided-sender-value").fill("我们简化亚洲到美国的进口运输。");

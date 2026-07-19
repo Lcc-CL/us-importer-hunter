@@ -1,105 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { LoaderCircle, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
-import type { ProspectAnalysisRequest } from "@/lib/api";
-import type { ApplicationPayload } from "@/lib/research-api";
-
-/** What the guided flow still needs before it can run qualification. */
-export interface MissingFields {
-  contact: boolean;
-  sender: boolean;
-}
-
-export interface GuidedContact {
-  name: string;
-  title: string;
-  email: string;
-  linkedin: string;
-  phone: string;
-  source: string;
-}
-
-export interface GuidedSender {
-  name: string;
-  company: string;
-  valueProposition: string;
-}
-
-export const EMPTY_CONTACT: GuidedContact = {
-  name: "",
-  title: "",
-  email: "",
-  linkedin: "",
-  phone: "",
-  source: "company_website",
-};
-
-export const EMPTY_SENDER: GuidedSender = { name: "", company: "", valueProposition: "" };
-
-/**
- * A contact is usable when it has a name and at least one way to reach the
- * person — the same rule the backend enforces when it builds the source
- * reference, checked here so the user is told before a request is spent.
- */
-export function contactIsComplete(contact: GuidedContact): boolean {
-  const reachable = [contact.email, contact.linkedin, contact.phone].some((value) =>
-    value.trim(),
-  );
-  return Boolean(contact.name.trim()) && reachable && Boolean(contact.source.trim());
-}
-
-export function senderIsComplete(sender: GuidedSender): boolean {
-  return [sender.name, sender.company, sender.valueProposition].every((value) =>
-    value.trim(),
-  );
-}
-
-export function missingFieldsFor(
-  contact: GuidedContact,
-  sender: GuidedSender,
-): MissingFields {
-  return { contact: !contactIsComplete(contact), sender: !senderIsComplete(sender) };
-}
-
-/** Research payload + collected fields → the existing analyze contract. */
-export function buildAnalysisRequest(
-  payload: ApplicationPayload,
-  contact: GuidedContact,
-  sender: GuidedSender,
-): ProspectAnalysisRequest {
-  return {
-    company: {
-      name: payload.company_name,
-      website: payload.website || null,
-      sources: payload.sources.map((source) => ({
-        source: source.source,
-        reference: source.reference,
-      })),
-      signals: payload.signals.map((signal) => ({
-        kind: signal.kind,
-        detail: signal.detail,
-      })),
-    },
-    contact: {
-      name: contact.name.trim(),
-      source: contact.source.trim(),
-      title: contact.title.trim() || null,
-      email: contact.email.trim() || null,
-      linkedin_url: contact.linkedin.trim() || null,
-      phone: contact.phone.trim() || null,
-    },
-    sender: {
-      name: sender.name.trim(),
-      company: sender.company.trim(),
-      value_proposition: sender.valueProposition.trim(),
-    },
-    options: { generate_email: true },
-  };
-}
+import type { MissingFields, ProspectContact, ProspectSender } from "../prospect-state";
 
 const inputClass =
   "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 " +
@@ -112,11 +17,11 @@ interface MissingFieldsPromptProps {
   missing: MissingFields;
   /** What is still incomplete right now, which gates the Continue button. */
   stillMissing: MissingFields;
-  contact: GuidedContact;
-  sender: GuidedSender;
+  contact: ProspectContact;
+  sender: ProspectSender;
   busy: boolean;
-  onContactChange: (patch: Partial<GuidedContact>) => void;
-  onSenderChange: (patch: Partial<GuidedSender>) => void;
+  onContactChange: (patch: Partial<ProspectContact>) => void;
+  onSenderChange: (patch: Partial<ProspectSender>) => void;
   onContinue: () => void;
 }
 
@@ -191,6 +96,7 @@ export function MissingFieldsPrompt({
               <span className={labelClass}>{t("guided.contact.source")}</span>
               <input
                 className={inputClass}
+                data-testid="guided-contact-source"
                 disabled={busy}
                 onChange={(event) => onContactChange({ source: event.target.value })}
                 value={contact.source}
@@ -253,25 +159,4 @@ export function MissingFieldsPrompt({
       </Button>
     </section>
   );
-}
-
-/** Local state helper so the page keeps one source of truth for both blocks. */
-export function useGuidedFields() {
-  const [contact, setContact] = useState<GuidedContact>(EMPTY_CONTACT);
-  const [sender, setSender] = useState<GuidedSender>(EMPTY_SENDER);
-
-  return {
-    contact,
-    sender,
-    patchContact: (patch: Partial<GuidedContact>) =>
-      setContact((current) => ({ ...current, ...patch })),
-    patchSender: (patch: Partial<GuidedSender>) =>
-      setSender((current) => ({ ...current, ...patch })),
-    /**
-     * The sender is who you are and carries across companies; the contact
-     * belongs to one company and must not. Reusing the previous prospect's
-     * contact would silently address the wrong person.
-     */
-    resetContact: () => setContact(EMPTY_CONTACT),
-  };
 }
