@@ -27,11 +27,13 @@ from app.domain.repositories import UnitOfWork
 from app.domain.research import (
     ResearchFailureCode,
     ResearchPage,
+    ResearchProfile,
     ResearchRun,
     ResearchRunStatus,
 )
 from app.services.research import (
     ClaimValidator,
+    ExtractionError,
     ExtractionInput,
     PageContent,
     ResearchExtractor,
@@ -160,9 +162,9 @@ class ResearchWorkflow:
         if aborted is not None:
             return await self._persist(run)
 
-        await self._extract_and_validate(run, company_name, website, pages)
+        extraction_failed = await self._extract_and_validate(run, company_name, website, pages)
 
-        failure_code = self._failure_code(pages, budget_exhausted, run)
+        failure_code = extraction_failed or self._failure_code(pages, budget_exhausted, run)
         run.complete(
             partial=bool(failure_code) or run.pages_failed > 0, failure_code=failure_code
         )
@@ -280,15 +282,27 @@ class ResearchWorkflow:
 
     async def _extract_and_validate(
         self, run: ResearchRun, company_name: str, website: str, pages: list[ReadPage]
-    ) -> None:
-        """Extraction sees a frozen page set and cannot cause new fetches."""
-        result = await self.extractor.extract(
-            ExtractionInput(
-                company_name=company_name,
-                website=website,
-                pages=tuple((page.record.url, page.cleaned.text) for page in pages),
+    ) -> ResearchFailureCode | None:
+        """Extraction sees a frozen page set and cannot cause new fetches.
+
+        A provider failure is recorded, never retried behind the Fake
+        extractor (ADR-0027): the run keeps the pages it read, names the
+        extractor that failed, and ends PARTIAL with `extraction_failed`.
+        """
+        try:
+            result = await self.extractor.extract(
+                ExtractionInput(
+                    company_name=company_name,
+                    website=website,
+                    pages=tuple((page.record.url, page.cleaned.text) for page in pages),
+                )
             )
-        )
+        except ExtractionError as exc:
+            run.record_extraction(
+                profile=ResearchProfile(), extractor=self.extractor.identity, proposed_count=0
+            )
+            run.add_warning(f"extraction failed ({exc.code.value})")
+            return ResearchFailureCode.EXTRACTION_FAILED
         run.record_extraction(
             profile=result.profile,
             extractor=self.extractor.identity,
@@ -305,6 +319,7 @@ class ResearchWorkflow:
             run.record_claim(claim)
         for rejection in outcome.rejected:
             run.record_rejection(rejection)
+        return None
 
     def _failure_code(
         self, pages: list[ReadPage], budget_exhausted: bool, run: ResearchRun

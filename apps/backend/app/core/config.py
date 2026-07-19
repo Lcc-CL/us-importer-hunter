@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     email_generator_provider: Literal["fake", "openai"] = "fake"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    #: Optional OpenAI-compatible endpoint. Empty means the SDK default.
+    openai_base_url: str = ""
+
+    # Research extraction (v0.2 phase 5, ADR-0027). Fake stays the default so
+    # no code path reaches a paid provider without an explicit opt-in.
+    research_extractor_provider: Literal["fake", "openai"] = "fake"
+    #: Empty falls back to openai_model — never a literal in the extractor.
+    research_model: str = ""
+    research_prompt_version: str = "website-research-v1"
+    research_extractor_timeout_seconds: float = 30.0
+    research_extractor_max_input_chars: int = 24_000
 
     # Website research (v0.2, ADR-0026). Limits are configuration, never
     # literals in the fetch loop.
@@ -87,6 +98,16 @@ class Settings(BaseSettings):
                 path=self.postgres_db,
             )
         )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def resolved_research_model(self) -> str:
+        """RESEARCH_MODEL, or OPENAI_MODEL when it is unset.
+
+        Resolution lives here rather than in the extractor so that no model
+        name is ever hard-coded next to the provider call.
+        """
+        return self.research_model.strip() or self.openai_model.strip()
 
     @computed_field  # type: ignore[prop-decorator]
     @property

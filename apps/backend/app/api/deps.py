@@ -21,7 +21,11 @@ from app.domain.services import (
 )
 from app.services.contact import DeterministicDecisionMakerSelectionService
 from app.services.email import FakeEmailDraftGenerator, OpenAIEmailDraftGenerator
-from app.services.research import FakeResearchExtractor, ResearchExtractor
+from app.services.research import (
+    FakeResearchExtractor,
+    OpenAIResearchExtractor,
+    ResearchExtractor,
+)
 from app.services.scoring import DeterministicOpportunityScoringService
 from app.shared.exceptions import ProviderUnavailableError
 from app.tools.website import FetchLimits, SafeFetcher, SiteScope
@@ -204,9 +208,30 @@ ApproveEmailDraftDep = Annotated[
 ]
 
 
-def get_research_extractor() -> ResearchExtractor:
-    """Phase 3.2 ships the Fake extractor only — no real LLM (ADR-0025)."""
-    return FakeResearchExtractor()
+def get_research_extractor(settings: SettingsDep) -> ResearchExtractor:
+    """Fake by default; the real extractor only on an explicit opt-in.
+
+    A misconfigured `openai` selection raises instead of falling back to the
+    Fake extractor — silently serving deterministic stub claims while the
+    operator believes a model ran would corrupt the evidence trail (ADR-0027).
+    """
+    if settings.research_extractor_provider == "fake":
+        return FakeResearchExtractor()
+    if settings.research_extractor_provider == "openai":
+        model = settings.resolved_research_model
+        if not model:
+            raise ProviderUnavailableError(
+                "research extractor is set to openai but no model is configured"
+            )
+        return OpenAIResearchExtractor(
+            model=model,
+            api_key=settings.openai_api_key or None,
+            base_url=settings.openai_base_url or None,
+            prompt_version=settings.research_prompt_version,
+            timeout_seconds=settings.research_extractor_timeout_seconds,
+            max_input_chars=settings.research_extractor_max_input_chars,
+        )
+    raise ProviderUnavailableError("configured research extractor is unavailable")
 
 
 ResearchExtractorDep = Annotated[ResearchExtractor, Depends(get_research_extractor)]
