@@ -39,6 +39,18 @@ The panel is an internal testing surface: it is off unless
 anonymously on the public internet**. Extraction defaults to a Fake provider;
 a real model requires `RESEARCH_EXTRACTOR_PROVIDER=openai`.
 
+> **Changing any `NEXT_PUBLIC_*` value requires rebuilding the frontend.**
+> Next.js compiles these into the client bundle, so restarting the container
+> is not enough — the old value is already baked in:
+>
+> ```bash
+> docker compose build --no-cache frontend && docker compose up -d frontend
+> ```
+>
+> This applies to `NEXT_PUBLIC_ENABLE_RESEARCH` and `NEXT_PUBLIC_API_BASE_URL`
+> alike. Both are passed as build args and as runtime environment, so the dev
+> and prod targets behave the same.
+
 Validation and known limitations:
 [docs/validation/](docs/validation/v0.2-real-company-evaluation.md) ·
 [release notes](docs/release-notes.md).
