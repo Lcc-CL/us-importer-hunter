@@ -1,0 +1,65 @@
+# E2E overlay: an isolated backend+frontend pair on their own ports and their
+# own database, sharing the dev stack's postgres/redis containers.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml ...
+#
+# The dev database (importer_hunter) is never opened by these services, so an
+# E2E run cannot pollute it. Secrets arrive through Compose interpolation of
+# the root .env — absent .env, fake mode still runs on the defaults below.
+
+services:
+  backend-e2e:
+    build:
+      context: ./apps/backend
+      target: dev
+    environment:
+      APP_ENV: development
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${E2E_DB:-importer_hunter_e2e}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 1
+      BACKEND_CORS_ORIGINS: '["http://localhost:3001"]'
+      # fake unless the caller explicitly asks for the real provider
+      EMAIL_GENERATOR_PROVIDER: ${E2E_PROVIDER:-fake}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    volumes:
+      - ./apps/backend/app:/app/app          # test the working tree, not a stale image
+      - ./apps/backend/tests:/app/tests
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - app-network
+
+  frontend-e2e:
+    build:
+      context: ./apps/frontend
+      target: dev
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8001
+    volumes:
+      - ./apps/frontend/src:/app/src
+      - ./apps/frontend/public:/app/public
+    ports:
+      - "3001:3000"
+    depends_on:
+      backend-e2e:
+        condition: service_healthy
+    networks:
+      - app-network

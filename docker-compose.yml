@@ -9,7 +9,9 @@ services:
     build:
       context: ./apps/backend
       target: dev
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false    # clean checkout boots on defaults; secrets only needed for real LLM calls
     environment:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
@@ -50,7 +52,9 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false    # clean checkout boots on defaults; secrets only needed for real LLM calls
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
@@ -85,7 +89,9 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     profiles: ["tools"]                       # dev only: docker compose --profile tools up
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false    # clean checkout boots on defaults; secrets only needed for real LLM calls
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-change-me}

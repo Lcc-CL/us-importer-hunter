@@ -1,4 +1,5 @@
-.PHONY: up up-tools down logs backend frontend infra test lint fmt migrate revision
+.PHONY: up up-tools down logs backend frontend infra test lint fmt migrate revision \
+        e2e e2e-real e2e-up e2e-down e2e-install e2e-report
 
 # --- Docker ---
 up:            ## start the full stack
@@ -32,6 +33,34 @@ lint:          ## backend lint + type check
 
 fmt:           ## backend format
 	cd apps/backend && uv run ruff format .
+
+# --- Browser E2E (isolated stack: :8001/:3001, throwaway database) ---
+e2e-install:   ## install E2E deps + browser (idempotent)
+	cd e2e && { [ -f package-lock.json ] && npm ci || npm install; } && \
+	  npx playwright install chromium
+
+e2e:           ## full browser regression against the Fake provider (no LLM cost)
+	@$(MAKE) e2e-install
+	@set -e; ROOT="$$PWD"; \
+	  trap 'E2E_PROVIDER=fake "$$ROOT/e2e/scripts/down.sh"' EXIT; \
+	  E2E_PROVIDER=fake "$$ROOT/e2e/scripts/up.sh"; \
+	  cd "$$ROOT/e2e" && E2E_PROVIDER=fake npx playwright test --grep-invert @real
+
+e2e-real:      ## one real-provider draft check (requires OPENAI_API_KEY; never printed)
+	@$(MAKE) e2e-install
+	@set -e; ROOT="$$PWD"; \
+	  trap 'E2E_PROVIDER=openai "$$ROOT/e2e/scripts/down.sh"' EXIT; \
+	  E2E_PROVIDER=openai "$$ROOT/e2e/scripts/up.sh"; \
+	  cd "$$ROOT/e2e" && E2E_PROVIDER=openai npx playwright test --grep @real
+
+e2e-up:        ## start the E2E stack and leave it running (debugging)
+	./e2e/scripts/up.sh
+
+e2e-down:      ## stop the E2E stack and drop its database
+	./e2e/scripts/down.sh
+
+e2e-report:    ## open the last HTML report
+	cd e2e && npx playwright show-report
 
 # --- Database ---
 migrate:       ## apply migrations
