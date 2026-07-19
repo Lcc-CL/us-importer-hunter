@@ -21,8 +21,10 @@ from app.domain.services import (
 )
 from app.services.contact import DeterministicDecisionMakerSelectionService
 from app.services.email import FakeEmailDraftGenerator, OpenAIEmailDraftGenerator
+from app.services.research import FakeResearchExtractor, ResearchExtractor
 from app.services.scoring import DeterministicOpportunityScoringService
 from app.shared.exceptions import ProviderUnavailableError
+from app.tools.website import FetchLimits, SafeFetcher, SiteScope
 from app.workflows.company_ingestion import CompanyIngestionWorkflow
 from app.workflows.contact_ingestion import ContactIngestionWorkflow
 from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
@@ -34,6 +36,7 @@ from app.workflows.mvp_prospect_analysis import (
     UowFactory,
 )
 from app.workflows.opportunity import OpportunityApplicationWorkflow
+from app.workflows.research import ResearchLimits, ResearchWorkflow
 
 
 def get_request_settings(request: Request) -> Settings:
@@ -195,3 +198,47 @@ def get_approve_email_draft_workflow(uow_factory: UowFactoryDep) -> ApproveEmail
 ApproveEmailDraftDep = Annotated[
     ApproveEmailDraftWorkflow, Depends(get_approve_email_draft_workflow)
 ]
+
+
+def get_research_extractor() -> ResearchExtractor:
+    """Phase 3.2 ships the Fake extractor only — no real LLM (ADR-0025)."""
+    return FakeResearchExtractor()
+
+
+ResearchExtractorDep = Annotated[ResearchExtractor, Depends(get_research_extractor)]
+
+
+def get_research_workflow(
+    uow_factory: UowFactoryDep,
+    extractor: ResearchExtractorDep,
+    settings: SettingsDep,
+) -> ResearchWorkflow:
+    limits = ResearchLimits(
+        max_pages=settings.research_max_pages,
+        max_page_chars=settings.research_max_page_chars,
+        total_budget_seconds=settings.research_total_budget_seconds,
+        request_delay_seconds=settings.research_request_delay_seconds,
+        user_agent=settings.research_user_agent,
+    )
+
+    def fetcher_factory(scope: SiteScope) -> SafeFetcher:
+        return SafeFetcher(
+            limits=FetchLimits(
+                max_page_bytes=settings.research_max_page_bytes,
+                max_decompressed_bytes=settings.research_max_decompressed_bytes,
+                request_timeout_seconds=settings.research_request_timeout_seconds,
+                max_redirects=settings.research_max_redirects,
+                user_agent=settings.research_user_agent,
+            ),
+            scope=scope,
+        )
+
+    return ResearchWorkflow(
+        uow_factory=uow_factory,
+        extractor=extractor,
+        fetcher_factory=fetcher_factory,
+        limits=limits,
+    )
+
+
+ResearchWorkflowDep = Annotated[ResearchWorkflow, Depends(get_research_workflow)]
