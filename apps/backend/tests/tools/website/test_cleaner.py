@@ -63,10 +63,25 @@ class TestCleanHtml:
         assert clean_html(shell).is_thin() is True
 
     def test_content_rich_page_is_not_thin(self) -> None:
-        body = "<p>Acme Hardware imports fasteners and distributes them nationwide.</p>" * 6
+        body = "".join(
+            f"<p>Acme Hardware imports fasteners and distributes them to region {i} "
+            f"through its regional warehouse network.</p>"
+            for i in range(6)
+        )
         page = clean_html(f"<html><body>{body}</body></html>")
         assert page.char_count > 200
         assert page.is_thin() is False
+
+    def test_a_page_repeating_one_sentence_is_thin(self) -> None:
+        """Phase 6.1 behaviour change, pinned deliberately: repetition is not
+        content. Six copies of one sentence carry one sentence of information,
+        so `char_count` counts it once and the page reads as thin — which is
+        what an extractor would conclude anyway."""
+        body = "<p>Acme Hardware imports fasteners and distributes them nationwide.</p>" * 6
+        page = clean_html(f"<html><body>{body}</body></html>")
+
+        assert page.text.count("Acme Hardware imports") == 1
+        assert page.is_thin() is True
 
     def test_thin_threshold_is_configurable(self) -> None:
         page = clean_html(PAGE)  # 122 chars of real content
