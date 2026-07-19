@@ -76,7 +76,7 @@ Details: [docs/workflow.md](docs/workflow.md) · [docs/agents.md](docs/agents.md
 | 2 | Core domain chain: ingestion, scoring, contact selection, draft generation | ✅ Done (2026-07-16) |
 | 3 | Minimal API facade, browser workflow, and v0.1 acceptance | ✅ Done — tag `v0.1.0` (2026-07-17) |
 | 3.1 | Signal-kind scoring fix, Chinese-default UI, browser E2E suite | ✅ Done — tag `v0.1.1` (2026-07-19) |
-| v0.2 | Website Research Agent — name + website → traceable sources/profile/signals | 🔵 Design complete, implementation pending |
+| v0.2 | Website Research Agent — name + website → traceable sources/profile/signals | ✅ Done — tag `v0.2.0` Internal Beta (2026-07-19) |
 
 ## Current Progress
 
@@ -146,7 +146,21 @@ claim 与最终 company signal 的完整追溯关系。网页正文一律视为�
 发现由确定性 `page_ranker` 控制，LLM 不参与选页、不能新增抓取目标。
 
 设计文档：[docs/v0.2-research-agent.md](docs/v0.2-research-agent.md)、
-ADR-0025（研究边界与注入防护）、ADR-0026（安全出站抓取 / SSRF 策略）。
+ADR-0025（研究边界与注入防护）、ADR-0026（安全出站抓取 / SSRF 策略）、
+ADR-0027（真实抽取器 Provider 边界）。
+
+**v0.2.0 Internal Beta 已发布（2026-07-19，tag `v0.2.0`）。** 十家真实美国进口商
+（五金/家具/健身/工业/照明各两家）逐家验收，每家一次 LLM 调用：10/10 安全完成、
+evidence 定位率 100%、source URL 验证 100%、**编造事实 0 条**、直接采纳率 85.7%。
+W.W. Grainger 从稀薄页面产出 0 条 claim 与 8 个 unknown 维度——无证据时拒绝编造，
+正是反幻觉设计的目标行为。验收数据：
+[docs/validation/v0.2-real-company-evaluation.md](docs/validation/v0.2-real-company-evaluation.md)。
+
+**已知限制**（完整列表见 [Release Notes](docs/release-notes.md)）：Research API
+不得匿名暴露公网；连接级 DNS/IP pinning 未实现；当前经第三方 OpenAI 兼容网关验证，
+官方端点未做成本验证；官网无法证明进口记录；多数 `china_dependency` 维持 Unknown；
+每条 claim 必须人工审核；不自动发送邮件；JS 重度站点返回 `needs_browser`；
+`reviewer_name` 尚未接入真实身份系统。
 
 实施分两阶段：**阶段 1** 为抓取基础设施（url_guard、SafeFetcher、robots、
 cleaner、page_ranker），不接 LLM、不写前端、不新增数据库表；**阶段 2** 为四张

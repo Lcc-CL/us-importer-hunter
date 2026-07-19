@@ -26,6 +26,23 @@ real evidence sources, inspect the qualification and draft, approve it, then use
 The UI never sends email. Browser API access is configured once through
 `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000`).
 
+## Website research (v0.2.0 — Internal Beta)
+
+Give the research panel a company name and its website; it fetches the site
+safely, extracts evidence-backed claims, and waits for a human to accept, edit
+or reject each one. Every claim carries the sentence that supports it and the
+page it came from. Research never creates a Company, never scores, and never
+sends email — accepted claims only fill the existing prospect form.
+
+The panel is an internal testing surface: it is off unless
+`NEXT_PUBLIC_ENABLE_RESEARCH=true`, and **the Research API must not be exposed
+anonymously on the public internet**. Extraction defaults to a Fake provider;
+a real model requires `RESEARCH_EXTRACTOR_PROVIDER=openai`.
+
+Validation and known limitations:
+[docs/validation/](docs/validation/v0.2-real-company-evaluation.md) ·
+[release notes](docs/release-notes.md).
+
 ## Documentation
 
 - **[PROJECT.md](PROJECT.md)** — the project document: vision, MVP,

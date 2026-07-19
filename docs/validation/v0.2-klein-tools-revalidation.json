@@ -1,0 +1,111 @@
+{
+  "model": "gpt-5.6-terra",
+  "prompt_version": "website-research-v1",
+  "stopped": null,
+  "business_rows_before": {
+    "companies": 9,
+    "opportunities": 9,
+    "contacts": 9,
+    "outreaches": 7,
+    "email_drafts": 8
+  },
+  "business_rows_after": {
+    "companies": 9,
+    "opportunities": 9,
+    "contacts": 9,
+    "outreaches": 7,
+    "email_drafts": 8
+  },
+  "side_effects": {},
+  "companies": [
+    {
+      "company": "Klein Tools",
+      "category": "hardware_tools",
+      "website": "https://www.kleintools.com",
+      "status": "completed",
+      "failure_code": null,
+      "error": null,
+      "research_id": "14309f74-f3a1-48b7-b2af-39a5927025fb",
+      "pages_fetched": 5,
+      "pages_failed": 0,
+      "claims_proposed": 7,
+      "claims_validated": 7,
+      "unknown_dimensions": [
+        "cargo_value_potential",
+        "china_dependency",
+        "pain_point"
+      ],
+      "rejections": [],
+      "latency_seconds": 40.87,
+      "llm_calls": 1,
+      "prompt_tokens": 9198,
+      "completion_tokens": 1393,
+      "total_tokens": 10591,
+      "claims": [
+        {
+          "kind": "company_scale",
+          "detail": "Klein describes itself as the only major tool manufacturer worldwide focused on electrical and utility applications.",
+          "evidence_snippet": "Klein is the only major tool manufacturer worldwide focused on electrical and utility applications.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.76,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "Future planned investments in excess of $100 million are intended to support USA manufacturing of currently sourced products and new USA-made products.",
+          "evidence_snippet": "Future planned investments in excess of $100 million will allow us to manufacture in the USA some of the products we currently source as well as make new USA-made products that would otherwise be imported without this investment.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.91,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "growth_signal",
+          "detail": "Klein has invested in four new US manufacturing facilities in the past decade.",
+          "evidence_snippet": "We have invested in four new US manufacturing facilities in the past decade, and have invested heavily in new equipment and tooling in our plants to expand our capacity and quality.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "import_activity",
+          "detail": "Klein states that it sources some products abroad.",
+          "evidence_snippet": "Like most global companies, we do source some products abroad, but Klein Tools makes 14 times more products here in the United States than we do in any other country.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.95,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "Klein lists a Mansfield, Texas distribution center that also manufactures screwdrivers, nut drivers, and fish tapes.",
+          "evidence_snippet": "Mansfield, TX • USA\nProduct Development, IT, Administrative, Distribution Center, Manufactures Screwdrivers, Nut Drivers & Fish Tapes",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.95,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "logistics_complexity",
+          "detail": "Klein operates plants in multiple US locations and a plant in Mexico City.",
+          "evidence_snippet": "Klein Tools operates the following plants in the U.S.:\nLincolnshire, IL • USA\nSales, Marketing, Customer Service, Product Development, IT, and Administrative\nMansfield, TX • USA\nProduct Development, IT, Administrative, Distribution Center, Manufactures Screwdrivers, Nut Drivers & Fish Tapes\nManufactures Pliers, Cable Cutters, Wire Strippers & Construction Wrenches\nElk Grove Village, IL • USA\nManufactures tool forgings of high quality, proprietary tool steel\nFort Smith, AR • USA\nManufactures leather and canvas goods\nBolivar, NY • USA\nManufactures high quality scissors and other cutlery products\nKlein Tools de Mexico has operated a plant in Mexico City since 1970.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.94,
+          "snippet_located": true,
+          "source_fetched": true
+        },
+        {
+          "kind": "shipping_fit",
+          "detail": "Klein states that it is expanding throughout the world while selling products made in the USA.",
+          "evidence_snippet": "We live in an international business environment and Klein is expanding throughout the world selling products that are made in the USA.",
+          "source_url": "https://www.kleintools.com/content/american-manufacturing",
+          "confidence": 0.89,
+          "snippet_located": true,
+          "source_fetched": true
+        }
+      ]
+    }
+  ]
+}
