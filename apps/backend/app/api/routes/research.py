@@ -15,21 +15,34 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import ResearchWorkflowDep, UowFactoryDep
+from app.api.deps import ClaimPromotionDep, ResearchWorkflowDep, UowFactoryDep
+from app.domain.research import PromotionDecision
 from app.schemas.mvp import ApiErrorResponse
 from app.schemas.research import (
+    ConfirmResearchRequest,
+    ConfirmResearchResponse,
     ResearchRunCreatedResponse,
     ResearchRunListResponse,
     ResearchRunRequest,
     ResearchRunResponse,
     ResearchRunSummaryResponse,
 )
-from app.workflows.research import ResearchAction, ResearchRequest
+from app.workflows.research import (
+    ClaimDecision,
+    CompanyNotFound,
+    InvalidDecision,
+    PromotionConflict,
+    ResearchAction,
+    ResearchRequest,
+    ResearchRunNotFound,
+    ReviewRequest,
+)
 
 router = APIRouter(tags=["research"])
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     404: {"model": ApiErrorResponse, "description": "Requested resource was not found"},
+    409: {"model": ApiErrorResponse, "description": "Conflicts with an applied decision"},
     422: {"model": ApiErrorResponse, "description": "Request validation failed"},
 }
 
@@ -118,3 +131,50 @@ async def list_company_research_runs(
         company_id=company_id,
         runs=[ResearchRunSummaryResponse.from_run(run) for run in runs],
     )
+
+
+@router.post(
+    "/research/runs/{run_id}/confirm",
+    response_model=ConfirmResearchResponse,
+    summary="Review claims and promote the accepted ones",
+    description=(
+        "Records a reviewer's accept / edit / reject decisions for a run's claims. The "
+        "whole batch is one transaction: either every decision lands or none does. "
+        "Accepted and edited claims become Company sources and signals when a target "
+        "company exists; rejected claims never produce company data. Replaying an "
+        "identical request is a no-op. Contradicting a decision that already wrote "
+        "company rows returns 409. Qualification, decision-maker selection and draft "
+        "generation are never called from here."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def confirm_research_run(
+    run_id: UUID,
+    payload: ConfirmResearchRequest,
+    workflow: ClaimPromotionDep,
+) -> ConfirmResearchResponse:
+    request = ReviewRequest(
+        research_run_id=run_id,
+        reviewer_name=payload.reviewer_name,
+        target_company_id=payload.target_company_id,
+        decisions=tuple(
+            ClaimDecision(
+                claim_position=decision.claim_position,
+                decision=PromotionDecision(decision.decision),
+                edited_detail=decision.edited_detail,
+                edited_kind=decision.edited_kind,
+            )
+            for decision in payload.decisions
+        ),
+    )
+    try:
+        outcome = await workflow.handle(request)
+    except (ResearchRunNotFound, CompanyNotFound) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PromotionConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except InvalidDecision as exc:
+        raise HTTPException(
+            status_code=422, detail=str(exc)
+        ) from exc
+    return ConfirmResearchResponse.from_outcome(outcome)

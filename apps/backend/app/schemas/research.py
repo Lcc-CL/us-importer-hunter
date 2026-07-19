@@ -7,13 +7,13 @@ the server (ADR-0026 §5).
 """
 
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
 from app.domain.research import ResearchRun
-from app.workflows.research import ResearchOutcome
+from app.workflows.research import ResearchOutcome, ReviewOutcome
 
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -244,3 +244,136 @@ class ResearchRunCreatedResponse(ResearchRunResponse):
     ) -> "ResearchRunCreatedResponse":
         base = ResearchRunResponse.from_run(run)
         return cls(**base.model_dump(), action=outcome.action.value)
+
+
+# --- claim review / promotion (phase 3.3) ---------------------------------
+
+
+class ClaimDecisionRequest(BaseModel):
+    """One verdict. `edited_detail` / `edited_kind` are only valid for edited."""
+
+    claim_position: int
+    decision: Literal["accepted", "edited", "rejected"]
+    edited_detail: NonBlank | None = None
+    edited_kind: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def edits_only_for_edited(self) -> Self:
+        if self.decision == "edited":
+            if self.edited_detail is None:
+                raise ValueError("an edited decision requires edited_detail")
+        elif self.edited_detail is not None or self.edited_kind is not None:
+            raise ValueError("edited_detail/edited_kind are only valid for an edited decision")
+        return self
+
+
+class ConfirmResearchRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "reviewer_name": "Lcc",
+                    "decisions": [
+                        {"claim_position": 0, "decision": "accepted"},
+                        {
+                            "claim_position": 1,
+                            "decision": "edited",
+                            "edited_detail": "改写后的描述",
+                            "edited_kind": "shipping_fit",
+                        },
+                        {"claim_position": 2, "decision": "rejected"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    reviewer_name: NonBlank
+    target_company_id: UUID | None = None
+    decisions: list[ClaimDecisionRequest]
+
+    @model_validator(mode="after")
+    def require_decisions(self) -> Self:
+        if not self.decisions:
+            raise ValueError("at least one decision is required")
+        positions = [decision.claim_position for decision in self.decisions]
+        if len(positions) != len(set(positions)):
+            raise ValueError("each claim may appear at most once per request")
+        return self
+
+
+class PromotionResultResponse(BaseModel):
+    claim_position: int
+    decision: str
+    kind: str
+    detail: str
+    company_source_position: int | None
+    company_signal_position: int | None
+    source_reused: bool
+    idempotent: bool
+
+
+class ProspectFormPayloadResponse(BaseModel):
+    """Returned when there is no company to write to: phase 4 fills the
+    existing prospect form with this and submits it unchanged."""
+
+    company_name: str
+    website: str
+    sources: list[dict[str, str]]
+    signals: list[dict[str, str]]
+
+
+class ReviewSummaryResponse(BaseModel):
+    accepted: int
+    edited: int
+    rejected: int
+    total: int
+
+
+class ConfirmResearchResponse(BaseModel):
+    research_id: UUID
+    action: str
+    company_id: UUID | None
+    summary: ReviewSummaryResponse
+    promotions: list[PromotionResultResponse]
+    application_payload: ProspectFormPayloadResponse | None
+    warnings: list[str]
+
+    @classmethod
+    def from_outcome(cls, outcome: ReviewOutcome) -> "ConfirmResearchResponse":
+        payload = outcome.application_payload
+        return cls(
+            research_id=outcome.research_id,
+            action=outcome.action.value,
+            company_id=outcome.company_id,
+            summary=ReviewSummaryResponse(
+                accepted=outcome.accepted,
+                edited=outcome.edited,
+                rejected=outcome.rejected,
+                total=len(outcome.results),
+            ),
+            promotions=[
+                PromotionResultResponse(
+                    claim_position=result.claim_position,
+                    decision=result.decision.value,
+                    kind=result.kind,
+                    detail=result.detail,
+                    company_source_position=result.company_source_position,
+                    company_signal_position=result.company_signal_position,
+                    source_reused=result.source_reused,
+                    idempotent=result.idempotent,
+                )
+                for result in outcome.results
+            ],
+            application_payload=(
+                ProspectFormPayloadResponse(
+                    company_name=payload.company_name,
+                    website=payload.website,
+                    sources=[dict(item) for item in payload.sources],
+                    signals=[dict(item) for item in payload.signals],
+                )
+                if payload
+                else None
+            ),
+            warnings=list(outcome.warnings),
+        )

@@ -36,7 +36,11 @@ from app.workflows.mvp_prospect_analysis import (
     UowFactory,
 )
 from app.workflows.opportunity import OpportunityApplicationWorkflow
-from app.workflows.research import ResearchLimits, ResearchWorkflow
+from app.workflows.research import (
+    ClaimPromotionWorkflow,
+    ResearchLimits,
+    ResearchWorkflow,
+)
 
 
 def get_request_settings(request: Request) -> Settings:
@@ -242,3 +246,10 @@ def get_research_workflow(
 
 
 ResearchWorkflowDep = Annotated[ResearchWorkflow, Depends(get_research_workflow)]
+
+
+def get_claim_promotion_workflow(uow_factory: UowFactoryDep) -> ClaimPromotionWorkflow:
+    return ClaimPromotionWorkflow(uow_factory=uow_factory)
+
+
+ClaimPromotionDep = Annotated[ClaimPromotionWorkflow, Depends(get_claim_promotion_workflow)]

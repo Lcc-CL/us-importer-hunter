@@ -356,3 +356,236 @@ class TestNoSensitiveConfigLeaks:
                 "truncated",
                 "discovery_reason",
             }
+
+
+# --- claim confirmation (phase 3.3) ---------------------------------------
+
+
+async def create_run_with_claims(
+    client: AsyncClient, company_id: str | None
+) -> dict[str, object]:
+    payload = (
+        {"company_id": company_id}
+        if company_id
+        else {"company_name": "Acme Hardware", "website": WEBSITE}
+    )
+    response = await client.post("/api/v1/research/runs", json=payload)
+    assert response.status_code == 201, response.text
+    body: dict[str, object] = response.json()
+    return body
+
+
+class TestConfirmApi:
+    async def test_confirm_applies_to_the_bound_company(
+        self, uow_factory: UowFactory
+    ) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [{"claim_position": 0, "decision": "accepted"}],
+                },
+            )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["action"] == "applied"
+        assert body["company_id"] == str(company.id)
+        assert body["summary"] == {"accepted": 1, "edited": 0, "rejected": 0, "total": 1}
+        assert body["promotions"][0]["company_signal_position"] == 0
+        assert body["promotions"][0]["company_source_position"] == 0
+        assert body["application_payload"] is None
+
+    async def test_confirm_without_a_company_returns_a_form_payload(
+        self, uow_factory: UowFactory
+    ) -> None:
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, None)
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [{"claim_position": 0, "decision": "accepted"}],
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["action"] == "recorded"
+        assert body["company_id"] is None
+        payload = body["application_payload"]
+        assert payload["company_name"] == "Acme Hardware"
+        assert payload["signals"]
+        assert payload["sources"]
+
+    async def test_edited_and_rejected_round_trip(self, uow_factory: UowFactory) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [
+                        {
+                            "claim_position": 0,
+                            "decision": "edited",
+                            "edited_detail": "reworded",
+                            "edited_kind": "shipping_fit",
+                        },
+                        {"claim_position": 1, "decision": "rejected"},
+                    ],
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["summary"]["edited"] == 1
+        assert body["summary"]["rejected"] == 1
+        edited = next(p for p in body["promotions"] if p["decision"] == "edited")
+        rejected = next(p for p in body["promotions"] if p["decision"] == "rejected")
+        assert edited["kind"] == "shipping_fit"
+        assert rejected["company_signal_position"] is None
+
+    async def test_unknown_run_is_404(self, uow_factory: UowFactory) -> None:
+        async for client in make_client(uow_factory):
+            response = await client.post(
+                f"/api/v1/research/runs/{uuid4()}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [{"claim_position": 0, "decision": "accepted"}],
+                },
+            )
+        assert response.status_code == 404
+
+    async def test_unknown_target_company_is_404(self, uow_factory: UowFactory) -> None:
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, None)
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "target_company_id": str(uuid4()),
+                    "decisions": [{"claim_position": 0, "decision": "accepted"}],
+                },
+            )
+        assert response.status_code == 404
+
+    async def test_company_mismatch_is_409(self, uow_factory: UowFactory) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "target_company_id": str(uuid4()),
+                    "decisions": [{"claim_position": 0, "decision": "accepted"}],
+                },
+            )
+        assert response.status_code == 409
+
+    async def test_contradicting_an_applied_decision_is_409(
+        self, uow_factory: UowFactory
+    ) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            url = f"/api/v1/research/runs/{run['research_id']}/confirm"
+            await client.post(
+                url,
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [{"claim_position": 0, "decision": "accepted"}],
+                },
+            )
+            response = await client.post(
+                url,
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [{"claim_position": 0, "decision": "rejected"}],
+                },
+            )
+        assert response.status_code == 409
+
+    async def test_identical_replay_is_unchanged(self, uow_factory: UowFactory) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            url = f"/api/v1/research/runs/{run['research_id']}/confirm"
+            body = {
+                "reviewer_name": "Lcc",
+                "decisions": [{"claim_position": 0, "decision": "accepted"}],
+            }
+            await client.post(url, json=body)
+            response = await client.post(url, json=body)
+        assert response.status_code == 200
+        assert response.json()["action"] == "unchanged"
+
+    async def test_unknown_claim_position_is_422(self, uow_factory: UowFactory) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [{"claim_position": 99, "decision": "accepted"}],
+                },
+            )
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"reviewer_name": "Lcc", "decisions": []},                      # empty batch
+            {"decisions": [{"claim_position": 0, "decision": "accepted"}]},  # no reviewer
+            {"reviewer_name": "Lcc", "decisions": [{"claim_position": 0}]},  # no decision
+            {
+                "reviewer_name": "Lcc",
+                "decisions": [{"claim_position": 0, "decision": "edited"}],  # no detail
+            },
+            {
+                "reviewer_name": "Lcc",
+                "decisions": [
+                    {"claim_position": 0, "decision": "accepted", "edited_detail": "x"}
+                ],  # edits on a non-edited decision
+            },
+            {
+                "reviewer_name": "Lcc",
+                "decisions": [
+                    {"claim_position": 0, "decision": "accepted"},
+                    {"claim_position": 0, "decision": "rejected"},  # duplicate claim
+                ],
+            },
+        ],
+    )
+    async def test_invalid_schema_is_422(
+        self, uow_factory: UowFactory, payload: dict[str, object]
+    ) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm", json=payload
+            )
+        assert response.status_code == 422, response.text
+
+    async def test_confirm_response_leaks_no_sensitive_config(
+        self, uow_factory: UowFactory
+    ) -> None:
+        company = await seed_company(uow_factory)
+        async for client in make_client(uow_factory):
+            run = await create_run_with_claims(client, str(company.id))
+            response = await client.post(
+                f"/api/v1/research/runs/{run['research_id']}/confirm",
+                json={
+                    "reviewer_name": "Lcc",
+                    "decisions": [{"claim_position": 0, "decision": "accepted"}],
+                },
+            )
+        raw = response.text.lower()
+        for forbidden in ["api_key", "apikey", "base_url", "openai_", "system_prompt", "sk-"]:
+            assert forbidden not in raw
+        assert "<html" not in raw
+        assert "<script" not in raw
