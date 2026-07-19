@@ -87,7 +87,15 @@ class SafeFetcher:
     guard_policy: UrlGuardPolicy = field(default_factory=UrlGuardPolicy)
     scope: SiteScope | None = None
 
-    async def fetch(self, client: httpx.AsyncClient, url: str) -> FetchOutcome:
+    async def fetch(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        *,
+        accept: tuple[str, ...] = HTML_CONTENT_TYPES,
+    ) -> FetchOutcome:
+        """Fetch one URL. `accept` names the content types this call will take —
+        robots.txt passes text/plain; everything else stays HTML-only."""
         started = time.monotonic()
         current = url
         hops = 0
@@ -137,6 +145,7 @@ class SafeFetcher:
                 final_url=validated.url,
                 hops=hops,
                 started=started,
+                accept=accept,
             )
 
     async def _request(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
@@ -162,6 +171,7 @@ class SafeFetcher:
         final_url: str,
         hops: int,
         started: int | float,
+        accept: tuple[str, ...] = HTML_CONTENT_TYPES,
     ) -> FetchOutcome:
         content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
         try:
@@ -172,11 +182,11 @@ class SafeFetcher:
                     detail=f"HTTP {response.status_code}",
                     status_code=response.status_code,
                 )
-            if content_type and content_type not in HTML_CONTENT_TYPES:
+            if content_type and content_type not in accept:
                 return FetchFailure(
                     requested_url=requested_url,
                     code="not_html",
-                    detail=f"content type {content_type!r} is not HTML",
+                    detail=f"content type {content_type!r} is not accepted here",
                     status_code=response.status_code,
                 )
 

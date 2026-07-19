@@ -14,15 +14,32 @@ header only.
 """
 
 from dataclasses import dataclass
+from typing import Protocol
 from urllib.parse import urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 import httpx
 
-from app.tools.website.fetcher import FetchedPage, SafeFetcher
+from app.tools.website.fetcher import HTML_CONTENT_TYPES, FetchedPage, FetchOutcome
 
 #: Product token used for robots matching — never the versioned HTTP UA.
 ROBOTS_TOKEN = "USImporterHunterBot"
+
+#: robots.txt is plain text; HTML is accepted too because some servers mislabel it.
+ROBOTS_CONTENT_TYPES = ("text/plain", *HTML_CONTENT_TYPES)
+
+
+class PageFetcher(Protocol):
+    """What robots loading needs from a fetcher — nothing more.
+
+    Depending on this instead of SafeFetcher keeps the concrete fetcher
+    replaceable (dependency inversion) and stops robots handling from reaching
+    into fetcher internals.
+    """
+
+    async def fetch(
+        self, client: httpx.AsyncClient, url: str, *, accept: tuple[str, ...] = ...
+    ) -> FetchOutcome: ...
 
 
 def robots_token_from_user_agent(user_agent: str) -> str:
@@ -81,14 +98,9 @@ class RobotsPolicy:
 
 
 async def load_robots(
-    client: httpx.AsyncClient, fetcher: SafeFetcher, base_url: str, user_agent: str
+    client: httpx.AsyncClient, fetcher: PageFetcher, base_url: str, user_agent: str
 ) -> RobotsPolicy:
-    """Fetch and parse robots.txt through the same guarded fetcher.
-
-    robots.txt is not HTML, so it is read with a content-type-agnostic call
-    rather than SafeFetcher.fetch, but it goes through the same URL guard by
-    reusing the fetcher's resolver and policy.
-    """
+    """Fetch and parse robots.txt through the same guarded fetcher."""
     token = robots_token_from_user_agent(user_agent)
     target = robots_url_for(base_url)
     outcome = await _fetch_text(client, fetcher, target)
@@ -105,30 +117,15 @@ async def load_robots(
 
 
 async def _fetch_text(
-    client: httpx.AsyncClient, fetcher: SafeFetcher, url: str
+    client: httpx.AsyncClient, fetcher: PageFetcher, url: str
 ) -> str | None:
-    """robots.txt served as text/plain would be rejected by the HTML check, so
-    temporarily accept any content type for this one file."""
-    original = fetcher.scope
-    fetcher.scope = None  # robots lives at the origin root, always in scope
-    try:
-        result = await fetcher.fetch(client, url)
-    finally:
-        fetcher.scope = original
-    if isinstance(result, FetchedPage):
-        return result.html
-    if result.code == "not_html":
-        # Re-read as plain text: the guard already passed for this URL.
-        try:
-            response = await client.get(
-                url,
-                headers={"User-Agent": fetcher.limits.user_agent},
-                timeout=fetcher.limits.request_timeout_seconds,
-                follow_redirects=False,
-            )
-        except httpx.HTTPError:
-            return None
-        if response.status_code >= 400:
-            return None
-        return response.text[: fetcher.limits.max_page_bytes]
-    return None
+    """robots.txt is served as text/plain, so this one call widens the accepted
+    content types. It goes through the same guarded fetcher as every other
+    request — there is deliberately no raw-client fallback, because that would
+    skip per-hop redirect validation.
+
+    robots.txt always lives at the origin root, which is inside the site scope
+    by construction, so no scope override is needed either.
+    """
+    result = await fetcher.fetch(client, url, accept=ROBOTS_CONTENT_TYPES)
+    return result.html if isinstance(result, FetchedPage) else None

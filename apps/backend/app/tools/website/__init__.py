@@ -22,7 +22,9 @@ from app.tools.website.page_ranker import (
     score_url,
 )
 from app.tools.website.robots import (
+    ROBOTS_CONTENT_TYPES,
     ROBOTS_TOKEN,
+    PageFetcher,
     RobotsPolicy,
     load_robots,
     normalize_robots_text,
@@ -41,6 +43,7 @@ from app.tools.website.url_guard import (
 )
 
 __all__ = [
+    "ROBOTS_CONTENT_TYPES",
     "ROBOTS_TOKEN",
     "CleanedPage",
     "FetchFailure",
@@ -49,6 +52,7 @@ __all__ = [
     "FetchedPage",
     "HostResolver",
     "LinkCandidate",
+    "PageFetcher",
     "RankedPage",
     "RobotsPolicy",
     "SafeFetcher",
