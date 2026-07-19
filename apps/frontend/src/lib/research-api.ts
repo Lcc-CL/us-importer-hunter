@@ -98,6 +98,8 @@ export interface ResearchRun {
   warnings: string[];
   /** Dimensions with no reliable evidence. Never a negative signal. */
   unknown_dimensions: string[];
+  /** Language the conclusions were written in. Evidence keeps the page's own. */
+  output_language: string;
 }
 
 export interface ResearchRunCreated extends ResearchRun {
@@ -162,6 +164,8 @@ export interface StartResearchInput {
   company_id?: string;
   company_name?: string;
   website?: string;
+  /** Conclusions are written in this language; evidence never is. */
+  output_language?: "zh-CN" | "en-US";
 }
 
 export interface ConfirmResearchInput {

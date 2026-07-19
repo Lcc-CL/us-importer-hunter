@@ -23,6 +23,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { getClientErrorDetails, type ClientErrorDetails } from "@/lib/api";
 import { useI18n, type MessageKey } from "@/lib/i18n";
+import { ResearchSummary } from "./research-summary";
+import { StepNav, type FlowStep, type StepState } from "./step-nav";
 import {
   confirmResearchRun,
   startResearch,
@@ -45,8 +47,17 @@ interface ClaimReview {
 }
 
 interface ResearchPanelProps {
-  /** Fills the existing prospect form. Never submits it. */
-  onApply: (payload: ApplicationPayload) => void;
+  /**
+   * Hands the confirmed research to the guided flow, which maps it and runs
+   * qualification. Returning a promise lets the panel keep its button in a
+   * running state until the analysis actually starts.
+   */
+  onConfirmed: (payload: ApplicationPayload) => Promise<void> | void;
+  /** Steps owned downstream (analysis, draft) so the nav can show one flow. */
+  downstreamSteps?: Partial<Record<FlowStep, StepState>>;
+  /** Localized "what to do next" / "why it is stuck", from the guided flow. */
+  nextAction?: string | null;
+  blockedBy?: string | null;
 }
 
 const inputClass =
@@ -61,8 +72,13 @@ function statusTone(status: string): string {
   return "border-rose-200 bg-rose-50 text-rose-800";
 }
 
-export function ResearchPanel({ onApply }: ResearchPanelProps) {
-  const { t, label } = useI18n();
+export function ResearchPanel({
+  onConfirmed,
+  downstreamSteps,
+  nextAction,
+  blockedBy,
+}: ResearchPanelProps) {
+  const { t, label, lang } = useI18n();
   const [state, setState] = useState<PanelState>("idle");
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
@@ -72,6 +88,27 @@ export function ResearchPanel({ onApply }: ResearchPanelProps) {
   const [applied, setApplied] = useState<{ sources: number; signals: number } | null>(null);
 
   const busy = state === "researching" || state === "confirming";
+
+  // The panel owns the first two steps; the guided flow owns the last two and
+  // passes them in, so the reviewer sees one journey rather than two widgets.
+  const stepStates: Record<FlowStep, StepState> = {
+    research:
+      state === "researching"
+        ? "current"
+        : state === "error" && !run
+          ? "blocked"
+          : run
+            ? "done"
+            : "todo",
+    review:
+      state === "reviewing" || state === "confirming"
+        ? "current"
+        : state === "applied"
+          ? "done"
+          : "todo",
+    analysis: downstreamSteps?.analysis ?? "todo",
+    draft: downstreamSteps?.draft ?? "todo",
+  };
 
   async function handleStart() {
     if (busy || !companyName.trim() || !website.trim()) return;
@@ -84,6 +121,8 @@ export function ResearchPanel({ onApply }: ResearchPanelProps) {
       const created = await startResearch({
         company_name: companyName.trim(),
         website: website.trim(),
+        // Conclusions follow the UI language; evidence never does.
+        output_language: lang === "zh" ? "zh-CN" : "en-US",
       });
       setRun(created);
       // Deliberately empty: every claim starts as "pending". Auto-accepting
@@ -154,8 +193,11 @@ export function ResearchPanel({ onApply }: ResearchPanelProps) {
       });
       const payload = response.application_payload;
       if (payload) {
-        onApply(payload);
         setApplied({ sources: payload.sources.length, signals: payload.signals.length });
+        setState("applied");
+        // The guided flow takes over here: map, qualify, and draft if it can.
+        await onConfirmed(payload);
+        return;
       }
       setState("applied");
     } catch (caught: unknown) {
@@ -186,6 +228,13 @@ export function ResearchPanel({ onApply }: ResearchPanelProps) {
       </div>
 
       <div className="px-5 py-5 sm:px-7">
+        <div className="mb-5">
+          <StepNav
+            blockedBy={blockedBy}
+            nextAction={nextAction}
+            states={stepStates}
+          />
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label>
             <span className={labelClass}>{t("research.companyName")}</span>
@@ -350,6 +399,15 @@ function ResearchResult({
         )}
       </div>
 
+      {/* Summary sits above the claims: the reviewer reads what was found
+          before deciding claim by claim. Assembled from validated claims and
+          the profile only — never a second model call. */}
+      <ResearchSummary
+        claims={run.claims}
+        profile={run.profile}
+        unknownDimensions={run.unknown_dimensions}
+      />
+
       {/* --- claims --- */}
       <div>
         <p className="text-xs font-semibold text-slate-600">
@@ -437,7 +495,9 @@ function ResearchResult({
             type="button"
           >
             {state === "confirming" ? <LoaderCircle className="animate-spin" /> : <Check />}
-            {state === "confirming" ? t("research.confirming") : t("research.confirm")}
+            {state === "confirming"
+              ? t("research.confirmAnalyze.running")
+              : t("research.confirmAnalyze")}
           </Button>
         </div>
       ) : null}
