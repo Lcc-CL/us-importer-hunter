@@ -81,6 +81,12 @@ class ResearchRunModel(Base):
     # without this, rejection detail would exist only in the process that
     # produced the run, and GET would degrade to bare warnings.
     rejected_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    # Dimensions the extractor found no evidence for. Persisted so a reloaded
+    # run still says "we looked and found nothing" instead of appearing to
+    # have never considered them. Never read by scoring (ADR-0025).
+    unknown_dimensions_json: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     pages: Mapped[list["ResearchPageModel"]] = relationship(
         cascade="all, delete-orphan", lazy="selectin", order_by="ResearchPageModel.position"

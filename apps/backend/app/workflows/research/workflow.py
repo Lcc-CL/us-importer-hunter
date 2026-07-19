@@ -98,6 +98,7 @@ class ResearchOutcome:
     pages_failed: int = 0
     claims_extracted: int = 0
     claims_validated: int = 0
+    unknown_dimensions: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
 
@@ -307,6 +308,7 @@ class ResearchWorkflow:
             profile=result.profile,
             extractor=self.extractor.identity,
             proposed_count=len(result.claims),
+            unknown_dimensions=result.unknown_dimensions,
         )
 
         outcome = self.validator.validate(
@@ -345,6 +347,7 @@ class ResearchWorkflow:
             pages_failed=run.pages_failed,
             claims_extracted=run.claims_extracted,
             claims_validated=run.claims_validated,
+            unknown_dimensions=run.unknown_dimensions,
             warnings=run.warnings,
         )
 

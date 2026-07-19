@@ -124,6 +124,9 @@ class ResearchRunResponse(BaseModel):
     claims: list[ResearchClaimResponse]
     rejected_claims: list[RejectedClaimResponse]
     warnings: list[str]
+    #: Dimensions with no reliable evidence. Not a negative signal — the UI
+    #: shows them as open research questions and scoring never sees them.
+    unknown_dimensions: list[str]
 
     @classmethod
     def from_run(cls, run: ResearchRun) -> "ResearchRunResponse":
@@ -198,6 +201,7 @@ class ResearchRunResponse(BaseModel):
                 for rejection in run.rejected_claims
             ],
             warnings=list(run.warnings),
+            unknown_dimensions=list(run.unknown_dimensions),
         )
 
 

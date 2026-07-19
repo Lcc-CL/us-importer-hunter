@@ -76,6 +76,7 @@ def build_run() -> ResearchRun:
             provider="fake", model="fake-research-v1", prompt_version="research-extract-fake-v1"
         ),
         proposed_count=3,
+        unknown_dimensions=("import_activity", "shipping_fit"),
     )
     run.record_claim(
         ResearchClaim(

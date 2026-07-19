@@ -32,6 +32,7 @@ export interface ResearchRunFixture {
   claims: Array<Record<string, unknown>>;
   rejected_claims: Array<Record<string, unknown>>;
   warnings: string[];
+  unknown_dimensions: string[];
   action?: string;
 }
 
@@ -110,6 +111,7 @@ const BASE: ResearchRunFixture = {
     },
   ],
   warnings: [],
+  unknown_dimensions: ["shipping_fit", "pain_point"],
   action: "recorded",
 };
 

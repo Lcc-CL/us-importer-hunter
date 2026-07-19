@@ -101,6 +101,51 @@ test.describe("research panel", () => {
     expect(guard.problems()).toEqual([]);
   });
 
+  test("unknown dimensions are shown as open questions, not weaknesses", async ({
+    page,
+  }) => {
+    const guard = attachConsoleGuard(page);
+    await stubResearch(page, COMPLETED_RUN);
+    await page.goto("/");
+    await startResearch(page);
+
+    const unknown = page.getByTestId("research-unknown");
+    await expect(unknown).toBeVisible();
+    await expect(unknown).toContainText("未知维度（2）");
+    await expect(unknown).toContainText(
+      "当前未找到可靠证据，以下维度保持未知，系统不会自动猜测。",
+    );
+    // Localized kind labels, and never presented as a claim.
+    await expect(unknown).toContainText("运输匹配度");
+    await expect(unknown).toContainText("潜在痛点");
+    await expect(page.getByTestId("research-claims").locator("li")).toHaveCount(3);
+
+    expect(guard.problems()).toEqual([]);
+  });
+
+  test("unknown dimensions survive a reload of the saved run", async ({ page }) => {
+    await stubResearch(page, COMPLETED_RUN);
+    await page.goto("/");
+    await startResearch(page);
+    await expect(page.getByTestId("research-unknown")).toContainText("未知维度（2）");
+
+    await page.reload();
+    await startResearch(page);
+
+    const unknown = page.getByTestId("research-unknown");
+    await expect(unknown).toContainText("未知维度（2）");
+    await expect(unknown).toContainText("运输匹配度");
+  });
+
+  test("unknown dimensions section is absent when the list is empty", async ({ page }) => {
+    await stubResearch(page, { ...COMPLETED_RUN, unknown_dimensions: [] });
+    await page.goto("/");
+    await startResearch(page);
+
+    await expect(page.getByTestId("research-claims")).toBeVisible();
+    await expect(page.getByTestId("research-unknown")).toHaveCount(0);
+  });
+
   test("claims start pending — nothing is accepted for the reviewer", async ({ page }) => {
     await stubResearch(page, COMPLETED_RUN);
     await page.goto("/");
@@ -250,6 +295,20 @@ test.describe("research panel", () => {
     // The route stub only covers the browser context; this asserts the real
     // backend answers a GET for an unknown id rather than hanging.
     expect([200, 404]).toContain(response.status());
+  });
+
+  test("unknown-dimension copy is localized in English too", async ({ page }) => {
+    await stubResearch(page, COMPLETED_RUN);
+    await page.goto("/");
+    await startResearch(page);
+    await page.getByRole("button", { name: "English" }).click();
+
+    const unknown = page.getByTestId("research-unknown");
+    await expect(unknown).toContainText("Unknown dimensions (2)");
+    await expect(unknown).toContainText(
+      "No reliable evidence was found for these dimensions. They remain unknown and are not inferred.",
+    );
+    await expect(unknown).toContainText("Shipping fit");
   });
 
   test("panel is fully localized and switches with the rest of the UI", async ({ page }) => {

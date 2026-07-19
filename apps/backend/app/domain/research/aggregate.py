@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from app.domain.clock import utcnow
 from app.domain.exceptions import DomainError, InvalidStateTransition
 from app.domain.research.values import (
+    ALLOWED_CLAIM_KINDS,
     TERMINAL_RUN_STATUSES,
     ClaimRejectionReason,
     ExtractorIdentity,
@@ -51,6 +52,7 @@ class ResearchRun:
         self._profile = ResearchProfile()
         self._extractor: ExtractorIdentity | None = None
         self._warnings: list[str] = []
+        self._unknown_dimensions: list[str] = []
         self._pages_failed = 0
         self._claims_extracted = 0
 
@@ -94,11 +96,39 @@ class ResearchRun:
         self.add_warning(warning)
 
     def record_extraction(
-        self, *, profile: ResearchProfile, extractor: ExtractorIdentity, proposed_count: int
+        self,
+        *,
+        profile: ResearchProfile,
+        extractor: ExtractorIdentity,
+        proposed_count: int,
+        unknown_dimensions: tuple[str, ...] = (),
     ) -> None:
+        """Record what the extractor produced, including what it could *not*
+        determine.
+
+        Unknown dimensions are a first-class result, not an absence: naming
+        them is how the run says "no evidence was found", as opposed to "this
+        company is weak here". They never influence scoring (ADR-0025).
+
+        A name outside the whitelist is dropped with a warning rather than
+        stored — an unknown dimension nobody can map to a scoring dimension is
+        noise, and silently keeping it would let a model invent categories.
+        """
         self._profile = profile
         self._extractor = extractor
         self._claims_extracted = proposed_count
+
+        kept: list[str] = []
+        for name in unknown_dimensions:
+            cleaned = name.strip()
+            if not cleaned:
+                continue
+            if cleaned not in ALLOWED_CLAIM_KINDS:
+                self.add_warning(f"unknown dimension {cleaned!r} dropped: not an allowed kind")
+                continue
+            if cleaned not in kept:
+                kept.append(cleaned)
+        self._unknown_dimensions = kept
 
     def record_claim(self, claim: ResearchClaim) -> None:
         """Add a claim that has already passed validation."""
@@ -240,6 +270,12 @@ class ResearchRun:
     @property
     def warnings(self) -> tuple[str, ...]:
         return tuple(self._warnings)
+
+    @property
+    def unknown_dimensions(self) -> tuple[str, ...]:
+        """Dimensions the extractor found no reliable evidence for. Never a
+        negative signal and never an input to scoring."""
+        return tuple(self._unknown_dimensions)
 
     @property
     def pages_fetched(self) -> int:

@@ -374,6 +374,32 @@ function ResearchResult({
         )}
       </div>
 
+      {/* Unknown is an open question, not a weakness: shown in neutral slate
+          rather than a warning colour, and never fed into scoring. */}
+      {run.unknown_dimensions.length > 0 ? (
+        <div
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+          data-testid="research-unknown"
+        >
+          <p className="text-xs font-semibold text-slate-600">
+            {t("research.unknown", { count: run.unknown_dimensions.length })}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            {t("research.unknown.note")}
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {run.unknown_dimensions.map((kind) => (
+              <li
+                className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-700"
+                key={`unknown-${kind}`}
+              >
+                {label("signalKind", kind)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {run.rejected_claims.length > 0 ? (
         <details className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <summary className="cursor-pointer text-xs font-semibold text-slate-600">

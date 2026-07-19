@@ -96,6 +96,8 @@ export interface ResearchRun {
   claims: ResearchClaim[];
   rejected_claims: RejectedClaim[];
   warnings: string[];
+  /** Dimensions with no reliable evidence. Never a negative signal. */
+  unknown_dimensions: string[];
 }
 
 export interface ResearchRunCreated extends ResearchRun {

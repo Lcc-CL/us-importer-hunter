@@ -46,6 +46,7 @@ class ResearchRunMapper:
             prompt_version=extractor.prompt_version if extractor else None,
             profile_json=asdict(run.profile),
             warnings_json=list(run.warnings),
+            unknown_dimensions_json=list(run.unknown_dimensions),
             rejected_json=[
                 {
                     "reason": rejection.reason.value,
@@ -117,6 +118,7 @@ class ResearchRunMapper:
         run._pages_failed = model.pages_failed
         run._claims_extracted = model.claims_extracted
         run._warnings = list(model.warnings_json or [])
+        run._unknown_dimensions = list(model.unknown_dimensions_json or [])
         run._rejected = [
             RejectedClaim(
                 reason=ClaimRejectionReason(entry["reason"]),
