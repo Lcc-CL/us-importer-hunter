@@ -1,6 +1,7 @@
 """Import evidence value objects and enums."""
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -93,28 +94,40 @@ class NormalizedShipment:
     provider: str = ""
     provider_record_id: str = ""
     shipment_fingerprint: str = ""
+    fingerprint_version: str = ""
+    dedupe_status: str = "ok"
+    dedupe_method: str = "fingerprint"
+    dedupe_reasons: tuple[str, ...] = ()
+    container_count: int = 0
+    raw_weight: float | None = None
+    raw_weight_unit: str = ""
+    normalized_weight: float | None = None
+    normalized_weight_unit: str = "kg"
+    weight_scope: str = "unknown"
+    raw_quantity: float | None = None
+    normalized_quantity: float | None = None
+    parent_shipment_id: UUID | None = None
+    normalization_version: str = ""
+    raw_record_ids: tuple[UUID, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.shipment_fingerprint:
-            fp = self._compute_fingerprint()
+            fp = _compute_fingerprint(
+                provider=self.provider,
+                master_bol=self.master_bol,
+                house_bol=self.house_bol,
+                carrier_scac=self.carrier_scac,
+                arrival_date=str(self.arrival_date) if self.arrival_date else "",
+                vessel=self.vessel,
+                voyage=self.voyage,
+                normalized_importer=self.importer_name,
+                normalized_shipper=self.shipper_name,
+                origin_port=self.port_of_lading,
+                destination_port=self.port_of_discharge,
+                container_numbers=self.container_numbers,
+            )
             object.__setattr__(self, "shipment_fingerprint", fp)
-
-    def _compute_fingerprint(self) -> str:
-        parts = [
-            self.provider,
-            self.master_bol,
-            self.house_bol,
-            self.carrier_scac,
-            str(self.arrival_date.date()) if self.arrival_date else "",
-            self.vessel,
-            self.voyage,
-            self.importer_name.lower().strip(),
-            self.shipper_name.lower().strip(),
-            "|".join(sorted(self.container_numbers)),
-            self.port_of_lading,
-            self.port_of_discharge,
-        ]
-        return hashlib.sha256("|".join(parts).encode()).hexdigest()
+            object.__setattr__(self, "fingerprint_version", "shipment-fp-v1")
 
 
 @dataclass(frozen=True)
@@ -159,6 +172,57 @@ class ImportEvidenceConflict:
     conflict_detail: str = ""
     resolved: bool = False
     resolution_note: str = ""
+
+
+def _compute_fingerprint(
+    *, provider: str = "", master_bol: str = "", house_bol: str = "",
+    carrier_scac: str = "", arrival_date: str = "", vessel: str = "",
+    voyage: str = "", normalized_importer: str = "", normalized_shipper: str = "",
+    origin_port: str = "", destination_port: str = "",
+    container_numbers: tuple[str, ...] = (),
+) -> str:
+    """Versioned, field-labeled, NULL-safe fingerprint."""
+    import json
+    _null = "__NULL__"
+
+    def _s(v: object) -> str:
+        if v is None or v == "":
+            return _null
+        if isinstance(v, (list, tuple, set)):
+            return "|".join(sorted(str(x) for x in v))
+        return str(v)
+
+    fields = {
+        "v": "shipment-fp-v1",
+        "p": _s(provider),
+        "hb": _s(_normalize_bol(house_bol)),
+        "mb": _s(_normalize_bol(master_bol)),
+        "sc": _s(carrier_scac.upper().strip()[:4]),
+        "ad": _s(arrival_date),
+        "vs": _s(vessel.upper().strip()),
+        "vy": _s(voyage.upper().strip()),
+        "ni": _s(normalized_importer.lower().strip()),
+        "ns": _s(normalized_shipper.lower().strip()),
+        "op": _s(origin_port.upper().strip()),
+        "dp": _s(destination_port.upper().strip()),
+        "cn": _s(tuple(sorted(
+            _normalize_cont(c) for c in container_numbers if c
+        ))),
+    }
+    canonical = json.dumps(fields, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _normalize_bol(raw: str) -> str:
+    if not raw:
+        return ""
+    return re.sub(r"[-\s]+", "", raw.upper().strip())
+
+
+def _normalize_cont(raw: str) -> str:
+    if not raw:
+        return ""
+    return re.sub(r"[-\s]+", "", raw).upper()
 
 
 QUALITY_WEIGHTS: dict[str, float] = {
