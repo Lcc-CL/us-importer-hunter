@@ -64,24 +64,54 @@ def normalize_arrival_date(raw: str | None) -> date | None:
 
 def normalize_weight(raw_value: float | None, raw_unit: str | None) -> dict[str, Any]:
     if raw_value is None:
-        return {"raw_value": None, "raw_unit": raw_unit, "normalized_kg": None,
-                "normalized_unit": "kg", "weight_scope": "unknown"}
+        return {
+            "raw_value": None,
+            "raw_unit": raw_unit,
+            "normalized_kg": None,
+            "normalized_unit": "kg",
+            "weight_scope": "unknown",
+        }
     unit = (raw_unit or "").lower().strip()
     scope = "house" if unit else "unknown"
     if unit in ("kg", "kgs", "kilogram", "kilograms"):
-        return {"raw_value": raw_value, "raw_unit": unit, "normalized_kg": raw_value,
-                "normalized_unit": "kg", "weight_scope": scope}
+        return {
+            "raw_value": raw_value,
+            "raw_unit": unit,
+            "normalized_kg": raw_value,
+            "normalized_unit": "kg",
+            "weight_scope": scope,
+        }
     if unit in ("lb", "lbs", "pound", "pounds"):
-        return {"raw_value": raw_value, "raw_unit": unit, "normalized_kg": round(raw_value * 0.453592, 2),
-                "normalized_unit": "kg", "weight_scope": scope}
+        return {
+            "raw_value": raw_value,
+            "raw_unit": unit,
+            "normalized_kg": round(raw_value * 0.453592, 2),
+            "normalized_unit": "kg",
+            "weight_scope": scope,
+        }
     if unit in ("t", "ton", "tons", "mt", "metric ton"):
-        return {"raw_value": raw_value, "raw_unit": unit, "normalized_kg": raw_value * 1000,
-                "normalized_unit": "kg", "weight_scope": scope}
+        return {
+            "raw_value": raw_value,
+            "raw_unit": unit,
+            "normalized_kg": raw_value * 1000,
+            "normalized_unit": "kg",
+            "weight_scope": scope,
+        }
     if raw_value > 0 and not unit:
-        return {"raw_value": raw_value, "raw_unit": None, "normalized_kg": None,
-                "normalized_unit": "kg", "weight_scope": "unknown_unit"}
-    return {"raw_value": raw_value, "raw_unit": unit, "normalized_kg": None,
-            "normalized_unit": "kg", "weight_scope": "unknown_unit"}
+        return {
+            "raw_value": raw_value,
+            "raw_unit": None,
+            "normalized_kg": None,
+            "normalized_unit": "kg",
+            "weight_scope": "unknown_unit",
+        }
+    return {
+        "raw_value": raw_value,
+        "raw_unit": unit,
+        "normalized_kg": None,
+        "normalized_unit": "kg",
+        "weight_scope": "unknown_unit",
+    }
 
 
 def dedupe_status_for_shipment(

@@ -9,6 +9,7 @@ Rules (ADR-0017):
 
 from app.database.repositories.company import SqlAlchemyCompanyRepository
 from app.database.repositories.contact import SqlAlchemyContactRepository
+from app.database.repositories.import_evidence import SqlAlchemyImportEvidenceRepository
 from app.database.repositories.opportunity import SqlAlchemyOpportunityRepository
 from app.database.repositories.outreach import SqlAlchemyOutreachRepository
 from app.database.repositories.research import SqlAlchemyResearchRunRepository
@@ -16,6 +17,7 @@ from app.database.repositories.task import SqlAlchemyTaskRepository
 
 __all__ = [
     "SqlAlchemyCompanyRepository",
+    "SqlAlchemyImportEvidenceRepository",
     "SqlAlchemyContactRepository",
     "SqlAlchemyOpportunityRepository",
     "SqlAlchemyOutreachRepository",

@@ -3,7 +3,7 @@
 import hashlib
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -49,12 +49,13 @@ class QualityLevel(StrEnum):
 @dataclass(frozen=True)
 class RawImportRecord:
     """One provider record, immutable once stored."""
+
     provider: str
     provider_record_id: str
     request_id: UUID
     raw_payload_json: str
     raw_payload_hash: str = ""
-    fetched_at: datetime = field(default_factory=lambda: datetime.utcnow())
+    fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     provider_updated_at: datetime | None = None
     schema_version: str = "v1"
     fixture: bool = False
@@ -69,6 +70,7 @@ class RawImportRecord:
 @dataclass(frozen=True)
 class NormalizedShipment:
     """One shipment, normalized across providers."""
+
     id: UUID = field(default_factory=uuid4)
     importer_name: str = ""
     importer_address: str = ""
@@ -133,6 +135,7 @@ class NormalizedShipment:
 @dataclass(frozen=True)
 class ImporterEntityMatch:
     """Links a normalized shipment to a known Company."""
+
     id: UUID = field(default_factory=uuid4)
     company_id: UUID | None = None
     normalized_name: str = ""
@@ -148,6 +151,7 @@ class ImporterEntityMatch:
 @dataclass(frozen=True)
 class ImportEvidenceSignal:
     """Promoted evidence: a company-scored import activity claim."""
+
     id: UUID = field(default_factory=uuid4)
     company_id: UUID | None = None
     provider: str = ""
@@ -165,6 +169,7 @@ class ImportEvidenceSignal:
 @dataclass(frozen=True)
 class ImportEvidenceConflict:
     """When two providers disagree on the same company."""
+
     id: UUID = field(default_factory=uuid4)
     company_id: UUID | None = None
     signal_ids: tuple[UUID, ...] = ()
@@ -175,10 +180,18 @@ class ImportEvidenceConflict:
 
 
 def _compute_fingerprint(
-    *, provider: str = "", master_bol: str = "", house_bol: str = "",
-    carrier_scac: str = "", arrival_date: str = "", vessel: str = "",
-    voyage: str = "", normalized_importer: str = "", normalized_shipper: str = "",
-    origin_port: str = "", destination_port: str = "",
+    *,
+    provider: str = "",
+    master_bol: str = "",
+    house_bol: str = "",
+    carrier_scac: str = "",
+    arrival_date: str = "",
+    vessel: str = "",
+    voyage: str = "",
+    normalized_importer: str = "",
+    normalized_shipper: str = "",
+    origin_port: str = "",
+    destination_port: str = "",
     container_numbers: tuple[str, ...] = (),
 ) -> str:
     """Versioned, field-labeled, NULL-safe, provider-independent fingerprint.
@@ -189,6 +202,7 @@ def _compute_fingerprint(
     and "ACME, INC" produce the same identity.
     """
     import json
+
     _null = "__NULL__"
 
     def _s(v: object) -> str:

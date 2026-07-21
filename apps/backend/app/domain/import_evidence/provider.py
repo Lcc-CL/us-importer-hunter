@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -30,7 +30,7 @@ class FakeImportEvidenceProvider:
         self, company_id: UUID, name: str, country: str | None = None
     ) -> Sequence[RawImportRecord]:
         request_id = uuid4()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return (
             RawImportRecord(
                 provider=self.provider_name,

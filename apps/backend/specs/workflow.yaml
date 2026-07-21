@@ -4,6 +4,19 @@
 # EventBus (ADR-0004/0015); Execution context wraps every run in a Task.
 
 workflows:
+  import_evidence_closure:
+    package: app.workflows.import_evidence
+    description: >
+      Stage 4A.4.2 corrective closure. Persists versioned shipment quality
+      assessments, importer aggregates, and audited shipment inclusions with
+      deterministic fingerprints and current/history replacement. Produces no
+      Company Signal and never invokes qualification or outreach.
+    steps:
+      - { id: persist_current_quality, service: import_evidence_persistence }
+      - { id: compute_aggregate, service: import_evidence_aggregate }
+      - { id: persist_aggregate_version, service: import_evidence_persistence }
+    status: implemented
+
   mvp_prospect_analysis:
     package: app.workflows.mvp_prospect_analysis
     description: >

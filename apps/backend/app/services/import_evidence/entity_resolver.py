@@ -21,10 +21,29 @@ REVIEW_THRESHOLD: float = 80.0
 FUZZY_ONLY_MAX_SCORE: float = 85.0  # fuzzy-only caps below auto_match
 
 COMPANY_SUFFIXES = (
-    "incorporated", "inc", "corporation", "corp", "company", "co",
-    "limited", "ltd", "llc", "l.l.c.", "llp", "l.l.p.",
-    "plc", "gmbh", "s.a.", "s.a", "sa", "bv", "b.v.",
-    "pty ltd", "pty. ltd.", "pte ltd", "pte. ltd.",
+    "incorporated",
+    "inc",
+    "corporation",
+    "corp",
+    "company",
+    "co",
+    "limited",
+    "ltd",
+    "llc",
+    "l.l.c.",
+    "llp",
+    "l.l.p.",
+    "plc",
+    "gmbh",
+    "s.a.",
+    "s.a",
+    "sa",
+    "bv",
+    "b.v.",
+    "pty ltd",
+    "pty. ltd.",
+    "pte ltd",
+    "pte. ltd.",
 )
 
 # Roles that disqualify a record as importer evidence
@@ -32,6 +51,7 @@ NON_IMPORTER_ROLES = ("broker", "notify_party", "forwarder", "carrier", "agent")
 
 
 # -- normalization ------------------------------------------------------------
+
 
 def normalize_company_name(raw: str) -> str:
     """Remove suffixes, punctuation, extra whitespace; lowercase."""
@@ -46,8 +66,9 @@ def normalize_company_name(raw: str) -> str:
     n = re.sub(r"\s+", " ", n).strip()
     # Remove suffixes as whole tokens
     tokens = n.split()
-    result = [t for t in tokens if t not in COMPANY_SUFFIXES
-              and t.rstrip(".") not in COMPANY_SUFFIXES]
+    result = [
+        t for t in tokens if t not in COMPANY_SUFFIXES and t.rstrip(".") not in COMPANY_SUFFIXES
+    ]
     return " ".join(result) if result else n
 
 
@@ -108,9 +129,11 @@ def normalize_country(raw: str) -> str:
 
 # -- matching logic -----------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ResolutionResult:
     """Output of entity resolution for one shipment against one candidate company."""
+
     match_status: EntityMatchStatus
     match_score: float
     match_method: EntityMatchMethod
@@ -143,17 +166,19 @@ class DeterministicEntityResolver:
         candidate_postal: str = "",
         candidate_country: str = "",
         candidate_phone: str = "",
-        provider_company_id: str = "",  # provider-assigned ID
+        shipment_provider_company_id: str = "",
+        candidate_provider_company_id: str = "",
         existing_match_status: EntityMatchStatus | None = None,
     ) -> ResolutionResult:
         # Manual decisions are final
-        if existing_match_status in (EntityMatchStatus.MANUALLY_CONFIRMED,
-                                      EntityMatchStatus.MANUALLY_REJECTED):
+        if existing_match_status in (
+            EntityMatchStatus.MANUALLY_CONFIRMED,
+            EntityMatchStatus.MANUALLY_REJECTED,
+        ):
             return ResolutionResult(
                 match_status=existing_match_status,
                 match_score=(
-                    100.0 if existing_match_status == EntityMatchStatus.MANUALLY_CONFIRMED
-                    else 0.0
+                    100.0 if existing_match_status == EntityMatchStatus.MANUALLY_CONFIRMED else 0.0
                 ),
                 match_method=EntityMatchMethod.MANUAL,
                 match_reasons=("manual decision preserved",),
@@ -170,25 +195,58 @@ class DeterministicEntityResolver:
             )
 
         evidence = _gather_evidence(
-            shipment_name, shipment_domain, shipment_address, shipment_city,
-            shipment_state, shipment_postal, shipment_country, shipment_phone,
-            candidate_name, candidate_domain, candidate_address, candidate_city,
-            candidate_state, candidate_postal, candidate_country, candidate_phone,
-            provider_company_id,
+            shipment_name,
+            shipment_domain,
+            shipment_address,
+            shipment_city,
+            shipment_state,
+            shipment_postal,
+            shipment_country,
+            shipment_phone,
+            candidate_name,
+            candidate_domain,
+            candidate_address,
+            candidate_city,
+            candidate_state,
+            candidate_postal,
+            candidate_country,
+            candidate_phone,
+            shipment_provider_company_id,
+            candidate_provider_company_id,
         )
         return _classify(evidence)
 
 
 def _gather_evidence(  # type: ignore[no-untyped-def]
-    sn, sd, sa, sci, sst, spc, sco, sph,
-    cn, cd, ca, cci, cst, cpc, cco, cph,
-    provider_id,
+    sn,
+    sd,
+    sa,
+    sci,
+    sst,
+    spc,
+    sco,
+    sph,
+    cn,
+    cd,
+    ca,
+    cci,
+    cst,
+    cpc,
+    cco,
+    cph,
+    shipment_provider_id,
+    candidate_provider_id,
 ) -> "_Evidence":
     e = _Evidence()
 
     # Strong evidence
-    if provider_id and provider_id == provider_id:
+    if (
+        shipment_provider_id
+        and candidate_provider_id
+        and shipment_provider_id == candidate_provider_id
+    ):
         e.strong.append("provider_company_id_match")
+        e.score += 40.0
 
     norm_sd = normalize_domain(sd)
     norm_cd = normalize_domain(cd)

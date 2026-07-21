@@ -1,18 +1,24 @@
 """Deterministic evidence quality scorer — five dimensions, versioned, idempotent."""
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
-from enum import StrEnum
-from uuid import UUID, uuid4
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from uuid import UUID
+
+from app.domain.import_evidence.models import (
+    QualityAssessment,
+    QualityStatus,
+    stable_fingerprint,
+)
 
 ASSESSMENT_VERSION = "import-evidence-quality-v1"
 
-
-class QualityStatus(StrEnum):
-    VERIFIED = "VERIFIED"
-    USABLE = "USABLE"
-    REVIEW = "REVIEW"
-    REJECTED = "REJECTED"
+__all__ = [
+    "ASSESSMENT_VERSION",
+    "EvidenceQualityScorer",
+    "ProviderQualityProfile",
+    "QualityAssessment",
+    "QualityStatus",
+]
 
 
 @dataclass(frozen=True)
@@ -26,42 +32,24 @@ class ProviderQualityProfile:
 
 PROVIDER_PROFILES: dict[str, ProviderQualityProfile] = {
     "fake": ProviderQualityProfile("fake", 14.0, "test_fixture"),
-    "csv": ProviderQualityProfile("csv", 15.0, "file_import", identity_fields_supported=("house_bol", "importer")),
-    "importyeti": ProviderQualityProfile("importyeti", 17.0, "web_platform", freshness_capable=True,
-                                          identity_fields_supported=("house_bol", "master_bol", "importer", "carrier_scac", "arrival_date", "containers")),
+    "csv": ProviderQualityProfile(
+        "csv", 15.0, "file_import", identity_fields_supported=("house_bol", "importer")
+    ),
+    "importyeti": ProviderQualityProfile(
+        "importyeti",
+        17.0,
+        "web_platform",
+        freshness_capable=True,
+        identity_fields_supported=(
+            "house_bol",
+            "master_bol",
+            "importer",
+            "carrier_scac",
+            "arrival_date",
+            "containers",
+        ),
+    ),
 }
-
-
-@dataclass(frozen=True)
-class QualityAssessment:
-    id: UUID = field(default_factory=uuid4)
-    shipment_id: UUID | None = None
-    assessment_version: str = ASSESSMENT_VERSION
-    total_score: float = 0.0
-    quality_status: QualityStatus = QualityStatus.REJECTED
-    source_reliability_score: float = 0.0
-    entity_resolution_score: float = 0.0
-    identity_completeness_score: float = 0.0
-    cross_source_consistency_score: float = 0.0
-    freshness_score: float = 0.0
-    penalties: tuple[str, ...] = ()
-    hard_blockers: tuple[str, ...] = ()
-    score_breakdown: dict[str, float] = field(default_factory=dict)
-    reasons: tuple[str, ...] = ()
-    input_fingerprint: str = ""
-    assessed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    is_current: bool = True
-
-    def __post_init__(self) -> None:
-        if not self.score_breakdown:
-            bd = {
-                "source_reliability": self.source_reliability_score,
-                "entity_resolution": self.entity_resolution_score,
-                "identity_completeness": self.identity_completeness_score,
-                "cross_source_consistency": self.cross_source_consistency_score,
-                "freshness": self.freshness_score,
-            }
-            object.__setattr__(self, "score_breakdown", bd)
 
 
 class EvidenceQualityScorer:
@@ -71,6 +59,8 @@ class EvidenceQualityScorer:
         self,
         *,
         provider_names: tuple[str, ...],
+        normalized_shipment_id: UUID | None = None,
+        shipment_fingerprint: str = "",
         entity_match_status: str = "needs_review",
         has_house_bol: bool = False,
         has_master_bol: bool = False,
@@ -82,6 +72,7 @@ class EvidenceQualityScorer:
         cross_source_conflicts: tuple[str, ...] = (),
         arrival_date_value: date | None = None,
         now: date | None = None,
+        assessed_at: datetime | None = None,
     ) -> QualityAssessment:
         reasons: list[str] = []
         penalties: list[str] = []
@@ -101,27 +92,35 @@ class EvidenceQualityScorer:
             status_caps.append("entity_needs_review")
 
         # 3. Identity completeness (0-25)
-        ic = _identity_completeness(has_house_bol, has_master_bol, has_importer,
-                                     has_arrival_date, has_carrier_scac, has_containers)
+        ic = _identity_completeness(
+            has_house_bol,
+            has_master_bol,
+            has_importer,
+            has_arrival_date,
+            has_carrier_scac,
+            has_containers,
+        )
         reasons.append(f"identity_completeness={ic:.0f}/25")
         if not has_house_bol and not has_master_bol and not has_importer:
             blockers.append("insufficient_identity")
 
         # 4. Cross-source consistency (0-20)
-        cs = _cross_source_consistency(len(set(provider_names)), cross_source_agreement,
-                                        cross_source_conflicts)
+        cs = _cross_source_consistency(
+            len(set(provider_names)), cross_source_agreement, cross_source_conflicts
+        )
         reasons.append(f"cross_source_consistency={cs:.0f}/20")
         for c in cross_source_conflicts:
             if "importer" in c:
-                penalties.append(f"critical_importer_conflict:-30")
+                penalties.append("critical_importer_conflict:-30")
                 blockers.append("critical_importer_conflict")
             elif "bol" in c:
-                penalties.append(f"bol_identity_conflict:-25")
+                penalties.append("bol_identity_conflict:-25")
 
         # 5. Freshness (0-10)
-        fr = _freshness(arrival_date_value, now)
+        reference_date = now or date.today()
+        fr = _freshness(arrival_date_value, reference_date)
         reasons.append(f"freshness={fr:.0f}/10")
-        if arrival_date_value and now and arrival_date_value > now:
+        if arrival_date_value and arrival_date_value > reference_date:
             blockers.append("impossible_future_date")
 
         penalty_total = 0.0
@@ -143,7 +142,29 @@ class EvidenceQualityScorer:
         blockers_t = tuple(blockers)
         caps_t = tuple(status_caps)
         status = _quality_status(total, blockers_t, caps_t)
+        assessed = assessed_at or datetime.now(UTC)
+        fingerprint = stable_fingerprint(
+            {
+                "assessment_version": ASSESSMENT_VERSION,
+                "shipment_fingerprint": shipment_fingerprint or "__MISSING__",
+                "source_provider_count": len(set(provider_names)),
+                "status": status.value,
+                "scores": {
+                    "total": total,
+                    "source_reliability": sr,
+                    "entity_resolution": er,
+                    "identity_completeness": ic,
+                    "cross_source_consistency": cs,
+                    "freshness": fr,
+                },
+                "hard_blockers": sorted(blockers_t),
+                "penalties": sorted(penalties),
+                "reference_date": reference_date.isoformat(),
+            }
+        )
         return QualityAssessment(
+            normalized_shipment_id=normalized_shipment_id,
+            assessment_version=ASSESSMENT_VERSION,
             total_score=total,
             quality_status=status,
             source_reliability_score=sr,
@@ -154,6 +175,9 @@ class EvidenceQualityScorer:
             penalties=tuple(penalties),
             hard_blockers=blockers_t,
             reasons=tuple(reasons),
+            input_fingerprint=fingerprint,
+            assessed_at=assessed,
+            created_at=assessed,
         )
 
 
@@ -186,8 +210,12 @@ def _entity_resolution_score(status: str) -> float:
 
 
 def _identity_completeness(
-    house: bool, master: bool, importer: bool,
-    arrival: bool, scac: bool, containers: bool,
+    house: bool,
+    master: bool,
+    importer: bool,
+    arrival: bool,
+    scac: bool,
+    containers: bool,
 ) -> float:
     score = 0.0
     if house:
@@ -206,7 +234,9 @@ def _identity_completeness(
 
 
 def _cross_source_consistency(
-    unique_providers: int, agreement: float, conflicts: tuple[str, ...],
+    unique_providers: int,
+    agreement: float,
+    conflicts: tuple[str, ...],
 ) -> float:
     if unique_providers <= 1:
         return 12.0  # neutral — one source isn't "wrong"
@@ -232,7 +262,11 @@ def _freshness(arrival: date | None, now: date | None) -> float:
     return 2.0
 
 
-def _quality_status(total: float, blockers: tuple[str, ...], caps: tuple[str, ...] = ()) -> QualityStatus:
+def _quality_status(
+    total: float, blockers: tuple[str, ...], caps: tuple[str, ...] = ()
+) -> QualityStatus:
+    if "impossible_future_date" in blockers:
+        return QualityStatus.REJECTED
     if blockers:
         return QualityStatus.REVIEW
     if total >= 85 and "entity_needs_review" not in caps:

@@ -1,10 +1,12 @@
 """Import evidence persistence: raw records, shipments, matches, signals, snapshots, conflicts."""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -13,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -50,7 +53,9 @@ class ImportEvidenceRawRecordModel(Base):
     __tablename__ = "import_evidence_raw_records"
     __table_args__ = (
         UniqueConstraint(
-            "provider", "provider_record_id", "raw_payload_hash",
+            "provider",
+            "provider_record_id",
+            "raw_payload_hash",
             name="uq_raw_record_dedup",
         ),
         Index("ix_raw_records_job", "job_id"),
@@ -124,11 +129,155 @@ class NormalizedShipmentModel(Base):
     raw_record_ids_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
 
 
+class ImportEvidenceQualityAssessmentModel(Base):
+    __tablename__ = "import_evidence_quality_assessments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('VERIFIED','USABLE','REVIEW','REJECTED')",
+            name="ck_import_quality_status",
+        ),
+        CheckConstraint("total_score BETWEEN 0 AND 100", name="ck_import_quality_total"),
+        CheckConstraint(
+            "source_reliability_score BETWEEN 0 AND 100 "
+            "AND entity_resolution_score BETWEEN 0 AND 100 "
+            "AND identity_completeness_score BETWEEN 0 AND 100 "
+            "AND cross_source_consistency_score BETWEEN 0 AND 100 "
+            "AND freshness_score BETWEEN 0 AND 100",
+            name="ck_import_quality_dimensions",
+        ),
+        UniqueConstraint(
+            "normalized_shipment_id",
+            "input_fingerprint",
+            name="uq_import_quality_shipment_fingerprint",
+        ),
+        Index(
+            "uq_import_quality_current_shipment",
+            "normalized_shipment_id",
+            unique=True,
+            postgresql_where=text("is_current"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    normalized_shipment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("normalized_shipments.id", ondelete="CASCADE")
+    )
+    assessment_version: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(20))
+    total_score: Mapped[float] = mapped_column(Float)
+    source_reliability_score: Mapped[float] = mapped_column(Float)
+    entity_resolution_score: Mapped[float] = mapped_column(Float)
+    identity_completeness_score: Mapped[float] = mapped_column(Float)
+    cross_source_consistency_score: Mapped[float] = mapped_column(Float)
+    freshness_score: Mapped[float] = mapped_column(Float)
+    penalties_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    hard_blockers_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    reasons_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    input_fingerprint: Mapped[str] = mapped_column(String(64))
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ImporterEvidenceAggregateModel(Base):
+    __tablename__ = "importer_evidence_aggregates"
+    __table_args__ = (
+        CheckConstraint(
+            "aggregate_status IN ('READY','PARTIAL','INSUFFICIENT_DATA','BLOCKED')",
+            name="ck_importer_aggregate_status",
+        ),
+        CheckConstraint("window_days > 0", name="ck_importer_aggregate_window"),
+        CheckConstraint(
+            "previous_window_days > 0",
+            name="ck_importer_aggregate_previous_window",
+        ),
+        CheckConstraint(
+            "NOT promotable OR company_id IS NOT NULL",
+            name="ck_importer_aggregate_promotable_company",
+        ),
+        UniqueConstraint(
+            "importer_identity",
+            "window_days",
+            "as_of_date",
+            "input_fingerprint",
+            name="uq_importer_aggregate_input",
+        ),
+        Index(
+            "uq_importer_aggregate_current",
+            "importer_identity",
+            "window_days",
+            unique=True,
+            postgresql_where=text("is_current"),
+        ),
+        Index("ix_importer_aggregates_company", "company_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    importer_identity: Mapped[str] = mapped_column(String(300))
+    aggregate_version: Mapped[str] = mapped_column(String(64))
+    rule_version: Mapped[str] = mapped_column(String(64))
+    aggregate_status: Mapped[str] = mapped_column(String(30))
+    promotable: Mapped[bool] = mapped_column(Boolean, default=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64))
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    as_of_date: Mapped[date] = mapped_column(Date)
+    window_days: Mapped[int] = mapped_column(Integer)
+    previous_window_days: Mapped[int] = mapped_column(Integer)
+    metrics_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    quality_summary_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    blocking_reasons_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    status_reasons_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    source_provider_count: Mapped[int] = mapped_column(Integer, default=0)
+    trusted_shipment_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ImporterEvidenceAggregateShipmentModel(Base):
+    __tablename__ = "importer_evidence_aggregate_shipments"
+    __table_args__ = (
+        CheckConstraint(
+            "inclusion_status IN ('trusted','review','rejected','undated','skipped')",
+            name="ck_importer_aggregate_inclusion_status",
+        ),
+        CheckConstraint(
+            "source_provider_count >= 0",
+            name="ck_importer_aggregate_source_count",
+        ),
+        UniqueConstraint(
+            "aggregate_id",
+            "shipment_fingerprint",
+            name="uq_importer_aggregate_business_shipment",
+        ),
+    )
+
+    aggregate_id: Mapped[UUID] = mapped_column(
+        ForeignKey("importer_evidence_aggregates.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    normalized_shipment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("normalized_shipments.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    quality_assessment_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("import_evidence_quality_assessments.id", ondelete="SET NULL")
+    )
+    shipment_fingerprint: Mapped[str] = mapped_column(String(64))
+    inclusion_status: Mapped[str] = mapped_column(String(20))
+    inclusion_reason: Mapped[str] = mapped_column(Text)
+    source_provider_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ImporterEntityMatchModel(Base):
     __tablename__ = "importer_entity_matches"
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    shipment_id: Mapped[UUID] = mapped_column(ForeignKey("normalized_shipments.id", ondelete="CASCADE"))
+    shipment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("normalized_shipments.id", ondelete="CASCADE")
+    )
     company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"))
     normalized_name: Mapped[str] = mapped_column(String(300))
     match_method: Mapped[str] = mapped_column(String(20))
@@ -159,9 +308,7 @@ class ImportEvidenceSignalModel(Base):
     promotion_version: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
-    __table_args__ = (
-        Index("ix_evidence_signals_company", "company_id"),
-    )
+    __table_args__ = (Index("ix_evidence_signals_company", "company_id"),)
 
 
 class ImportEvidenceSnapshotModel(Base):
