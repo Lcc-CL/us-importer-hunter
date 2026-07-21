@@ -145,4 +145,12 @@ class ContactFitAssessmentModel(Base):
         JSONB, nullable=False, default=list, server_default="[]"
     )
     taxonomy_version: Mapped[str | None] = mapped_column(String(50))
+    score_breakdown_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    selection_status: Mapped[str | None] = mapped_column(String(30))
+    selection_reasons_json: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    scoring_version: Mapped[str | None] = mapped_column(String(50))
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

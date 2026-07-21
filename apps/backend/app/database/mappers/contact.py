@@ -133,6 +133,10 @@ class FitAssessmentMapper:
             classification_confidence=assessment.classification_confidence,
             classification_reasons_json=list(assessment.classification_reasons),
             taxonomy_version=assessment.taxonomy_version,
+            score_breakdown_json=assessment.score_breakdown_json,
+            selection_status=assessment.selection_status,
+            selection_reasons_json=list(assessment.selection_reasons_json),
+            scoring_version=assessment.scoring_version,
             assessed_at=assessment.assessed_at,
         )
 
@@ -165,6 +169,10 @@ class FitAssessmentMapper:
             classification_confidence=model.classification_confidence,
             classification_reasons=tuple(model.classification_reasons_json),
             taxonomy_version=model.taxonomy_version,
+            score_breakdown_json=model.score_breakdown_json or {},
+            selection_status=model.selection_status,
+            selection_reasons_json=tuple(model.selection_reasons_json),
+            scoring_version=model.scoring_version,
             assessment_fingerprint=model.assessment_fingerprint,
             assessed_at=model.assessed_at,
         )
