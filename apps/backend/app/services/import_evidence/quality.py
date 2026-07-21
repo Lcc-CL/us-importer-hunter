@@ -94,10 +94,11 @@ class EvidenceQualityScorer:
         # 2. Entity resolution (0-25)
         er = _entity_resolution_score(entity_match_status)
         reasons.append(f"entity_resolution={er:.0f}/25")
+        status_caps: list[str] = []
         if entity_match_status in ("separate", "manually_rejected"):
             blockers.append("unresolved_importer")
         if entity_match_status == "needs_review":
-            blockers.append("entity_needs_review")
+            status_caps.append("entity_needs_review")
 
         # 3. Identity completeness (0-25)
         ic = _identity_completeness(has_house_bol, has_master_bol, has_importer,
@@ -140,7 +141,8 @@ class EvidenceQualityScorer:
 
         total = max(0.0, min(sr + er + ic + cs + fr + penalty_total, 100.0))
         blockers_t = tuple(blockers)
-        status = _quality_status(total, blockers_t)
+        caps_t = tuple(status_caps)
+        status = _quality_status(total, blockers_t, caps_t)
         return QualityAssessment(
             total_score=total,
             quality_status=status,
@@ -230,13 +232,15 @@ def _freshness(arrival: date | None, now: date | None) -> float:
     return 2.0
 
 
-def _quality_status(total: float, blockers: tuple[str, ...]) -> QualityStatus:
+def _quality_status(total: float, blockers: tuple[str, ...], caps: tuple[str, ...] = ()) -> QualityStatus:
     if blockers:
         return QualityStatus.REVIEW
-    if total >= 85:
+    if total >= 85 and "entity_needs_review" not in caps:
         return QualityStatus.VERIFIED
-    if total >= 70:
+    if total >= 70 and "entity_needs_review" not in caps:
         return QualityStatus.USABLE
+    if total >= 70:
+        return QualityStatus.REVIEW  # capped by entity_needs_review
     if total >= 45:
         return QualityStatus.REVIEW
     return QualityStatus.REJECTED

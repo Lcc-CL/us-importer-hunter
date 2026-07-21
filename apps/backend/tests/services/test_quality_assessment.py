@@ -127,9 +127,11 @@ class TestIEntityNeedsReview:
             provider_names=("fake", "csv"), entity_match_status="needs_review",
             has_house_bol=True, has_importer=True, has_arrival_date=True,
             has_carrier_scac=True, cross_source_agreement=1.0,
+            arrival_date_value=date(2026, 6, 15), now=date(2026, 7, 1),
         )
+        # entity_needs_review is a status cap (max REVIEW) not a hard blocker
         assert a.quality_status == QualityStatus.REVIEW
-        assert "entity_needs_review" in a.hard_blockers
+        assert "entity_needs_review" not in a.hard_blockers
 
 
 class TestJOldData:
