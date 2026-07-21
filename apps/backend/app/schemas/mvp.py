@@ -432,11 +432,40 @@ class DecisionMakerRankingResponse(BaseModel):
     #: department. Empty for rows written before the taxonomy existed.
     roles: list[str] = Field(default_factory=list)
     taxonomy_version: str | None = None
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+    selection_status: str | None = None
+    scoring_version: str | None = None
+    selection_reasons: list[str] = Field(default_factory=list)
+
+
+class CandidateScoreResponse(BaseModel):
+    contact_id: UUID
+    original_title: str | None = None
+    normalized_title: str | None = None
+    roles: list[str] = Field(default_factory=list)
+    overall_score: float = 0.0
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+    classification_confidence: float = 0.0
+    selection_status: str | None = None
+    selection_reasons: list[str] = Field(default_factory=list)
+    rejection_reasons: list[str] = Field(default_factory=list)
+
+
+class DecisionMakerSelectionResponse(BaseModel):
+    status: str
+    review_required: bool = False
+    review_reasons: list[str] = Field(default_factory=list)
+    primary_contact: CandidateScoreResponse | None = None
+    alternative_contacts: list[CandidateScoreResponse] = Field(default_factory=list)
+    supporting_contacts: list[CandidateScoreResponse] = Field(default_factory=list)
+    rejected_contacts: list[CandidateScoreResponse] = Field(default_factory=list)
+    scoring_version: str | None = None
 
 
 class DecisionMakerDetailResponse(BaseModel):
     selected_contact_id: UUID | None
     rankings: list[DecisionMakerRankingResponse]
+    selection: DecisionMakerSelectionResponse | None = None
 
 
 class EmailDraftDetailResponse(BaseModel):
@@ -564,9 +593,14 @@ class ProspectDetailResponse(BaseModel):
                         reasons=list(item.reasons),
                         roles=list(item.roles),
                         taxonomy_version=item.taxonomy_version,
+                        score_breakdown=item.score_breakdown_json,
+                        selection_status=item.selection_status,
+                        scoring_version=item.scoring_version,
+                        selection_reasons=list(item.selection_reasons_json),
                     )
                     for item in result.decision_maker_rankings
                 ],
+                selection=_build_selection_response(result.decision_maker_rankings),
             ),
             latest_email_draft=(
                 EmailDraftDetailResponse(
@@ -701,6 +735,51 @@ def _explain(assessment: OpportunityAssessment) -> QualificationExplanationRespo
         unreachable_weight=round(unreachable, 2),
         hard_gate_hits=[str(hit) for hit in hard_gates],
         next_action=next_action,
+    )
+
+
+def _build_selection_response(
+    rankings: "Sequence[DecisionMakerFitAssessment]",
+) -> DecisionMakerSelectionResponse | None:
+    if not rankings:
+        return None
+    ranked = sorted(
+        rankings,
+        key=lambda a: (-a.total_score, -a.confidence.value, str(a.contact_id)),
+    )
+    candidates: list[CandidateScoreResponse] = []
+    for item in ranked:
+        candidates.append(
+            CandidateScoreResponse(
+                contact_id=item.contact_id,
+                original_title=item.normalized_title,
+                normalized_title=item.normalized_title,
+                roles=list(item.roles),
+                overall_score=item.total_score,
+                score_breakdown=item.score_breakdown_json,
+                classification_confidence=item.classification_confidence or 0.0,
+                selection_status=item.selection_status,
+                selection_reasons=list(item.selection_reasons_json),
+                rejection_reasons=[],
+            )
+        )
+    return DecisionMakerSelectionResponse(
+        status="selected" if any(
+            c.selection_status == "selected" for c in candidates
+        ) else "alternatives_available",
+        review_required=False,
+        review_reasons=[],
+        primary_contact=next(
+            (c for c in candidates if c.selection_status == "selected"), None
+        ),
+        alternative_contacts=[
+            c for c in candidates if c.selection_status == "alternatives_available"
+        ][:3],
+        supporting_contacts=[],
+        rejected_contacts=[
+            c for c in candidates if c.selection_status == "no_relevant_contact"
+        ],
+        scoring_version=ranked[0].scoring_version if ranked else None,
     )
 
 
