@@ -69,7 +69,7 @@ class TestFingerprint:
     def test_fingerprint_includes_version(self):
         s = NormalizedShipment(house_bol="HBOL1")
         assert len(s.shipment_fingerprint) == 64
-        assert s.fingerprint_version == "shipment-fp-v1"
+        assert s.fingerprint_version == "shipment-fp-v2"
 
     def test_null_fields_use_placeholder(self):
         s1 = NormalizedShipment(provider="p")
@@ -179,12 +179,12 @@ class TestFixtureMUpdatedPayload:
 
 
 class TestFixtureNDifferentProviderSameHouseBOL:
-    """N: Different providers, same House BOL → different fingerprints."""
+    """N: Different providers, same House BOL → same business fingerprint (v2)."""
 
-    def test_different_provider_different_fingerprint(self):
-        s1 = NormalizedShipment(house_bol="HBOL-N", provider="fake")
-        s2 = NormalizedShipment(house_bol="HBOL-N", provider="importyeti")
-        assert s1.shipment_fingerprint != s2.shipment_fingerprint
+    def test_different_provider_same_fingerprint(self):
+        s1 = NormalizedShipment(house_bol="HBOL-N", provider="fake", importer_name="Acme")
+        s2 = NormalizedShipment(house_bol="HBOL-N", provider="importyeti", importer_name="Acme")
+        assert s1.shipment_fingerprint == s2.shipment_fingerprint
 
 
 class TestFixtureOContainerVariants:
@@ -206,12 +206,17 @@ class TestFixturePMasterOnly:
 
 
 class TestFixtureQDifferentImporterSameBOL:
-    """Q: Same BOL, different importers → different shipments."""
+    """Q: Same BOL, different importers → different shipments (importer is identity)."""
 
     def test_different_importer_different_fingerprint(self):
         s1 = NormalizedShipment(house_bol="HBOL-Q", provider="fake", importer_name="Acme Inc.")
         s2 = NormalizedShipment(house_bol="HBOL-Q", provider="fake", importer_name="Beta Corp.")
         assert s1.shipment_fingerprint != s2.shipment_fingerprint
+
+    def test_name_punctuation_difference_same_fingerprint(self):
+        s1 = NormalizedShipment(house_bol="Q1", importer_name="ACME HARDWARE INC.")
+        s2 = NormalizedShipment(house_bol="Q1", importer_name="ACME HARDWARE, INC")
+        assert s1.shipment_fingerprint == s2.shipment_fingerprint
 
 
 class TestFixtureRAllFieldsMissing:

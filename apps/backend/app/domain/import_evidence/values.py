@@ -127,7 +127,7 @@ class NormalizedShipment:
                 container_numbers=self.container_numbers,
             )
             object.__setattr__(self, "shipment_fingerprint", fp)
-            object.__setattr__(self, "fingerprint_version", "shipment-fp-v1")
+            object.__setattr__(self, "fingerprint_version", "shipment-fp-v2")
 
 
 @dataclass(frozen=True)
@@ -181,7 +181,13 @@ def _compute_fingerprint(
     origin_port: str = "", destination_port: str = "",
     container_numbers: tuple[str, ...] = (),
 ) -> str:
-    """Versioned, field-labeled, NULL-safe fingerprint."""
+    """Versioned, field-labeled, NULL-safe, provider-independent fingerprint.
+
+    Containers are NOT in the fingerprint — they are aggregate attributes
+    that may differ across providers for the same business shipment.
+    Importer name is stripped of punctuation before hashing so "ACME INC."
+    and "ACME, INC" produce the same identity.
+    """
     import json
     _null = "__NULL__"
 
@@ -192,22 +198,24 @@ def _compute_fingerprint(
             return "|".join(sorted(str(x) for x in v))
         return str(v)
 
+    def _norm_name(raw: str) -> str:
+        n = raw.lower().strip()
+        n = re.sub(r"[.,;:]+", "", n)
+        n = re.sub(r"\s+", " ", n).strip()
+        return n
+
     fields = {
-        "v": "shipment-fp-v1",
-        "p": _s(provider),
+        "v": "shipment-fp-v2",
         "hb": _s(_normalize_bol(house_bol)),
         "mb": _s(_normalize_bol(master_bol)),
         "sc": _s(carrier_scac.upper().strip()[:4]),
         "ad": _s(arrival_date),
         "vs": _s(vessel.upper().strip()),
         "vy": _s(voyage.upper().strip()),
-        "ni": _s(normalized_importer.lower().strip()),
-        "ns": _s(normalized_shipper.lower().strip()),
+        "ni": _s(_norm_name(normalized_importer)),
+        "ns": _s(_norm_name(normalized_shipper)),
         "op": _s(origin_port.upper().strip()),
         "dp": _s(destination_port.upper().strip()),
-        "cn": _s(tuple(sorted(
-            _normalize_cont(c) for c in container_numbers if c
-        ))),
     }
     canonical = json.dumps(fields, sort_keys=True, ensure_ascii=True)
     return hashlib.sha256(canonical.encode()).hexdigest()
