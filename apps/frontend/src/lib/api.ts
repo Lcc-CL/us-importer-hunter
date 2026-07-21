@@ -187,6 +187,34 @@ export interface DecisionMakerRankingResponse {
   reasons: string[];
   roles: string[];
   taxonomy_version: string | null;
+  score_breakdown: Record<string, number>;
+  selection_status: string | null;
+  scoring_version: string | null;
+  selection_reasons: string[];
+}
+
+export interface CandidateScoreResponse {
+  contact_id: string;
+  original_title: string | null;
+  normalized_title: string | null;
+  roles: string[];
+  overall_score: number;
+  score_breakdown: Record<string, number>;
+  classification_confidence: number;
+  selection_status: string | null;
+  selection_reasons: string[];
+  rejection_reasons: string[];
+}
+
+export interface DecisionMakerSelectionResponse {
+  status: string;
+  review_required: boolean;
+  review_reasons: string[];
+  primary_contact: CandidateScoreResponse | null;
+  alternative_contacts: CandidateScoreResponse[];
+  supporting_contacts: CandidateScoreResponse[];
+  rejected_contacts: CandidateScoreResponse[];
+  scoring_version: string | null;
 }
 
 export interface EmailDraftDetailResponse {
@@ -223,6 +251,7 @@ export interface ProspectDetailResponse {
   decision_maker: {
     selected_contact_id: string | null;
     rankings: DecisionMakerRankingResponse[];
+    selection: DecisionMakerSelectionResponse | null;
   };
   latest_email_draft: EmailDraftDetailResponse | null;
   draft_history: EmailDraftSummaryResponse[];
