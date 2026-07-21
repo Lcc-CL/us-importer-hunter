@@ -310,6 +310,21 @@ export function AnalysisResult({
                         context?.contact?.title ??
                         t("result.noTitle")}
                     </p>
+                    {selectedRanking?.roles?.length ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs font-semibold text-slate-500">
+                          {t("result.roles")}
+                        </span>
+                        {selectedRanking.roles.map((role) => (
+                          <span
+                            key={`role-${role}`}
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
+                          >
+                            {role.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
                     {label(

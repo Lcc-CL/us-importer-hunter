@@ -99,6 +99,7 @@ const zh = {
   "result.contactStatus": "联系人状态",
   "result.channel": "推荐渠道",
   "result.dmConfidence": "选择置信度",
+  "result.roles": "识别职责",
   "result.selectedContact": "已选联系人：",
 
   "opp.kicker": "机会",
@@ -332,6 +333,7 @@ const en: Record<MessageKey, string> = {
   "result.contactStatus": "Contact status",
   "result.channel": "Recommended channel",
   "result.dmConfidence": "Selection confidence",
+  "result.roles": "Identified roles",
   "result.selectedContact": "Selected contact: ",
 
   "opp.kicker": "Opportunity",

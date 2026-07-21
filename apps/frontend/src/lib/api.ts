@@ -185,6 +185,8 @@ export interface DecisionMakerRankingResponse {
   confidence: number;
   recommended_channel: string | null;
   reasons: string[];
+  roles: string[];
+  taxonomy_version: string | null;
 }
 
 export interface EmailDraftDetailResponse {
