@@ -1,4 +1,4 @@
-"""Import evidence persistence: append-only raw records, normalized shipments, entity matches, signals, conflicts."""
+"""Import evidence persistence: raw records, shipments, matches, signals, snapshots, conflicts."""
 
 from datetime import datetime
 from uuid import UUID
@@ -149,6 +149,28 @@ class ImportEvidenceSignalModel(Base):
 
     __table_args__ = (
         Index("ix_evidence_signals_company", "company_id"),
+    )
+
+
+class ImportEvidenceSnapshotModel(Base):
+    __tablename__ = "import_evidence_snapshots"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    job_id: Mapped[UUID] = mapped_column(ForeignKey("import_evidence_jobs.id", ondelete="CASCADE"))
+    company_id: Mapped[UUID] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    provider: Mapped[str] = mapped_column(String(50))
+    snapshot_version: Mapped[str] = mapped_column(String(10))
+    raw_count: Mapped[int] = mapped_column(Integer, default=0)
+    normalized_count: Mapped[int] = mapped_column(Integer, default=0)
+    deduped_count: Mapped[int] = mapped_column(Integer, default=0)
+    matched_count: Mapped[int] = mapped_column(Integer, default=0)
+    promoted_count: Mapped[int] = mapped_column(Integer, default=0)
+    data_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("ix_evidence_snapshots_company", "company_id"),
+        Index("ix_evidence_snapshots_job", "job_id"),
     )
 
 

@@ -12,6 +12,15 @@ from app.database.models.company import (
     CompanySourceModel,
 )
 from app.database.models.contact import ContactModel
+from app.database.models.import_evidence import (
+    ImporterEntityMatchModel,
+    ImportEvidenceConflictModel,
+    ImportEvidenceJobModel,
+    ImportEvidenceRawRecordModel,
+    ImportEvidenceSignalModel,
+    ImportEvidenceSnapshotModel,
+    NormalizedShipmentModel,
+)
 from app.database.models.opportunity import (
     OpportunityAssessmentModel,
     OpportunityEvidenceModel,
@@ -32,6 +41,12 @@ __all__ = [
     "CompanySignalModel",
     "CompanySourceModel",
     "ContactModel",
+    "ImportEvidenceConflictModel",
+    "ImportEvidenceJobModel",
+    "ImportEvidenceRawRecordModel",
+    "ImportEvidenceSignalModel",
+    "ImportEvidenceSnapshotModel",
+    "ImporterEntityMatchModel",
     "EmailDraftModel",
     "OpportunityAssessmentModel",
     "OpportunityEvidenceModel",
