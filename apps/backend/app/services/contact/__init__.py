@@ -1,8 +1,6 @@
 """Contact services: normalization, deduplication, decision-maker policy."""
-
 from app.services.contact.decision_maker import (
     POLICY_VERSION,
-    DecisionMakerWeights,
     DeterministicDecisionMakerSelectionService,
 )
 from app.services.contact.deduplicator import RepositoryContactDeduplicator
@@ -13,6 +11,15 @@ from app.services.contact.role_matcher import (
     RoleMatcher,
     classify_title,
 )
+from app.services.contact.scorer import (
+    POLICY_VERSION_V2,
+    CandidateScore,
+    DecisionMakerSelectionResult,
+    RejectionReason,
+    SelectionStatus,
+    SixFactorScorer,
+)
+from app.services.contact.selector import select
 from app.services.contact.title_normalizer import NormalizedTitle, normalize_title
 
 __all__ = [
@@ -23,9 +30,15 @@ __all__ = [
     "classify_title",
     "normalize_title",
     "POLICY_VERSION",
+    "POLICY_VERSION_V2",
+    "CandidateScore",
     "ContactNormalizer",
-    "DecisionMakerWeights",
+    "DecisionMakerSelectionResult",
     "DeterministicDecisionMakerSelectionService",
     "NormalizedContactCandidate",
+    "RejectionReason",
     "RepositoryContactDeduplicator",
+    "SelectionStatus",
+    "SixFactorScorer",
+    "select",
 ]
