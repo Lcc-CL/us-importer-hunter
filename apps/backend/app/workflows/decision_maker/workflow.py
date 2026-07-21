@@ -27,6 +27,9 @@ from app.domain.events import DecisionMakerSelected
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import UnitOfWork
 from app.domain.services import DecisionMakerSelectionService
+from app.services.contact.scorer import DecisionMakerSelectionResult
+from app.services.contact.selector import select
+from app.services.contact.size_provider import DeterministicSizeProvider
 
 
 class NoSelectionReason(StrEnum):
@@ -68,6 +71,7 @@ class DecisionMakerSelectionOutcome:
     no_selection_reason: NoSelectionReason | None = None
     policy_version: str = ""
     event: DecisionMakerSelected | None = None
+    selection_result: DecisionMakerSelectionResult | None = None
 
 
 class DecisionMakerSelectionWorkflow:
@@ -91,6 +95,15 @@ class DecisionMakerSelectionWorkflow:
                 for contact in await uow.contacts.list_for_company(company_id)
                 if contact.status not in (ContactStatus.INVALID, ContactStatus.INACTIVE)
             ]
+
+            size_provider = DeterministicSizeProvider()
+            try:
+                company = await uow.companies.get_by_id(company_id)
+                if company is not None:
+                    size_provider.populate(company_id, company.signals)
+            except AttributeError:
+                pass  # test UOW without companies repository
+
             if not contacts:
                 return DecisionMakerSelectionOutcome(
                     action=DecisionMakerSelectionAction.RESEARCH_MORE,
@@ -101,7 +114,10 @@ class DecisionMakerSelectionWorkflow:
                     policy_version=policy,
                 )
 
-            ranked = await self._selection.rank(contacts)
+            ranked = await self._selection.rank(contacts, size_provider=size_provider)
+            candidates = self._selection.score_all(contacts)
+            selection_result = select(candidates, thresholds=self._thresholds)
+
             notes: list[str] = []
             for assessment in ranked:
                 try:
@@ -117,33 +133,47 @@ class DecisionMakerSelectionWorkflow:
                     "concurrent duplicate assessment rejected — reused current ranking"
                 )
 
-            best = ranked[0]
-            if (
-                best.total_score >= self._thresholds.select_score
-                and best.confidence.value >= self._thresholds.min_confidence
-            ):
+            if selection_result.review_required:
+                return DecisionMakerSelectionOutcome(
+                    action=DecisionMakerSelectionAction.REVIEW,
+                    company_id=company_id,
+                    opportunity_id=opportunity_id,
+                    ranked_candidates=ranked,
+                    reasons=(*selection_result.review_reasons, *notes),
+                    no_selection_reason=NoSelectionReason.BELOW_SELECTION_BAR,
+                    policy_version=policy,
+                    selection_result=selection_result,
+                )
+
+            if selection_result.primary_contact is not None:
+                primary = selection_result.primary_contact
                 return DecisionMakerSelectionOutcome(
                     action=DecisionMakerSelectionAction.SELECTED,
                     company_id=company_id,
                     opportunity_id=opportunity_id,
-                    selected_contact_id=best.contact_id,
+                    selected_contact_id=primary.contact_id,
                     ranked_candidates=ranked,
                     recommended_channel=(
-                        best.recommended_channel.value if best.recommended_channel else None
+                        primary.recommended_channel.value
+                        if primary.recommended_channel else None
                     ),
-                    confidence=best.confidence.value,
-                    reasons=(*best.reasons, *notes),
+                    confidence=primary.role_classification_confidence,
+                    reasons=(*notes,),
                     policy_version=policy,
                     event=DecisionMakerSelected(
                         opportunity_id=opportunity_id,
                         company_id=company_id,
-                        contact_id=best.contact_id,
+                        contact_id=primary.contact_id,
                         recommended_channel=(
-                            best.recommended_channel.value if best.recommended_channel else None
+                            primary.recommended_channel.value
+                            if primary.recommended_channel else None
                         ),
                         policy_version=policy,
                     ),
+                    selection_result=selection_result,
                 )
+
+            best = ranked[0]
             if best.total_score >= self._thresholds.review_score:
                 return DecisionMakerSelectionOutcome(
                     action=DecisionMakerSelectionAction.REVIEW,
@@ -157,6 +187,7 @@ class DecisionMakerSelectionWorkflow:
                     ),
                     no_selection_reason=_no_selection_reason(best),
                     policy_version=policy,
+                    selection_result=selection_result,
                 )
             return DecisionMakerSelectionOutcome(
                 action=DecisionMakerSelectionAction.RESEARCH_MORE,
@@ -171,6 +202,7 @@ class DecisionMakerSelectionWorkflow:
                 ),
                 no_selection_reason=_no_selection_reason(best),
                 policy_version=policy,
+                selection_result=selection_result,
             )
 
 

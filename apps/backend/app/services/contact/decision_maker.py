@@ -22,6 +22,7 @@ from app.domain.values import Confidence, Evidence
 from app.services.contact.scorer import (
     POLICY_VERSION_V2,
     CandidateScore,
+    ContactSizeProvider,
     SixFactorScorer,
 )
 
@@ -38,8 +39,8 @@ class DeterministicDecisionMakerSelectionService:
     selector module.
     """
 
-    def __init__(self) -> None:
-        self._scorer = SixFactorScorer()
+    def __init__(self, size_provider: ContactSizeProvider | None = None) -> None:
+        self._scorer = SixFactorScorer(size_provider)
 
     @property
     def policy_version(self) -> str:
@@ -49,10 +50,19 @@ class DeterministicDecisionMakerSelectionService:
         """Score every contact. Callers own the ranking and selection."""
         return tuple(self._scorer.score(contact) for contact in contacts)
 
-    async def rank(self, contacts: Sequence[Contact]) -> tuple[DecisionMakerFitAssessment, ...]:
-        """Score, rank, and return legacy-compatible fit assessments."""
+    async def rank(
+        self,
+        contacts: Sequence[Contact],
+        **kwargs: object,
+    ) -> tuple[DecisionMakerFitAssessment, ...]:
+        """Score, rank, and return legacy-compatible fit assessments.
+
+        Accepts size_provider kwarg for company_size_fit scoring.
+        """
+        size_provider = kwargs.get("size_provider")
+        scorer = SixFactorScorer(size_provider) if size_provider else self._scorer  # type: ignore[arg-type]
         contact_by_id = {contact.id: contact for contact in contacts}
-        candidates = self.score_all(contacts)
+        candidates = tuple(scorer.score(contact) for contact in contacts)
         assessments = [
             _to_assessment(candidate, contact_by_id[candidate.contact_id], self.policy_version)
             for candidate in candidates
