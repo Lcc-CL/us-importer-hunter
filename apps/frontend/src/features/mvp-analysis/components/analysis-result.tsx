@@ -16,8 +16,10 @@ import type {
   ProspectDetailResponse,
   CompanySourceSummary,
 } from "@/lib/api";
+import { confirmDecisionMaker } from "@/lib/api";
 import { useI18n, type MessageKey } from "@/lib/i18n";
 import type { MvpPageState, SubmittedProspectContext } from "../types";
+import { CandidateCards } from "./candidate-cards";
 import { EmailDraftCard } from "./email-draft-card";
 import { OpportunityCard } from "./opportunity-card";
 import { QualificationExplanationCard } from "./qualification-explanation";
@@ -117,6 +119,15 @@ export function AnalysisResult({
       ? analysis.decision_maker.reasons
       : (selectedRanking?.reasons ?? []);
   const isRefreshing = pageState === "refreshing";
+
+  const handleConfirmContact = async (contactId: string) => {
+    if (!companyId) return;
+    await confirmDecisionMaker(companyId, {
+      contact_id: contactId,
+      regenerate_draft: false,
+    });
+    await onRefresh();
+  };
   const isApproving = pageState === "approving";
   const errorMessage = error
     ? TRANSLATED_ERROR_CODES.includes(error.code)
@@ -390,6 +401,12 @@ export function AnalysisResult({
               </div>
             </div>
           </section>
+
+          <CandidateCards
+            selection={detail?.decision_maker.selection ?? null}
+            selectedContactId={selectedContactId}
+            onConfirm={handleConfirmContact}
+          />
 
           <EmailDraftCard
             analysis={analysis?.email_draft ?? null}

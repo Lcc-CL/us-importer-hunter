@@ -381,6 +381,26 @@ export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return requestJson<RuntimeStatusResponse>("/health/runtime");
 }
 
+export interface DecisionMakerConfirmRequest {
+  contact_id: string;
+  reviewer_name?: string | null;
+  reason?: string | null;
+  regenerate_draft?: boolean;
+}
+
+export async function confirmDecisionMaker(
+  companyId: string,
+  confirm: DecisionMakerConfirmRequest,
+): Promise<ProspectDetailResponse> {
+  return requestJson<ProspectDetailResponse>(
+    `/mvp/prospects/${encodeURIComponent(companyId)}/decision-maker/confirm`,
+    {
+      method: "POST",
+      body: JSON.stringify(confirm),
+    },
+  );
+}
+
 export function analyzeProspect(
   request: ProspectAnalysisRequest,
 ): Promise<ProspectAnalysisResponse> {
