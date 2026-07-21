@@ -427,6 +427,11 @@ class DecisionMakerRankingResponse(BaseModel):
     confidence: float
     recommended_channel: str | None
     reasons: list[str]
+    #: Full responsibility set from the decision-role taxonomy. Displayed so a
+    #: "Sales and Purchasing" contact shows both halves instead of one collapsed
+    #: department. Empty for rows written before the taxonomy existed.
+    roles: list[str] = Field(default_factory=list)
+    taxonomy_version: str | None = None
 
 
 class DecisionMakerDetailResponse(BaseModel):
@@ -557,6 +562,8 @@ class ProspectDetailResponse(BaseModel):
                             item.recommended_channel.value if item.recommended_channel else None
                         ),
                         reasons=list(item.reasons),
+                        roles=list(item.roles),
+                        taxonomy_version=item.taxonomy_version,
                     )
                     for item in result.decision_maker_rankings
                 ],
