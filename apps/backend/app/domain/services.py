@@ -10,7 +10,7 @@ import json
 from collections.abc import Sequence  # noqa: TC003 — used in protocol signatures
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
 from app.domain.clock import utcnow
@@ -202,6 +202,11 @@ class DecisionMakerSelectionService(Protocol):
     @property
     def policy_version(self) -> str: ...
 
-    async def rank(self, contacts: "Sequence[Contact]") -> "tuple[DecisionMakerFitAssessment, ...]":
+    async def rank(
+        self, contacts: "Sequence[Contact]", **kwargs: Any
+    ) -> "tuple[DecisionMakerFitAssessment, ...]":
         """Assessments sorted best-first; ties broken deterministically."""
+
+    def score_all(self, contacts: "Sequence[Contact]") -> "tuple[Any, ...]":
+        """Score every contact without ranking. Returns CandidateScore-equivalent objects."""
         ...

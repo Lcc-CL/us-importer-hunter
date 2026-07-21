@@ -59,6 +59,7 @@ export function ProviderBadge() {
           ? "border-teal-200 bg-teal-50 text-teal-800"
           : "border-slate-200 bg-slate-50 text-slate-600"
       }`}
+      data-testid="provider-badge"
     >
       {isLive ? (
         <Sparkles className="size-4 text-teal-700" />

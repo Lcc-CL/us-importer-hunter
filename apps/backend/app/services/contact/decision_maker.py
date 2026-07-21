@@ -1,165 +1,151 @@
-"""Deterministic decision-maker selection — mvp-decision-maker-policy-v1.
+"""Deterministic decision-maker selection — mvp-decision-maker-policy-v2.
 
-⚠ Placeholder policy, not validated against real reply data. All weights
-live here; unknown data lowers confidence, never fitness. Contacts with
-no channels are NOT invalid — they just rank lower on reachability.
+Six-factor scoring (role_relevance, seniority, company_size_fit,
+import_logistics_fit, reachability, source_confidence) replaces the
+legacy single-department + seniority-bonus. The breakdown is recorded
+with each assessment so a reviewer can see why one person ranked above
+another.
 """
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from types import MappingProxyType
+from collections.abc import Sequence
 
 from app.domain.contact import (
     Contact,
-    ContactChannelType,
-    ContactVerificationStatus,
     DecisionMakerFitAssessment,
     Department,
-    SeniorityLevel,
+)
+from app.domain.contact.roles import (
+    DecisionRole,
+    legacy_department,
 )
 from app.domain.values import Confidence, Evidence
-
-POLICY_VERSION = "mvp-decision-maker-policy-v1"
-
-_DEPARTMENT_FIT: Mapping[Department, float] = MappingProxyType(
-    {
-        Department.SUPPLY_CHAIN: 95.0,
-        Department.LOGISTICS: 95.0,
-        Department.PROCUREMENT: 90.0,
-        Department.OPERATIONS: 65.0,
-        Department.EXECUTIVE: 55.0,  # fallback when no specialist exists — never assumed from scale
-        Department.FINANCE: 35.0,
-        Department.OTHER: 30.0,
-        Department.UNKNOWN: 30.0,  # unknown is not negative — mid-low with low confidence
-        Department.SALES_MARKETING: 15.0,
-        Department.HR: 10.0,
-    }
+from app.services.contact.scorer import (
+    POLICY_VERSION_V2,
+    CandidateScore,
+    ContactSizeProvider,
+    SixFactorScorer,
 )
 
-_SENIORITY_BONUS: Mapping[SeniorityLevel, float] = MappingProxyType(
-    {
-        SeniorityLevel.C_LEVEL: 5.0,
-        SeniorityLevel.VP: 10.0,
-        SeniorityLevel.DIRECTOR: 10.0,
-        SeniorityLevel.HEAD: 8.0,
-        SeniorityLevel.MANAGER: 5.0,
-        SeniorityLevel.SPECIALIST: 0.0,
-        SeniorityLevel.UNKNOWN: 0.0,
-    }
-)
-
-
-@dataclass(frozen=True)
-class DecisionMakerWeights:
-    """Every reachability/blend knob in one place."""
-
-    verified_email: float = 60.0
-    unverified_email: float = 25.0
-    linkedin: float = 15.0
-    phone: float = 10.0
-    role_share: float = 0.6  # total = role_share × role + (1-role_share) × reachability
-    base_confidence: float = 0.35
-    title_confidence: float = 0.25
-    channel_confidence: float = 0.15
-    source_confidence: float = 0.15
-    departments: Mapping[Department, float] = field(default_factory=lambda: _DEPARTMENT_FIT)
-    seniority_bonus: Mapping[SeniorityLevel, float] = field(
-        default_factory=lambda: _SENIORITY_BONUS
-    )
+POLICY_VERSION = POLICY_VERSION_V2  # backward-compatible alias
 
 
 class DeterministicDecisionMakerSelectionService:
-    def __init__(self, weights: DecisionMakerWeights | None = None) -> None:
-        self._w = weights or DecisionMakerWeights()
+    """Scores and ranks contacts across six independent dimensions.
+
+    The `rank` method returns fit assessments for persistence and
+    compatibility. Callers that need the full selection picture
+    (primary / alternatives / supporting / rejected) should use the
+    `score_all` method and pass the results to `select()` from the
+    selector module.
+    """
+
+    def __init__(self, size_provider: ContactSizeProvider | None = None) -> None:
+        self._scorer = SixFactorScorer(size_provider)
 
     @property
     def policy_version(self) -> str:
-        return POLICY_VERSION
+        return POLICY_VERSION_V2
 
-    async def rank(self, contacts: Sequence[Contact]) -> tuple[DecisionMakerFitAssessment, ...]:
-        assessments = [self._assess(contact) for contact in contacts]
+    def score_all(self, contacts: Sequence[Contact]) -> tuple[CandidateScore, ...]:
+        """Score every contact. Callers own the ranking and selection."""
+        return tuple(self._scorer.score(contact) for contact in contacts)
+
+    async def rank(
+        self,
+        contacts: Sequence[Contact],
+        **kwargs: object,
+    ) -> tuple[DecisionMakerFitAssessment, ...]:
+        """Score, rank, and return legacy-compatible fit assessments.
+
+        Accepts size_provider kwarg for company_size_fit scoring.
+        """
+        size_provider = kwargs.get("size_provider")
+        scorer = SixFactorScorer(size_provider) if size_provider else self._scorer  # type: ignore[arg-type]
+        contact_by_id = {contact.id: contact for contact in contacts}
+        candidates = tuple(scorer.score(contact) for contact in contacts)
+        assessments = [
+            _to_assessment(candidate, contact_by_id[candidate.contact_id], self.policy_version)
+            for candidate in candidates
+        ]
         assessments.sort(key=lambda a: (-a.total_score, -a.confidence.value, str(a.contact_id)))
         return tuple(assessments)
 
-    def _assess(self, contact: Contact) -> DecisionMakerFitAssessment:
-        w = self._w
-        reasons: list[str] = []
 
-        role_fit = w.departments[contact.department]
-        reasons.append(f"department {contact.department.value}: role fit {role_fit:g}")
-        bonus = w.seniority_bonus[contact.seniority]
-        role_fit = min(role_fit + bonus, 100.0)
-        if bonus:
-            reasons.append(f"seniority {contact.seniority.value}: +{bonus:g}")
-        if contact.department is Department.UNKNOWN:
-            reasons.append("department unknown — needs research, not a write-off")
+def _to_assessment(
+    candidate: CandidateScore, contact: Contact, policy_version: str
+) -> DecisionMakerFitAssessment:
+    roles_values = tuple(r.value for r in candidate.roles)
+    department = _department_from_roles(candidate.roles)
+    reasons = _build_reasons(candidate)
 
-        reachability, channel = self._reachability(contact, reasons)
-        total = min(w.role_share * role_fit + (1 - w.role_share) * reachability, 100.0)
+    reasons_for_fingerprint: list[str] = []
+    for r in candidate.selection_reasons:
+        reasons_for_fingerprint.append(r)
+    for r in candidate.rejection_reasons:
+        reasons_for_fingerprint.append(r.value)
 
-        confidence_value = w.base_confidence
-        if contact.title is not None:
-            confidence_value += w.title_confidence
-        if contact.usable_channels:
-            confidence_value += w.channel_confidence
-        if contact.sources:
-            confidence_value += w.source_confidence
-        else:
-            reasons.append("no source references — confidence floor applied")
+    evidence = (
+        Evidence(
+            claim=(
+                f"{contact.name.value} scored as "
+                f"{candidate.overall_score:.0f}/100 decision maker"
+            ),
+            sources=contact.sources,
+        ),
+    ) if contact.sources else ()
+    confidence_value = round(
+        0.45 + 0.15 * min(len([r for r in candidate.roles if r != DecisionRole.UNKNOWN]), 3)
+        + (0.1 if candidate.role_classification_confidence >= 0.6 else 0.0),
+        3,
+    )
+    confidence_value = min(confidence_value, 0.9)
 
-        evidence = tuple(
-            Evidence(
-                claim=(
-                    f"{contact.name.value} recorded as "
-                    f"{contact.title.raw if contact.title else 'unknown role'}"
-                ),
-                sources=contact.sources,
-            )
-            for _ in (0,)
-            if contact.sources
-        )
+    return DecisionMakerFitAssessment(
+        contact_id=candidate.contact_id,
+        company_id=contact.company_id,
+        role_fit_score=candidate.role_relevance_score,
+        reachability_score=candidate.reachability_score,
+        total_score=candidate.overall_score,
+        confidence=Confidence(confidence_value),
+        department=department,
+        seniority=candidate.seniority,
+        reasons=tuple(reasons),
+        roles=roles_values,
+        normalized_title=candidate.normalized_title,
+        classification_method="deterministic",
+        classification_confidence=candidate.role_classification_confidence,
+        classification_reasons=(),
+        taxonomy_version="decision-role-v1",
+        score_breakdown_json=candidate.score_breakdown,
+        selection_status=(
+            candidate.selection_status.value if candidate.selection_status else None
+        ),
+        selection_reasons_json=tuple(
+            str(r) for r in candidate.rejection_reasons
+        ),
+        scoring_version=POLICY_VERSION_V2,
+        evidence=evidence,
+        recommended_channel=candidate.recommended_channel,
+        policy_version=policy_version,
+    )
 
-        return DecisionMakerFitAssessment(
-            contact_id=contact.id,
-            company_id=contact.company_id,
-            role_fit_score=role_fit,
-            reachability_score=reachability,
-            total_score=total,
-            confidence=Confidence(min(confidence_value, 0.9)),
-            department=contact.department,
-            seniority=contact.seniority,
-            reasons=tuple(reasons),
-            evidence=evidence,
-            recommended_channel=channel,
-            policy_version=self.policy_version,  # subclass overrides propagate
-        )
 
-    def _reachability(
-        self, contact: Contact, reasons: list[str]
-    ) -> tuple[float, ContactChannelType | None]:
-        w = self._w
-        score = 0.0
-        recommended: ContactChannelType | None = None
-        for channel in contact.usable_channels:
-            if channel.channel_type is ContactChannelType.EMAIL:
-                verified = channel.verification_status in (
-                    ContactVerificationStatus.SOURCE_VERIFIED,
-                    ContactVerificationStatus.MANUALLY_VERIFIED,
-                )
-                points = w.verified_email if verified else w.unverified_email
-                label = "verified" if verified else "unverified"
-                reasons.append(f"{label} email: reachability +{points:g}")
-                score += points
-                if recommended is None or verified:
-                    recommended = ContactChannelType.EMAIL
-            elif channel.channel_type is ContactChannelType.LINKEDIN:
-                score += w.linkedin
-                reasons.append(f"linkedin profile: reachability +{w.linkedin:g}")
-                recommended = recommended or ContactChannelType.LINKEDIN
-            elif channel.channel_type is ContactChannelType.PHONE:
-                score += w.phone
-                reasons.append(f"phone: reachability +{w.phone:g}")
-                recommended = recommended or ContactChannelType.PHONE
-        if not contact.usable_channels:
-            reasons.append("no usable channels — reachability 0, contact still valid")
-        return min(score, 100.0), recommended
+def _department_from_roles(roles: tuple[DecisionRole, ...]) -> Department:
+    return Department(legacy_department(roles))
+
+
+def _build_reasons(candidate: CandidateScore) -> list[str]:
+    reasons: list[str] = []
+    reasons.append(f"role_relevance={candidate.role_relevance_score:.0f}")
+    reasons.append(f"seniority={candidate.seniority_score:.0f}")
+    reasons.append(f"company_size_fit={candidate.company_size_fit_score:.0f}")
+    reasons.append(f"import_logistics_fit={candidate.import_logistics_fit_score:.0f}")
+    reasons.append(f"reachability={candidate.reachability_score:.0f}")
+    reasons.append(f"source_confidence={candidate.source_confidence_score:.0f}")
+    if candidate.historical_role:
+        reasons.append("historical_role — not a current decision maker")
+    if candidate.assistant_role:
+        reasons.append("assistant_role — supports the decision maker")
+    if candidate.rejection_reasons:
+        reasons.append(f"rejected: {','.join(r.value for r in candidate.rejection_reasons)}")
+    return reasons

@@ -22,11 +22,11 @@ test.describe("provider status", () => {
     expect(runtime.provider).toBe(PROVIDER_MODE);
 
     if (PROVIDER_MODE === "fake") {
-      await expect(page.getByText("演示模式")).toBeVisible();
-      await expect(page.getByText("真实 AI")).toHaveCount(0);
+      await expect(page.getByTestId("provider-badge")).toContainText("演示模式");
+      await expect(page.getByTestId("provider-badge")).not.toContainText("真实 AI");
     } else {
-      await expect(page.getByText("真实 AI")).toBeVisible();
-      await expect(page.getByText("演示模式")).toHaveCount(0);
+      await expect(page.getByTestId("provider-badge")).toContainText("真实 AI");
+      await expect(page.getByTestId("provider-badge")).not.toContainText("演示模式");
     }
 
     // The badge may name provider and model — never a credential or endpoint.
@@ -36,7 +36,13 @@ test.describe("provider status", () => {
     }
 
     // The runtime endpoint itself must expose only these three fields.
-    expect(Object.keys(runtime).sort()).toEqual(["environment", "model", "provider"]);
+    expect(Object.keys(runtime).sort()).toEqual([
+      "environment",
+      "model",
+      "provider",
+      "research_model",
+      "research_provider",
+    ]);
 
     expect(guard.problems()).toEqual([]);
   });

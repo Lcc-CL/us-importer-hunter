@@ -209,6 +209,19 @@ class DecisionMakerFitAssessment:
     department: Department
     seniority: SeniorityLevel
     reasons: tuple[str, ...]
+    #: Full responsibility set. `department` above is the legacy projection of
+    #: this and is kept only so existing readers keep working.
+    roles: tuple[str, ...] = ()
+    normalized_title: str | None = None
+    classification_method: str | None = None
+    classification_confidence: float | None = None
+    classification_reasons: tuple[str, ...] = ()
+    taxonomy_version: str | None = None
+    #: Six-factor score breakdown as a flat dict keyed by dimension name.
+    score_breakdown_json: dict[str, float] = field(default_factory=dict)
+    selection_status: str | None = None
+    selection_reasons_json: tuple[str, ...] = ()
+    scoring_version: str | None = None
     policy_version: str
     evidence: tuple[Evidence, ...] = ()
     recommended_channel: ContactChannelType | None = None
@@ -247,6 +260,7 @@ class DecisionMakerFitAssessment:
                 ),
                 "reasons": list(self.reasons),
                 "evidence_claims": [e.claim for e in self.evidence],
+                "scoring_version": self.scoring_version or "",
             },
             sort_keys=True,
             ensure_ascii=True,

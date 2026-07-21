@@ -177,4 +177,4 @@ class TestSelection:
             SeniorityLevel.DIRECTOR, email="l@x.com",
         )
         outcome = await workflow.handle(company_id=COMPANY_ID, opportunity_id=OPPORTUNITY_ID)
-        assert outcome.policy_version == "mvp-decision-maker-policy-v1"
+        assert outcome.policy_version == "mvp-decision-maker-policy-v2"

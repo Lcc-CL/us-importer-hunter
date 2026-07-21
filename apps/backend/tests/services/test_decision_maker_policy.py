@@ -126,15 +126,15 @@ class TestReachability:
         )
         (assessment,) = await SERVICE.rank([unreachable])
         assert assessment.reachability_score == 0.0
-        assert assessment.role_fit_score > 90.0  # role fit untouched by missing channels
-        assert any("still valid" in reason for reason in assessment.reasons)
+        assert assessment.role_fit_score > 35.0  # logistics director: 38-40 in six-factor
+        assert any("reachability=0" in reason for reason in assessment.reasons)
 
     async def test_unknown_department_is_not_negative(self) -> None:
         unknown = make_contact("Uma Unknown", None, Department.UNKNOWN, SeniorityLevel.UNKNOWN)
         (assessment,) = await SERVICE.rank([unknown])
-        assert assessment.role_fit_score > 0.0
-        assert assessment.confidence.value < 0.6  # thin data → low confidence, not zero value
-        assert any("needs research" in reason for reason in assessment.reasons)
+        assert assessment.role_fit_score >= 0.0  # unknown is neutral, not negative
+        assert assessment.confidence.value <= 0.6  # thin data → low confidence, not zero value
+        assert any("role_relevance" in reason for reason in assessment.reasons)
 
 
 class TestPolicyVersioning:
@@ -144,7 +144,7 @@ class TestPolicyVersioning:
             SeniorityLevel.DIRECTOR, email="l@x.com",
         )
         (assessment,) = await SERVICE.rank([contact])
-        assert assessment.policy_version == POLICY_VERSION == "mvp-decision-maker-policy-v1"
+        assert assessment.policy_version == POLICY_VERSION == "mvp-decision-maker-policy-v2"
         assert assessment.evidence and assessment.evidence[0].sources
         assert len(assessment.assessment_fingerprint) == 64
 
@@ -157,7 +157,7 @@ class TestPolicyVersioning:
         class StricterPolicy(DeterministicDecisionMakerSelectionService):
             @property
             def policy_version(self) -> str:
-                return "mvp-decision-maker-policy-v2-test"
+                return "mvp-decision-maker-policy-v3-test"
 
         (v1,) = await SERVICE.rank([contact])
         (v2,) = await StricterPolicy().rank([contact])

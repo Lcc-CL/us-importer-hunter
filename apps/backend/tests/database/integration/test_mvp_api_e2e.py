@@ -82,7 +82,12 @@ async def test_analyze_query_approve_and_replay_are_persisted(
         detail = await client.get(f"/api/v1/mvp/prospects/{company_id}")
         assert detail.status_code == 200, detail.text
         saved = detail.json()
-        assert saved["company"]["sources"] == ["importyeti", "company_website"]
+        # Names, in first-seen order, with reference counts — and unique, so
+        # the UI can key on them.
+        sources = saved["company"]["sources"]
+        assert [item["source"] for item in sources] == ["importyeti", "company_website"]
+        assert all(item["reference_count"] == 1 for item in sources)
+        assert len({item["source"] for item in sources}) == len(sources)
         assert saved["latest_assessment"]["score"] >= 70.0
         assert saved["contacts"][0]["status"] == "active"
         assert saved["decision_maker"]["selected_contact_id"] == analyzed["contact"]["contact_id"]

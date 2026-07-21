@@ -6,6 +6,8 @@ import type { ProspectPayload } from "../fixtures/prospects";
 const V1 = `${API_BASE_URL}/api/v1`;
 
 export interface RuntimeStatus {
+  research_provider: "fake" | "openai";
+  research_model: string;
   provider: "fake" | "openai";
   model: string;
   environment: string;

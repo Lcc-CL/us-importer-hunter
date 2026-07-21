@@ -10,7 +10,15 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -127,4 +135,22 @@ class ContactFitAssessmentModel(Base):
     reasons: Mapped[list[str]] = mapped_column(JSONB)
     evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     policy_version: Mapped[str] = mapped_column(String(50))
+    roles_json: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    normalized_title: Mapped[str | None] = mapped_column(String(300))
+    classification_method: Mapped[str | None] = mapped_column(String(30))
+    classification_confidence: Mapped[float | None] = mapped_column(Float)
+    classification_reasons_json: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    taxonomy_version: Mapped[str | None] = mapped_column(String(50))
+    score_breakdown_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    selection_status: Mapped[str | None] = mapped_column(String(30))
+    selection_reasons_json: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    scoring_version: Mapped[str | None] = mapped_column(String(50))
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

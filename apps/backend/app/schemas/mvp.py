@@ -1,12 +1,14 @@
 """Typed HTTP contracts for the minimal MVP prospect API."""
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.domain.services import SenderProfile
+from app.domain.values import DimensionStatus, OpportunityAssessment, SourceReference
 from app.workflows.mvp_prospect_analysis import (
     DraftApprovalOutcome,
     MvpProspectAnalysisCommand,
@@ -318,13 +320,75 @@ class ProspectAnalysisResponse(BaseModel):
         )
 
 
+class CompanySourceSummaryResponse(BaseModel):
+    """One distinct source name, and how many references carry it.
+
+    The stored `company_sources` rows are the audit record and keep every
+    reference: two pages of the same site are two rows, correctly. This
+    summary is for display, so it collapses them by name — and reports the
+    count rather than silently hiding that there were several.
+    """
+
+    source: str
+    reference_count: int
+
+
 class CompanyDetailResponse(BaseModel):
     company_id: UUID
     name: str
     website: str | None
     verified: bool
-    sources: list[str]
+    #: Distinct source names in first-seen order, with their reference counts.
+    #: Deduplicated here rather than in the UI so every consumer gets a list
+    #: that is safe to key on; the audit rows are untouched.
+    sources: list[CompanySourceSummaryResponse]
     signals: list[str]
+
+
+#: Dimensions a company website structurally cannot prove. Missing them is a
+#: gap in the *source*, not a verdict on the company — the UI must say so, or
+#: a reviewer reads REVIEW as "weak prospect" and drops a good one.
+IMPORT_EVIDENCE_DIMENSIONS = frozenset(
+    {"import_activity", "china_dependency", "cargo_value_potential"}
+)
+
+#: Not a qualification decision. It names the next action when the only thing
+#: standing between this company and a verdict is customs-grade evidence.
+IMPORT_EVIDENCE_REQUIRED = "IMPORT_EVIDENCE_REQUIRED"
+
+
+class DimensionExplanationResponse(BaseModel):
+    """One dimension, explained: what it contributed and why."""
+
+    dimension: str
+    status: str
+    weight: float
+    earned_score: float
+    #: Share of the total score this dimension actually contributed.
+    score_contribution: float
+    evidence_status: str
+    unknown_reason: str | None
+    needs_import_evidence: bool
+    reasons: list[str]
+
+
+class QualificationExplanationResponse(BaseModel):
+    """Why the verdict is what it is, without restating the verdict.
+
+    Derived from the stored breakdown — no weight, threshold or persisted
+    assessment is changed to produce it.
+    """
+
+    dimensions: list[DimensionExplanationResponse]
+    evidence_obtained: list[str]
+    missing_key_evidence: list[str]
+    #: Dimensions blocked on customs-grade data rather than on the company.
+    import_evidence_missing: list[str]
+    #: Score that is unreachable from a company website alone.
+    unreachable_weight: float
+    hard_gate_hits: list[str]
+    #: Suggested next step. Never a qualification decision.
+    next_action: str | None
 
 
 class AssessmentDetailResponse(BaseModel):
@@ -338,6 +402,7 @@ class AssessmentDetailResponse(BaseModel):
     scoring_version: str
     policy_version: str
     assessed_at: datetime
+    explanation: QualificationExplanationResponse | None = None
 
 
 class ContactChannelResponse(BaseModel):
@@ -362,11 +427,45 @@ class DecisionMakerRankingResponse(BaseModel):
     confidence: float
     recommended_channel: str | None
     reasons: list[str]
+    #: Full responsibility set from the decision-role taxonomy. Displayed so a
+    #: "Sales and Purchasing" contact shows both halves instead of one collapsed
+    #: department. Empty for rows written before the taxonomy existed.
+    roles: list[str] = Field(default_factory=list)
+    taxonomy_version: str | None = None
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+    selection_status: str | None = None
+    scoring_version: str | None = None
+    selection_reasons: list[str] = Field(default_factory=list)
+
+
+class CandidateScoreResponse(BaseModel):
+    contact_id: UUID
+    original_title: str | None = None
+    normalized_title: str | None = None
+    roles: list[str] = Field(default_factory=list)
+    overall_score: float = 0.0
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+    classification_confidence: float = 0.0
+    selection_status: str | None = None
+    selection_reasons: list[str] = Field(default_factory=list)
+    rejection_reasons: list[str] = Field(default_factory=list)
+
+
+class DecisionMakerSelectionResponse(BaseModel):
+    status: str
+    review_required: bool = False
+    review_reasons: list[str] = Field(default_factory=list)
+    primary_contact: CandidateScoreResponse | None = None
+    alternative_contacts: list[CandidateScoreResponse] = Field(default_factory=list)
+    supporting_contacts: list[CandidateScoreResponse] = Field(default_factory=list)
+    rejected_contacts: list[CandidateScoreResponse] = Field(default_factory=list)
+    scoring_version: str | None = None
 
 
 class DecisionMakerDetailResponse(BaseModel):
     selected_contact_id: UUID | None
     rankings: list[DecisionMakerRankingResponse]
+    selection: DecisionMakerSelectionResponse | None = None
 
 
 class EmailDraftDetailResponse(BaseModel):
@@ -429,7 +528,7 @@ class ProspectDetailResponse(BaseModel):
                 name=company.name.value,
                 website=company.website.value if company.website else None,
                 verified=company.verified,
-                sources=[source.source for source in company.sources],
+                sources=_summarize_sources(company.sources),
                 signals=list(company.signals),
             ),
             latest_assessment=(
@@ -451,6 +550,7 @@ class ProspectDetailResponse(BaseModel):
                     reasons=list(assessment.reasons),
                     scoring_version=assessment.scoring_version,
                     policy_version=assessment.policy_version,
+                    explanation=_explain(assessment),
                     assessed_at=assessment.assessed_at,
                 )
                 if result.opportunity is not None and assessment is not None
@@ -491,9 +591,16 @@ class ProspectDetailResponse(BaseModel):
                             item.recommended_channel.value if item.recommended_channel else None
                         ),
                         reasons=list(item.reasons),
+                        roles=list(item.roles),
+                        taxonomy_version=item.taxonomy_version,
+                        score_breakdown=item.score_breakdown_json,
+                        selection_status=item.selection_status,
+                        scoring_version=item.scoring_version,
+                        selection_reasons=list(item.selection_reasons_json),
                     )
                     for item in result.decision_maker_rankings
                 ],
+                selection=_build_selection_response(result.decision_maker_rankings),
             ),
             latest_email_draft=(
                 EmailDraftDetailResponse(
@@ -566,7 +673,143 @@ class DraftApprovalResponse(BaseModel):
         )
 
 
+class DecisionMakerConfirmRequest(BaseModel):
+    contact_id: UUID
+    reviewer_name: str | None = None
+    reason: str | None = None
+    regenerate_draft: bool = False
+
+
+class DecisionMakerConfirmResponse(ProspectDetailResponse):
+    confirmed: bool = True
+    draft_regenerated: bool = False
+
+
 class ApiErrorResponse(BaseModel):
     code: str
     message: str
     request_id: str
+
+
+def _explain(assessment: OpportunityAssessment) -> QualificationExplanationResponse | None:
+    """Turn a stored breakdown into something a salesperson can act on.
+
+    Read-only by construction: it reports what the scorer already decided and
+    changes no weight, threshold or persisted row.
+    """
+    breakdown = assessment.score_breakdown
+    if breakdown is None:
+        return None
+
+    total = assessment.new_score.value or 0.0
+    dimensions: list[DimensionExplanationResponse] = []
+    obtained: list[str] = []
+    missing: list[str] = []
+    import_missing: list[str] = []
+    unreachable = 0.0
+
+    for item in breakdown.dimensions:
+        name = item.dimension.value
+        assessed = item.status is DimensionStatus.ASSESSED
+        needs_import = not assessed and name in IMPORT_EVIDENCE_DIMENSIONS
+        if assessed:
+            obtained.append(name)
+        else:
+            missing.append(name)
+        if needs_import:
+            import_missing.append(name)
+            unreachable += item.weight
+
+        dimensions.append(
+            DimensionExplanationResponse(
+                dimension=name,
+                status=item.status.value,
+                weight=item.weight,
+                earned_score=item.earned_score,
+                score_contribution=(
+                    round(item.earned_score / total, 4) if total > 0 else 0.0
+                ),
+                evidence_status=("present" if assessed else "absent"),
+                unknown_reason=(None if assessed else item.status.value),
+                needs_import_evidence=needs_import,
+                reasons=list(item.reasons),
+            )
+        )
+
+    hard_gates = [hit for hit in getattr(breakdown, "hard_gate_hits", ()) or ()]
+    next_action = IMPORT_EVIDENCE_REQUIRED if import_missing else None
+
+    return QualificationExplanationResponse(
+        dimensions=dimensions,
+        evidence_obtained=obtained,
+        missing_key_evidence=missing,
+        import_evidence_missing=import_missing,
+        unreachable_weight=round(unreachable, 2),
+        hard_gate_hits=[str(hit) for hit in hard_gates],
+        next_action=next_action,
+    )
+
+
+def _build_selection_response(
+    rankings: "Sequence[Any]",
+) -> DecisionMakerSelectionResponse | None:
+    if not rankings:
+        return None
+    ranked = sorted(
+        rankings,
+        key=lambda a: (-a.total_score, -a.confidence.value, str(a.contact_id)),
+    )
+    candidates: list[CandidateScoreResponse] = []
+    for item in ranked:
+        candidates.append(
+            CandidateScoreResponse(
+                contact_id=item.contact_id,
+                original_title=item.normalized_title,
+                normalized_title=item.normalized_title,
+                roles=list(item.roles),
+                overall_score=item.total_score,
+                score_breakdown=item.score_breakdown_json,
+                classification_confidence=item.classification_confidence or 0.0,
+                selection_status=item.selection_status,
+                selection_reasons=list(item.selection_reasons_json),
+                rejection_reasons=[],
+            )
+        )
+    return DecisionMakerSelectionResponse(
+        status="selected" if any(
+            c.selection_status == "selected" for c in candidates
+        ) else "alternatives_available",
+        review_required=False,
+        review_reasons=[],
+        primary_contact=next(
+            (c for c in candidates if c.selection_status == "selected"), None
+        ),
+        alternative_contacts=[
+            c for c in candidates if c.selection_status == "alternatives_available"
+        ][:3],
+        supporting_contacts=[],
+        rejected_contacts=[
+            c for c in candidates if c.selection_status == "no_relevant_contact"
+        ],
+        scoring_version=ranked[0].scoring_version if ranked else None,
+    )
+
+
+def _summarize_sources(
+    sources: "Sequence[SourceReference]",
+) -> list[CompanySourceSummaryResponse]:
+    """Collapse references by source name, preserving first-seen order.
+
+    Two references to the same site are two audit rows and stay that way in
+    the database. For display they are one source seen twice — which is what
+    the count says, instead of rendering the same name twice and leaving the
+    UI to key on a value that is not unique.
+    """
+    counts: dict[str, int] = {}
+    for reference in sources:
+        name = reference.source.strip()
+        counts[name] = counts.get(name, 0) + 1
+    return [
+        CompanySourceSummaryResponse(source=name, reference_count=count)
+        for name, count in counts.items()
+    ]

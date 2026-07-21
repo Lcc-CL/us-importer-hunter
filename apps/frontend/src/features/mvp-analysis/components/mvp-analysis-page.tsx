@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Anchor, ExternalLink, Languages } from "lucide-react";
 
 import {
@@ -22,14 +22,24 @@ import { ProspectForm } from "./prospect-form";
 import { ProviderBadge } from "./provider-badge";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
 import type { FlowStep, StepState } from "@/features/research/step-nav";
+import { MissingFieldsPrompt } from "./guided-flow";
+import {
+  clearSenderProfile,
+  mergeSenderProfile,
+  saveSenderProfile,
+  senderProfileServerSnapshot,
+  senderProfileSnapshot,
+  subscribeSenderProfile,
+} from "../sender-profile";
 import {
   EMPTY_CONTACT,
-  MissingFieldsPrompt,
-  type MissingFields,
+  EMPTY_SENDER,
   buildAnalysisRequest,
   missingFieldsFor,
-  useGuidedFields,
-} from "./guided-flow";
+  type MissingFields,
+  type ProspectContact,
+  type ProspectSender,
+} from "../prospect-state";
 import type { ApplicationPayload } from "@/lib/research-api";
 
 interface MvpAnalysisPageProps {
@@ -69,7 +79,32 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   // live would unmount the prompt — and its Continue button — the moment the
   // last field became valid, so the user could never actually continue.
   const [awaitingFields, setAwaitingFields] = useState<MissingFields | null>(null);
-  const guided = useGuidedFields();
+  // One contact and one sender for the whole page. The guided prompt and the
+  // advanced form are two views onto these, so filling either is immediately
+  // visible in the other and the analysis always reads what the user last saw.
+  const [contact, setContact] = useState<ProspectContact>(EMPTY_CONTACT);
+  const [sender, setSender] = useState<ProspectSender>(EMPTY_SENDER);
+  // The saved profile is external state, read through useSyncExternalStore so
+  // hydration sees the server's empty snapshot first and swaps in the stored
+  // values afterwards — no effect, no setState-during-render.
+  const storedSender = useSyncExternalStore(
+    subscribeSenderProfile,
+    senderProfileSnapshot,
+    senderProfileServerSnapshot,
+  );
+  const effectiveSender = mergeSenderProfile(sender, storedSender);
+
+  const patchContact = (patch: Partial<ProspectContact>) =>
+    setContact((current) => ({ ...current, ...patch }));
+  const patchSender = (patch: Partial<ProspectSender>) => {
+    const next = { ...effectiveSender, ...patch };
+    saveSenderProfile(next);
+    setSender(next);
+  };
+  const handleClearSenderProfile = () => {
+    clearSenderProfile();
+    setSender(EMPTY_SENDER);
+  };
 
   useEffect(() => {
     if (!initialCompanyId) return;
@@ -95,7 +130,7 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   }, [initialCompanyId]);
 
   const decision = analysis?.opportunity.qualification_decision ?? null;
-  const missing = missingFieldsFor(guided.contact, guided.sender);
+  const missing = missingFieldsFor(contact, effectiveSender);
 
   const downstreamSteps: Partial<Record<FlowStep, StepState>> = {
     analysis:
@@ -146,35 +181,31 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
    * case only that block is asked for.
    */
   async function handleResearchConfirmed(payload: ApplicationPayload) {
-    const isNewCompany = payload.company_name !== pendingResearch?.company_name;
-    if (isNewCompany) guided.resetContact();
+    // A different company means the contact on screen belongs to the previous
+    // prospect. It is shown for confirmation rather than cleared: overwriting
+    // what the user typed would be worse than asking them to look at it.
+    const isNewCompany =
+      pendingResearch !== null && payload.company_name !== pendingResearch.company_name;
     setPendingResearch(payload);
     // Still applied to the old form so Advanced editing starts pre-filled.
     setAppliedPayload((current) => ({ version: (current?.version ?? 0) + 1, payload }));
 
-    const gap = missingFieldsFor(
-      isNewCompany ? EMPTY_CONTACT : guided.contact,
-      guided.sender,
-    );
-    if (gap.contact || gap.sender) {
-      setAwaitingFields(gap);
+    const gap = missingFieldsFor(contact, effectiveSender);
+    if (gap.contact || gap.sender || isNewCompany) {
+      setAwaitingFields({ contact: gap.contact || isNewCompany, sender: gap.sender });
       return;
     }
 
     setAwaitingFields(null);
-    await handleAnalyze(
-      buildAnalysisRequest(payload, guided.contact, guided.sender),
-    );
+    await handleAnalyze(buildAnalysisRequest(payload, contact, effectiveSender));
   }
 
   async function handleGuidedContinue() {
     if (!pendingResearch || isBusy) return;
-    const gap = missingFieldsFor(guided.contact, guided.sender);
+    const gap = missingFieldsFor(contact, effectiveSender);
     if (gap.contact || gap.sender) return;
     setAwaitingFields(null);
-    await handleAnalyze(
-      buildAnalysisRequest(pendingResearch, guided.contact, guided.sender),
-    );
+    await handleAnalyze(buildAnalysisRequest(pendingResearch, contact, effectiveSender));
   }
 
   async function handleAnalyze(request: ProspectAnalysisRequest) {
@@ -304,13 +335,14 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
               <div className="mb-6">
                 <MissingFieldsPrompt
                   busy={isBusy}
-                  contact={guided.contact}
+                  contact={contact}
                   missing={awaitingFields}
-                  stillMissing={missing}
-                  onContactChange={guided.patchContact}
+                  onContactChange={patchContact}
+                  onClearSenderProfile={handleClearSenderProfile}
                   onContinue={handleGuidedContinue}
-                  onSenderChange={guided.patchSender}
-                  sender={guided.sender}
+                  onSenderChange={patchSender}
+                  sender={effectiveSender}
+                  stillMissing={missing}
                 />
               </div>
             ) : null}
@@ -332,8 +364,12 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
               </summary>
               <ProspectForm
                 appliedPayload={appliedPayload}
+                contact={contact}
                 disabled={isBusy}
+                onContactChange={patchContact}
+                onSenderChange={patchSender}
                 onSubmit={handleAnalyze}
+                sender={effectiveSender}
               />
             </details>
           </div>

@@ -114,13 +114,41 @@ export interface ProspectAnalysisResponse {
   created_at: string;
 }
 
+export interface CompanySourceSummary {
+  source: string;
+  /** How many stored references carry this source name. */
+  reference_count: number;
+}
+
 export interface CompanyDetailResponse {
   company_id: string;
   name: string;
   website: string | null;
   verified: boolean;
-  sources: string[];
+  sources: CompanySourceSummary[];
   signals: string[];
+}
+
+export interface DimensionExplanation {
+  dimension: string;
+  status: string;
+  weight: number;
+  earned_score: number;
+  score_contribution: number;
+  evidence_status: string;
+  unknown_reason: string | null;
+  needs_import_evidence: boolean;
+  reasons: string[];
+}
+
+export interface QualificationExplanation {
+  dimensions: DimensionExplanation[];
+  evidence_obtained: string[];
+  missing_key_evidence: string[];
+  import_evidence_missing: string[];
+  unreachable_weight: number;
+  hard_gate_hits: string[];
+  next_action: string | null;
 }
 
 export interface AssessmentDetailResponse {
@@ -134,6 +162,7 @@ export interface AssessmentDetailResponse {
   scoring_version: string;
   policy_version: string;
   assessed_at: string;
+  explanation: QualificationExplanation | null;
 }
 
 export interface ContactDetailResponse {
@@ -156,6 +185,36 @@ export interface DecisionMakerRankingResponse {
   confidence: number;
   recommended_channel: string | null;
   reasons: string[];
+  roles: string[];
+  taxonomy_version: string | null;
+  score_breakdown: Record<string, number>;
+  selection_status: string | null;
+  scoring_version: string | null;
+  selection_reasons: string[];
+}
+
+export interface CandidateScoreResponse {
+  contact_id: string;
+  original_title: string | null;
+  normalized_title: string | null;
+  roles: string[];
+  overall_score: number;
+  score_breakdown: Record<string, number>;
+  classification_confidence: number;
+  selection_status: string | null;
+  selection_reasons: string[];
+  rejection_reasons: string[];
+}
+
+export interface DecisionMakerSelectionResponse {
+  status: string;
+  review_required: boolean;
+  review_reasons: string[];
+  primary_contact: CandidateScoreResponse | null;
+  alternative_contacts: CandidateScoreResponse[];
+  supporting_contacts: CandidateScoreResponse[];
+  rejected_contacts: CandidateScoreResponse[];
+  scoring_version: string | null;
 }
 
 export interface EmailDraftDetailResponse {
@@ -192,6 +251,7 @@ export interface ProspectDetailResponse {
   decision_maker: {
     selected_contact_id: string | null;
     rankings: DecisionMakerRankingResponse[];
+    selection: DecisionMakerSelectionResponse | null;
   };
   latest_email_draft: EmailDraftDetailResponse | null;
   draft_history: EmailDraftSummaryResponse[];
@@ -200,6 +260,9 @@ export interface ProspectDetailResponse {
 export interface RuntimeStatusResponse {
   provider: "fake" | "openai";
   model: string;
+  /** The research extractor, configured independently of the draft provider. */
+  research_provider: "fake" | "openai";
+  research_model: string;
   environment: string;
 }
 
@@ -316,6 +379,26 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return requestJson<RuntimeStatusResponse>("/health/runtime");
+}
+
+export interface DecisionMakerConfirmRequest {
+  contact_id: string;
+  reviewer_name?: string | null;
+  reason?: string | null;
+  regenerate_draft?: boolean;
+}
+
+export async function confirmDecisionMaker(
+  companyId: string,
+  confirm: DecisionMakerConfirmRequest,
+): Promise<ProspectDetailResponse> {
+  return requestJson<ProspectDetailResponse>(
+    `/mvp/prospects/${encodeURIComponent(companyId)}/decision-maker/confirm`,
+    {
+      method: "POST",
+      body: JSON.stringify(confirm),
+    },
+  );
 }
 
 export function analyzeProspect(

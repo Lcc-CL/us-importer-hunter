@@ -1,6 +1,17 @@
 """Contact domain (Outreach context): independent aggregate root (ADR-0022)."""
 
 from app.domain.contact.aggregate import Contact
+from app.domain.contact.roles import (
+    ROLE_DEFINITIONS,
+    ROLES_BY_CODE,
+    TAXONOMY_VERSION,
+    DecisionRole,
+    RoleDefinition,
+    decision_relevance,
+    legacy_department,
+    role_definition,
+    roles_from_legacy_department,
+)
 from app.domain.contact.values import (
     ContactChannel,
     ContactChannelType,
@@ -18,6 +29,15 @@ from app.domain.contact.values import (
 )
 
 __all__ = [
+    "ROLES_BY_CODE",
+    "ROLE_DEFINITIONS",
+    "TAXONOMY_VERSION",
+    "DecisionRole",
+    "RoleDefinition",
+    "decision_relevance",
+    "legacy_department",
+    "role_definition",
+    "roles_from_legacy_department",
     "Contact",
     "ContactChannel",
     "ContactChannelType",

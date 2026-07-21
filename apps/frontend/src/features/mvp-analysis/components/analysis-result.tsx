@@ -14,11 +14,15 @@ import type {
   DraftApprovalResponse,
   ProspectAnalysisResponse,
   ProspectDetailResponse,
+  CompanySourceSummary,
 } from "@/lib/api";
+import { confirmDecisionMaker } from "@/lib/api";
 import { useI18n, type MessageKey } from "@/lib/i18n";
 import type { MvpPageState, SubmittedProspectContext } from "../types";
+import { CandidateCards } from "./candidate-cards";
 import { EmailDraftCard } from "./email-draft-card";
 import { OpportunityCard } from "./opportunity-card";
+import { QualificationExplanationCard } from "./qualification-explanation";
 
 interface AnalysisResultProps {
   analysis: ProspectAnalysisResponse | null;
@@ -56,6 +60,30 @@ const TRANSLATED_ERROR_CODES: readonly string[] = [
   "unexpected_client_error",
 ];
 
+
+/**
+ * Collapses repeats a second time, on the client.
+ *
+ * The API already deduplicates, but a run recorded before it did — or a
+ * response from an older deployment — must not be able to crash the page with
+ * a duplicate React key. Counts are summed rather than discarded, and the
+ * first-seen order is kept so the list does not reshuffle between renders.
+ */
+function dedupeSources(
+  sources: CompanySourceSummary[],
+): CompanySourceSummary[] {
+  const byName = new Map<string, CompanySourceSummary>();
+  for (const entry of sources) {
+    const existing = byName.get(entry.source);
+    if (existing) {
+      existing.reference_count += entry.reference_count;
+      continue;
+    }
+    byName.set(entry.source, { ...entry });
+  }
+  return [...byName.values()];
+}
+
 export function AnalysisResult({
   analysis,
   detail,
@@ -91,6 +119,15 @@ export function AnalysisResult({
       ? analysis.decision_maker.reasons
       : (selectedRanking?.reasons ?? []);
   const isRefreshing = pageState === "refreshing";
+
+  const handleConfirmContact = async (contactId: string) => {
+    if (!companyId) return;
+    await confirmDecisionMaker(companyId, {
+      contact_id: contactId,
+      regenerate_draft: false,
+    });
+    await onRefresh();
+  };
   const isApproving = pageState === "approving";
   const errorMessage = error
     ? TRANSLATED_ERROR_CODES.includes(error.code)
@@ -227,13 +264,15 @@ export function AnalysisResult({
                   {detail?.company.company_id ?? analysis?.company.company_id}
                 </p>
                 {detail?.company.sources.length ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {detail.company.sources.map((source) => (
+                  <div className="mt-4 flex flex-wrap gap-2" data-testid="company-sources">
+                    {dedupeSources(detail.company.sources).map((source) => (
                       <span
                         className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600"
-                        key={source}
+                        key={source.source}
                       >
-                        {source}
+                        {source.reference_count > 1
+                          ? `${source.source} × ${source.reference_count}`
+                          : source.source}
                       </span>
                     ))}
                   </div>
@@ -253,6 +292,13 @@ export function AnalysisResult({
             analysis={analysis?.opportunity ?? null}
             detail={detail?.latest_assessment ?? null}
           />
+
+          {detail?.latest_assessment?.explanation ? (
+            <QualificationExplanationCard
+              decision={detail.latest_assessment.qualification_decision}
+              explanation={detail.latest_assessment.explanation}
+            />
+          ) : null}
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-start gap-3">
@@ -275,6 +321,21 @@ export function AnalysisResult({
                         context?.contact?.title ??
                         t("result.noTitle")}
                     </p>
+                    {selectedRanking?.roles?.length ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs font-semibold text-slate-500">
+                          {t("result.roles")}
+                        </span>
+                        {selectedRanking.roles.map((role) => (
+                          <span
+                            key={`role-${role}`}
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
+                          >
+                            {role.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
                     {label(
@@ -325,6 +386,10 @@ export function AnalysisResult({
                     {t("result.selectedContact")}
                     {selectedContactId}
                   </p>
+                ) : detail?.decision_maker.selection?.review_required ? (
+                  <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                    {t("result.reviewRequired")}
+                  </p>
                 ) : null}
                 {decisionReasons.length ? (
                   <ul className="mt-4 space-y-1 text-sm leading-6 text-slate-600">
@@ -336,6 +401,12 @@ export function AnalysisResult({
               </div>
             </div>
           </section>
+
+          <CandidateCards
+            selection={detail?.decision_maker.selection ?? null}
+            selectedContactId={selectedContactId}
+            onConfirm={handleConfirmContact}
+          />
 
           <EmailDraftCard
             analysis={analysis?.email_draft ?? null}

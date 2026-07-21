@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { getClientErrorDetails, type ClientErrorDetails } from "@/lib/api";
 import { useI18n, type MessageKey } from "@/lib/i18n";
+import { ProviderNotice } from "./provider-notice";
 import { ResearchSummary } from "./research-summary";
 import { StepNav, type FlowStep, type StepState } from "./step-nav";
 import {
@@ -225,6 +226,7 @@ export function ResearchPanel({
           <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
           {t("research.notice")}
         </p>
+        <ProviderNotice />
       </div>
 
       <div className="px-5 py-5 sm:px-7">
