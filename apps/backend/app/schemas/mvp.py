@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -739,7 +739,7 @@ def _explain(assessment: OpportunityAssessment) -> QualificationExplanationRespo
 
 
 def _build_selection_response(
-    rankings: "Sequence[DecisionMakerFitAssessment]",
+    rankings: "Sequence[Any]",
 ) -> DecisionMakerSelectionResponse | None:
     if not rankings:
         return None
