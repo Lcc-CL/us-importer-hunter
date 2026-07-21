@@ -1,4 +1,4 @@
-"""Import evidence persistence models — append-only raw records, normalized shipments, entity matches, signals, conflicts."""
+"""Import evidence persistence: append-only raw records, normalized shipments, entity matches, signals, conflicts."""
 
 from datetime import datetime
 from uuid import UUID

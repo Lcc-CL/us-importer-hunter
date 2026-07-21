@@ -1,7 +1,6 @@
 """Import evidence value objects and enums."""
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum

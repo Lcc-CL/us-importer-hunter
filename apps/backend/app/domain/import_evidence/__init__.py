@@ -1,4 +1,4 @@
-"""Import Evidence domain: provider abstraction, raw records, normalization, entity matching, dedup, quality, and signal promotion."""
+"""Import Evidence domain: provider abstraction, raw records, normalization, entity matching, deduplication, quality scoring, signal promotion."""
 
 from app.domain.import_evidence.values import (
     EntityMatchMethod,

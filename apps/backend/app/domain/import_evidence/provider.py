@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from app.domain.import_evidence.values import RawImportRecord, ValueType
+from app.domain.import_evidence.values import RawImportRecord
 
 
 class ImportEvidenceProvider(Protocol):
