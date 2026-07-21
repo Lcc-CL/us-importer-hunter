@@ -375,6 +375,10 @@ export function AnalysisResult({
                     {t("result.selectedContact")}
                     {selectedContactId}
                   </p>
+                ) : detail?.decision_maker.selection?.review_required ? (
+                  <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                    {t("result.reviewRequired")}
+                  </p>
                 ) : null}
                 {decisionReasons.length ? (
                   <ul className="mt-4 space-y-1 text-sm leading-6 text-slate-600">
