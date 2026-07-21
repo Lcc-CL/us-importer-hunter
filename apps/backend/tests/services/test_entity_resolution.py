@@ -1,6 +1,5 @@
 """Stage 4A entity resolution: normalization, matching, fixture scenarios A-L."""
 
-
 from app.domain.import_evidence.values import EntityMatchMethod, EntityMatchStatus
 from app.services.import_evidence.entity_resolver import (
     DeterministicEntityResolver,
@@ -58,13 +57,17 @@ class TestFixtureAHardwareImporter:
             shipment_name="Pacific Home Goods Inc.",
             shipment_domain="pacifichomegoods.com",
             shipment_address="123 Main St",
-            shipment_city="Los Angeles", shipment_state="CA",
-            shipment_country="US", shipment_phone="+14155550100",
+            shipment_city="Los Angeles",
+            shipment_state="CA",
+            shipment_country="US",
+            shipment_phone="+14155550100",
             candidate_name="Pacific Home Goods Inc.",
             candidate_domain="pacifichomegoods.com",
             candidate_address="123 Main St",
-            candidate_city="Los Angeles", candidate_state="CA",
-            candidate_country="US", candidate_phone="+14155550100",
+            candidate_city="Los Angeles",
+            candidate_state="CA",
+            candidate_country="US",
+            candidate_phone="+14155550100",
         )
         assert r.match_status == EntityMatchStatus.AUTO_MATCH
         assert r.match_score >= 92.0
@@ -75,10 +78,16 @@ class TestFixtureBDuplicateImport:
 
     def test_same_input_same_output(self):
         args = dict(
-            shipment_name="Test Co", shipment_domain="test.com",
-            shipment_city="NYC", shipment_state="NY", shipment_country="US",
-            candidate_name="Test Co", candidate_domain="test.com",
-            candidate_city="NYC", candidate_state="NY", candidate_country="US",
+            shipment_name="Test Co",
+            shipment_domain="test.com",
+            shipment_city="NYC",
+            shipment_state="NY",
+            shipment_country="US",
+            candidate_name="Test Co",
+            candidate_domain="test.com",
+            candidate_city="NYC",
+            candidate_state="NY",
+            candidate_country="US",
         )
         r1 = _RESOLVER.resolve(**args)
         r2 = _RESOLVER.resolve(**args)
@@ -106,12 +115,16 @@ class TestFixtureCNameVariants:
             shipment_name="Pacific Home Goods Inc.",
             shipment_domain="pacifichomegoods.com",
             shipment_address="456 Oak Ave",
-            shipment_city="LA", shipment_state="CA", shipment_country="US",
+            shipment_city="LA",
+            shipment_state="CA",
+            shipment_country="US",
             shipment_phone="14155550100",
             candidate_name="Pacific Home Goods Incorporated",
             candidate_domain="pacifichomegoods.com",
             candidate_address="456 Oak Ave",
-            candidate_city="LA", candidate_state="CA", candidate_country="US",
+            candidate_city="LA",
+            candidate_state="CA",
+            candidate_country="US",
             candidate_phone="14155550100",
         )
         assert r.match_status == EntityMatchStatus.AUTO_MATCH
@@ -124,10 +137,12 @@ class TestFixtureGSimilarNameDifferentGeo:
         r = _RESOLVER.resolve(
             shipment_name="Pacific Home Goods Inc.",
             shipment_domain="pacifichomegoods.com",
-            shipment_city="Los Angeles", shipment_state="CA",
+            shipment_city="Los Angeles",
+            shipment_state="CA",
             candidate_name="Pacific Home Goods Inc.",
             candidate_domain="otherdomain.com",
-            candidate_city="Houston", candidate_state="TX",
+            candidate_city="Houston",
+            candidate_state="TX",
         )
         assert r.match_status != EntityMatchStatus.AUTO_MATCH
 
@@ -162,6 +177,7 @@ class TestFixtureINotifyParty:
 
 class TestFixtureJMissingHouseBOL:
     """J: Missing House BOL — insufficient identity noted (not merged)."""
+
     # This is tested at the Shipment dedup level, entity resolution isn't affected
     # by BOL presence/absence directly.
     pass
@@ -169,6 +185,7 @@ class TestFixtureJMissingHouseBOL:
 
 class TestFixtureLMasterHouseWeight:
     """L: Master/House weight aggregation — tested in dedup layer."""
+
     # Entity resolution is independent of weight.
     pass
 
@@ -176,8 +193,10 @@ class TestFixtureLMasterHouseWeight:
 class TestManualOverridePreserved:
     def test_manual_confirm_not_overwritten(self):
         r = _RESOLVER.resolve(
-            shipment_name="AnyCo", shipment_domain="any.com",
-            candidate_name="AnyCo", candidate_domain="any.com",
+            shipment_name="AnyCo",
+            shipment_domain="any.com",
+            candidate_name="AnyCo",
+            candidate_domain="any.com",
             existing_match_status=EntityMatchStatus.MANUALLY_CONFIRMED,
         )
         assert r.match_status == EntityMatchStatus.MANUALLY_CONFIRMED
@@ -198,5 +217,28 @@ class TestThresholdsNamed:
             FUZZY_ONLY_MAX_SCORE,
             REVIEW_THRESHOLD,
         )
+
         assert 0 < REVIEW_THRESHOLD < AUTO_MATCH_THRESHOLD <= 100
         assert 0 < FUZZY_ONLY_MAX_SCORE < AUTO_MATCH_THRESHOLD
+
+
+class TestProviderIdentityBoundaries:
+    def test_provider_record_id_is_not_a_company_match(self):
+        result = _RESOLVER.resolve(
+            shipment_name="Unrelated Importer",
+            candidate_name="Different Company",
+            shipment_provider_company_id="provider-company-1",
+            candidate_provider_company_id="provider-company-2",
+        )
+        assert "provider_company_id_match" not in str(result.match_reasons)
+
+    def test_same_provider_company_id_is_strong_evidence(self):
+        result = _RESOLVER.resolve(
+            shipment_name="Acme Imports",
+            candidate_name="Acme Imports",
+            shipment_domain="acme.example",
+            candidate_domain="acme.example",
+            shipment_provider_company_id="provider-company-1",
+            candidate_provider_company_id="provider-company-1",
+        )
+        assert "provider_company_id_match" in str(result.match_reasons)

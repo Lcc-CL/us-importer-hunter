@@ -1,6 +1,7 @@
 """Stage 4A.1 infrastructure tests: providers, raw records, jobs, dedup constraints."""
 
 import asyncio
+from dataclasses import FrozenInstanceError
 from uuid import uuid4
 
 import pytest
@@ -40,7 +41,7 @@ class TestFakeProvider:
         r1 = asyncio.run(provider.fetch(cid, "TestCo"))
         r2 = asyncio.run(provider.fetch(cid, "TestCo"))
         assert len(r1) == len(r2)
-        for a, b in zip(r1, r2):
+        for a, b in zip(r1, r2, strict=True):
             assert a.provider_record_id == b.provider_record_id
             assert a.raw_payload_hash == b.raw_payload_hash
 
@@ -77,14 +78,16 @@ class TestCSVProvider:
                 provider_record_id="csv-001",
                 request_id=req_id,
                 raw_payload_json='{"importer":"Pacific Home Goods Inc.","value":100}',
-                fixture=True, synthetic=True,
+                fixture=True,
+                synthetic=True,
             ),
             RawImportRecord(
                 provider="csv_test",
                 provider_record_id="csv-002",
                 request_id=req_id,
                 raw_payload_json='{"importer":"Other Corp","value":200}',
-                fixture=True, synthetic=True,
+                fixture=True,
+                synthetic=True,
             ),
         ]
         records = asyncio.run(provider.fetch(uuid4(), "Pacific"))
@@ -109,30 +112,39 @@ class TestRawRecordConstraints:
 
     def test_same_record_same_hash(self):
         req = uuid4()
-        r1 = RawImportRecord(provider="p", provider_record_id="1", request_id=req,
-                             raw_payload_json='{"a":1}')
-        r2 = RawImportRecord(provider="p", provider_record_id="1", request_id=req,
-                             raw_payload_json='{"a":1}')
+        r1 = RawImportRecord(
+            provider="p", provider_record_id="1", request_id=req, raw_payload_json='{"a":1}'
+        )
+        r2 = RawImportRecord(
+            provider="p", provider_record_id="1", request_id=req, raw_payload_json='{"a":1}'
+        )
         assert r1.raw_payload_hash == r2.raw_payload_hash
 
     def test_different_payload_different_hash(self):
         req = uuid4()
-        r1 = RawImportRecord(provider="p", provider_record_id="1", request_id=req,
-                             raw_payload_json='{"a":1}')
-        r2 = RawImportRecord(provider="p", provider_record_id="1", request_id=req,
-                             raw_payload_json='{"a":2}')
+        r1 = RawImportRecord(
+            provider="p", provider_record_id="1", request_id=req, raw_payload_json='{"a":1}'
+        )
+        r2 = RawImportRecord(
+            provider="p", provider_record_id="1", request_id=req, raw_payload_json='{"a":2}'
+        )
         assert r1.raw_payload_hash != r2.raw_payload_hash
 
     def test_hash_is_auto_computed(self):
-        r = RawImportRecord(provider="p", provider_record_id="1", request_id=uuid4(),
-                            raw_payload_json='{"test":true}')
+        r = RawImportRecord(
+            provider="p",
+            provider_record_id="1",
+            request_id=uuid4(),
+            raw_payload_json='{"test":true}',
+        )
         assert len(r.raw_payload_hash) == 64
         assert r.raw_payload_hash != ""
 
     def test_record_is_frozen(self):
-        r = RawImportRecord(provider="p", provider_record_id="1", request_id=uuid4(),
-                            raw_payload_json='{"a":1}')
-        with pytest.raises(Exception):
+        r = RawImportRecord(
+            provider="p", provider_record_id="1", request_id=uuid4(), raw_payload_json='{"a":1}'
+        )
+        with pytest.raises(FrozenInstanceError):
             r.raw_payload_json = "changed"  # type: ignore[misc]
 
 
@@ -146,8 +158,9 @@ class TestJobStatus:
 
     def test_valid_status_transitions(self):
         # pending → running → completed
-        assert ImportEvidenceJobStatus.PENDING != ImportEvidenceJobStatus.COMPLETED
-        assert ImportEvidenceJobStatus.RUNNING != ImportEvidenceJobStatus.FAILED
+        assert ImportEvidenceJobStatus.PENDING.value == "pending"
+        assert ImportEvidenceJobStatus.RUNNING.value == "running"
+        assert ImportEvidenceJobStatus.COMPLETED.value == "completed"
 
 
 class TestMigrationBaseline:
@@ -156,15 +169,34 @@ class TestMigrationBaseline:
     def test_all_tables_exist_in_metadata(self):
         import app.database.models  # noqa
         from app.database.base import Base
+
         tables = Base.metadata.tables
-        ie_tables = {t for t in tables if "import_evidence" in t
-                     or "normalized_ship" in t or "importer_entity" in t}
-        assert len(ie_tables) == 7
+        expected = {
+            "import_evidence_conflicts",
+            "import_evidence_jobs",
+            "import_evidence_quality_assessments",
+            "import_evidence_raw_records",
+            "import_evidence_signals",
+            "import_evidence_snapshots",
+            "importer_entity_matches",
+            "importer_evidence_aggregates",
+            "importer_evidence_aggregate_shipments",
+            "normalized_shipments",
+        }
+        assert expected.issubset(tables)
 
     def test_existing_business_tables_still_present(self):
         import app.database.models  # noqa
         from app.database.base import Base
+
         tables = Base.metadata.tables
-        business = {"companies", "contacts", "opportunities", "contact_fit_assessments",
-                     "outreaches", "email_drafts", "tasks"}
+        business = {
+            "companies",
+            "contacts",
+            "opportunities",
+            "contact_fit_assessments",
+            "outreaches",
+            "email_drafts",
+            "tasks",
+        }
         assert business.issubset(set(tables))

@@ -84,38 +84,55 @@ class TestFingerprint:
 
 class TestDedupeStatus:
     def test_house_plus_importer_ok(self):
-        assert dedupe_status_for_shipment(house_bol="HBOL1", importer_name="Acme") == DedupeStatus.OK
+        assert (
+            dedupe_status_for_shipment(house_bol="HBOL1", importer_name="Acme") == DedupeStatus.OK
+        )
 
     def test_house_plus_date_ok(self):
-        assert dedupe_status_for_shipment(house_bol="HBOL1", arrival_date="2026-06-15") == DedupeStatus.OK
+        assert (
+            dedupe_status_for_shipment(house_bol="HBOL1", arrival_date="2026-06-15")
+            == DedupeStatus.OK
+        )
 
     def test_master_importer_date_ok(self):
-        assert dedupe_status_for_shipment(
-            master_bol="MBOL1", importer_name="Acme", arrival_date="2026-06-15"
-        ) == DedupeStatus.OK
+        assert (
+            dedupe_status_for_shipment(
+                master_bol="MBOL1", importer_name="Acme", arrival_date="2026-06-15"
+            )
+            == DedupeStatus.OK
+        )
 
     def test_only_importer_date_needs_review(self):
-        assert dedupe_status_for_shipment(
-            importer_name="Acme", arrival_date="2026-06-15"
-        ) == DedupeStatus.NEEDS_REVIEW
+        assert (
+            dedupe_status_for_shipment(importer_name="Acme", arrival_date="2026-06-15")
+            == DedupeStatus.NEEDS_REVIEW
+        )
 
     def test_no_identity_insufficient(self):
         assert dedupe_status_for_shipment() == DedupeStatus.INSUFFICIENT_IDENTITY
 
     def test_only_importer_insufficient(self):
-        assert dedupe_status_for_shipment(importer_name="Acme") == DedupeStatus.INSUFFICIENT_IDENTITY
+        assert (
+            dedupe_status_for_shipment(importer_name="Acme") == DedupeStatus.INSUFFICIENT_IDENTITY
+        )
 
 
 class TestFixtureDSameHouseBOLMultipleContainers:
     """D: Same House BOL, 3 container rows → 1 Shipment, 3 unique containers."""
 
     def test_three_containers_one_shipment(self):
-        s1 = NormalizedShipment(house_bol="HBOL-X", provider="fake",
-                                container_numbers=("TCLU1", "TCLU2", "TCLU3"),
-                                container_count=3)
-        s2 = NormalizedShipment(house_bol="HBOL-X", provider="fake",
-                                container_numbers=("TCLU3", "TCLU2", "TCLU1"),
-                                container_count=3)
+        s1 = NormalizedShipment(
+            house_bol="HBOL-X",
+            provider="fake",
+            container_numbers=("TCLU1", "TCLU2", "TCLU3"),
+            container_count=3,
+        )
+        s2 = NormalizedShipment(
+            house_bol="HBOL-X",
+            provider="fake",
+            container_numbers=("TCLU3", "TCLU2", "TCLU1"),
+            container_count=3,
+        )
         assert s1.shipment_fingerprint == s2.shipment_fingerprint
         assert len(set(s1.container_numbers)) == 3
 
