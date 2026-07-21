@@ -673,6 +673,18 @@ class DraftApprovalResponse(BaseModel):
         )
 
 
+class DecisionMakerConfirmRequest(BaseModel):
+    contact_id: UUID
+    reviewer_name: str | None = None
+    reason: str | None = None
+    regenerate_draft: bool = False
+
+
+class DecisionMakerConfirmResponse(ProspectDetailResponse):
+    confirmed: bool = True
+    draft_regenerated: bool = False
+
+
 class ApiErrorResponse(BaseModel):
     code: str
     message: str
