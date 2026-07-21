@@ -1,64 +1,49 @@
-# Current Task: Role Taxonomy & 确定性多职责职位识别
+# Current Task: 阶段 2 - 多候选决策人六因子评分与选择
 
-**状态**: 阶段 1 完成 ✅
+**状态**: 阶段 2 核心完成 ✅
 **分支**: `fix/v0.2.2-internal-trial-findings`
-**HEAD**: `d73321a` (已推送 origin)
-**日期**: 2026-07-20
+**HEAD**: `0df6a48` (已推送 origin)
+**日期**: 2026-07-21
 
 ## 已完成
 
-### 1. Role Taxonomy (集中、版本化)
-- 17 个 DecisionRole + unknown，定义在 `app/domain/contact/roles.py`
-- 版本标识: `TAXONOMY_VERSION = "decision-role-v1"`
-- 每个角色有正/负匹配短语、决策相关度、隐含角色
-- `decision_relevance()` 取 max 而非 sum（加角色不能抬高联系人）
+### 1. SixFactorScorer (六因子评分)
+`app/services/contact/scorer.py`
+- role_relevance (0-40), seniority (0-15), company_size_fit (0-10)
+- import_logistics_fit (0-15), reachability (0-15), source_confidence (0-5)
+- 总分上限 100，确定性可重复
 
-### 2. TitleNormalizer
-- `app/services/contact/title_normalizer.py`
-- 规范大小写、Unicode、&/斜杠/连字符分隔、常见缩写展开
-- 识别 seniority (C_LEVEL/VP/DIRECTOR/HEAD/MANAGER/SPECIALIST)
-- 识别 former/retired、assistant/associate、interim/acting 标记
-- 禁止子字符串误命中（" coo " padded 匹配，防止 coordinator 误判）
+### 2. CandidateSelector (多候选选择)
+`app/services/contact/selector.py`
+- Primary / Alternatives (≤3) / Supporting / Rejected 结构
+- review_required 判定（分差≤5、不可达、低置信度）
+- 稳定排序（6 级 tie-breaker）
+- RejectionReason 枚举（8 种明确拒绝原因）
+- SelectionStatus: SELECTED, ALTERNATIVES_AVAILABLE, REVIEW_REQUIRED,
+  NO_RELEVANT_CONTACT, NO_REACHABLE_CONTACT
 
-### 3. DeterministicRoleMatcher
-- `app/services/contact/role_matcher.py`
-- 一个职位返回多个 roles[]，含 reasons、confidence、method、taxonomy_version
-- 角色隐含链（如 supply_chain → logistics，import → procurement + logistics）
+### 3. 持久化
+- score_breakdown_json (JSONB NOT NULL DEFAULT '{}')
+- selection_status, selection_reasons_json, scoring_version
+- Migration roundtrip verified
+- 现有 contact_fit_assessments 复用
 
-### 4. 已通过的分类案例
-- Sales and Purchasing → sales + procurement ✅
-- Director of Sales and Procurement → sales + procurement ✅
-- Owner / Buyer → ownership + procurement ✅
-- Global Supply Manager → sourcing + supply_chain ✅
-- Supply Chain and Operations Director → supply_chain + operations + logistics ✅
-- Import Compliance Manager → import + compliance ✅
-- Inventory and Replenishment Manager → inventory + supply_chain ✅
-- Vice President, Purchasing → procurement (不含 ownership) ✅
+### 4. API
+- DecisionMakerRankingResponse 新增 score_breakdown, selection_status,
+  scoring_version, selection_reasons
+- 新增 CandidateScoreResponse, DecisionMakerSelectionResponse
+- DecisionMakerDetailResponse 新增 selection 字段
+- 从已存评估计算，非重新评分
 
-### 5. 已阻止的误分类
-- Important Accounts Manager 不命中 import ✅
-- Coordinator 不识别为 C-level ✅
-- Former Purchasing Manager 标记为 historical ✅
-- Assistant Buyer 低于 Buyer (specialist seniority) ✅
-- Independent Sales Agent 不命中 procurement ✅
-- 纯 Sales Manager 不命中 procurement/import/logistics ✅
+### 5. 后端服务集成
+- DeterministicDecisionMakerSelectionService 迁移至 v2 六因子评分
+- 向后兼容：rank() 接口不变，role_fit_score 现承载 role_relevance (0-40)
+- 新 score_all() 方法返回 CandidateScore 供 selection 使用
 
-### 6. 生产回归
-- HOUSE HASSON: Sales and Purchasing → sales + procurement ✅
-- MARATHON: Vice President, Purchasing → procurement + high seniority ✅
-- ELITE SALES: Sales Manager → sales only ✅
-
-### 7. 兼容性
-- legacy_department 保留（freight 优先投影）
-- 新 API 输出 roles[] 和 taxonomy_version
-- 旧数据可从 department 恢复单一 roles[]
-- 不改变 selected_contact 与 Draft 行为
-- 幂等重跑不产生重复 Assessment
-
-### 8. 前后端改动
-- 后端: roles.py, values.py, models/contact.py, mappers/contact.py,
-  decision_maker.py, mvp.py, e51b7c3d84af 迁移
-- 前端: api.ts, i18n.tsx, analysis-result.tsx (roles 徽章)
+### 6. 前端类型
+- CandidateScoreResponse, DecisionMakerSelectionResponse 接口
+- DecisionMakerRankingResponse 新增 score_breakdown, selection_status 等
+- ProspectDetailResponse 新增 selection 字段
 
 ## 质量门禁
 
@@ -66,24 +51,29 @@
 |------|------|
 | 后端测试 (846) | PASS |
 | ruff (修改文件) | PASS |
-| mypy strict (244 文件) | PASS |
+| mypy strict (247 files) | PASS |
 | 前端 tsc | PASS |
 | 前端 eslint | PASS |
 | 前端 production build | PASS |
 | make e2e (66 tests) | PASS |
 | make e2e-flag-off | PASS |
-| 浏览器 console error | 无 |
+| migration up/down/up | PASS |
 
-## 未完成 / 留待阶段 2
-- Primary/Alternatives 角色标记（当前所有角色平等）
-- LLM 职位分类
-- 前端联系人切换
-- 海关数据
-- 批量任务
-- 自动发送
+## 未完成 / 留待阶段 3
 
-## 继续执行方案（阶段 2）
-1. 检查并重跑全部门禁确认基线
-2. 研究是否需要 Primary/Alternatives 区分
-3. 任何新功能需通过全部质量门禁
-4. 保持 working tree clean，推送当前功能分支
+- Draft Workflow 集成（review_required 阻止 Draft 生成）
+- 决策人工作流集成 select() 调用
+- 前端 review_required 提示 UI
+- 前端联系人切换 UI
+- 阶段 2 专项测试矩阵（A-J）
+- 三家公司回归（六因子评分验证）
+- 企业规模评分提供者（ContactSizeProvider 实现）
+
+## 下一阶段
+阶段 3：Draft Workflow 集成 + 前端切换 UI + 专项测试 + 三家回归
+
+## 硬边界
+- 不降低资格评分门槛
+- 不实施 Primary/Alternatives 前端切换
+- 不合并 main、不创建 tag
+- 不实施 LLM 职位分类、海关数据、批量任务、自动发送
