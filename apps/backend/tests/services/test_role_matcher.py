@@ -131,7 +131,10 @@ class TestMultiRoleClassification:
                 "Vendor Relations Manager",
                 {DecisionRole.VENDOR_MANAGEMENT, DecisionRole.PROCUREMENT},
             ),
-            ("Global Supply Manager", {DecisionRole.SOURCING, DecisionRole.PROCUREMENT}),
+            (
+                "Global Supply Manager",
+                {DecisionRole.SOURCING, DecisionRole.SUPPLY_CHAIN},
+            ),
             ("Import Compliance Manager", {DecisionRole.IMPORT, DecisionRole.COMPLIANCE}),
             (
                 "Inventory and Replenishment Manager",
@@ -147,7 +150,11 @@ class TestMultiRoleClassification:
 
     def test_supply_chain_and_operations_covers_three(self) -> None:
         roles = roles_of("Supply Chain and Operations Director")
-        assert {DecisionRole.SUPPLY_CHAIN, DecisionRole.OPERATIONS}.issubset(roles)
+        assert {
+            DecisionRole.SUPPLY_CHAIN,
+            DecisionRole.OPERATIONS,
+            DecisionRole.LOGISTICS,
+        }.issubset(roles)
 
     def test_classification_is_deterministic(self) -> None:
         first = classify_title("Sales and Purchasing")
@@ -238,6 +245,9 @@ class TestTrialCompanyRegression:
     def test_marathon_vice_president_purchasing(self) -> None:
         result = classify_title("vice president, purchasing")
         assert DecisionRole.PROCUREMENT in result.roles
+        # A VP of Purchasing is senior, but not the company owner: " president "
+        # must not fire inside "vice president".
+        assert DecisionRole.OWNERSHIP not in result.roles
         assert normalize_title("vice president, purchasing").seniority in (
             SeniorityLevel.C_LEVEL,
             SeniorityLevel.VP,
