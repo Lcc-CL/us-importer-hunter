@@ -127,6 +127,12 @@ class FitAssessmentMapper:
                 for e in assessment.evidence
             ],
             policy_version=assessment.policy_version,
+            roles_json=list(assessment.roles),
+            normalized_title=assessment.normalized_title,
+            classification_method=assessment.classification_method,
+            classification_confidence=assessment.classification_confidence,
+            classification_reasons_json=list(assessment.classification_reasons),
+            taxonomy_version=assessment.taxonomy_version,
             assessed_at=assessment.assessed_at,
         )
 
@@ -153,6 +159,12 @@ class FitAssessmentMapper:
                 else None
             ),
             policy_version=model.policy_version,
+            roles=tuple(model.roles_json),
+            normalized_title=model.normalized_title,
+            classification_method=model.classification_method,
+            classification_confidence=model.classification_confidence,
+            classification_reasons=tuple(model.classification_reasons_json),
+            taxonomy_version=model.taxonomy_version,
             assessment_fingerprint=model.assessment_fingerprint,
             assessed_at=model.assessed_at,
         )

@@ -99,7 +99,17 @@ ROLE_DEFINITIONS: tuple[RoleDefinition, ...] = (
         name_zh="供应链",
         name_en="Supply chain",
         description="Owns the end-to-end flow of goods, including inbound freight.",
-        positive_phrases=("supply chain", "supply chain management", " scm "),
+        positive_phrases=(
+            "supply chain",
+            "supply chain management",
+            " scm ",
+            "supply manager",
+        ),
+        #: Owning the flow of goods means owning inbound freight — the person a
+        #: forwarder actually talks to. Implication is one level deep, so an
+        #: *inventory* manager (who only implies supply chain) does not inherit
+        #: logistics, but a supply-chain title does.
+        implies=(DecisionRole.LOGISTICS,),
         decision_relevance=1.0,
     ),
     RoleDefinition(
@@ -187,6 +197,10 @@ ROLE_DEFINITIONS: tuple[RoleDefinition, ...] = (
             "general manager",
             "proprietor",
         ),
+        #: A vice president reports to ownership, they are not it. Without this
+        #: veto " president " fires inside "vice president" and a VP of
+        #: Purchasing reads as the company owner.
+        negative_phrases=("vice president",),
         decision_relevance=0.8,
     ),
     RoleDefinition(

@@ -209,6 +209,14 @@ class DecisionMakerFitAssessment:
     department: Department
     seniority: SeniorityLevel
     reasons: tuple[str, ...]
+    #: Full responsibility set. `department` above is the legacy projection of
+    #: this and is kept only so existing readers keep working.
+    roles: tuple[str, ...] = ()
+    normalized_title: str | None = None
+    classification_method: str | None = None
+    classification_confidence: float | None = None
+    classification_reasons: tuple[str, ...] = ()
+    taxonomy_version: str | None = None
     policy_version: str
     evidence: tuple[Evidence, ...] = ()
     recommended_channel: ContactChannelType | None = None

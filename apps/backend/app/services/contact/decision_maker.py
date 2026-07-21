@@ -18,6 +18,7 @@ from app.domain.contact import (
     SeniorityLevel,
 )
 from app.domain.values import Confidence, Evidence
+from app.services.contact.role_matcher import classify_title
 
 POLICY_VERSION = "mvp-decision-maker-policy-v1"
 
@@ -119,6 +120,12 @@ class DeterministicDecisionMakerSelectionService:
             if contact.sources
         )
 
+        # The full responsibility set, recorded alongside the judgment. It is
+        # additive metadata this round: scoring and selection still run on the
+        # legacy `department`, so a combined title cannot change who is picked
+        # here — only what the reviewer is shown about them.
+        classification = classify_title(contact.title.raw if contact.title else None)
+
         return DecisionMakerFitAssessment(
             contact_id=contact.id,
             company_id=contact.company_id,
@@ -129,6 +136,12 @@ class DeterministicDecisionMakerSelectionService:
             department=contact.department,
             seniority=contact.seniority,
             reasons=tuple(reasons),
+            roles=tuple(role.value for role in classification.roles),
+            normalized_title=classification.normalized_title or None,
+            classification_method=classification.method,
+            classification_confidence=classification.confidence,
+            classification_reasons=classification.reasons,
+            taxonomy_version=classification.taxonomy_version,
             evidence=evidence,
             recommended_channel=channel,
             policy_version=self.policy_version,  # subclass overrides propagate
