@@ -1,0 +1,4 @@
+provider_record_id,importer_name,importer_domain,importer_country,arrival_date,origin_country,shipper_name,shipper_country,master_bol,house_bol,carrier_scac,vessel,voyage,port_of_lading,port_of_discharge,container_numbers,weight,weight_unit,teu,hs_codes,goods_description
+demo-hw-001,Pacific Home Goods Inc.,pacifichomegoods.example,US,2026-06-12,CN,Shenzhen Bright Hardware Co.,CN,MSCUHW001,HBLHW001,MSCU,MSC ARIES,061E,CNSHA,USLAX,MSCU1234567,12400,kg,2,8302.42,Cabinet hardware fittings
+demo-hw-002,Pacific Home Goods Inc.,pacifichomegoods.example,US,2026-04-08,CN,Ningbo Home Components Ltd.,CN,CMAUHW002,HBLHW002,CMAU,CMA CGM MARCO POLO,042E,CNNGB,USLGB,CMAU2345678,9800,kg,2,8302.49,Door and furniture hardware
+demo-hw-003,Pacific Home Goods Inc.,pacifichomegoods.example,US,2025-11-19,CN,Guangzhou Precision Fixtures Ltd.,CN,OOLUHW003,HBLHW003,OOLU,OOCL TOKYO,119E,CNSHA,USLAX,OOLU3456789,10600,kg,2,8302.41,Metal mounting fixtures

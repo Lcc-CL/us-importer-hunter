@@ -20,6 +20,11 @@ from app.domain.import_evidence.models import (
     ShipmentInclusion,
     SignalPromotionCandidate,
 )
+from app.domain.import_evidence.values import (
+    ImporterEntityMatch,
+    NormalizedShipment,
+    RawImportRecord,
+)
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
 from app.domain.research import ResearchRun
@@ -156,6 +161,39 @@ class ImportEvidenceRepository(Protocol):
     ) -> list[ImporterEvidenceAggregate]: ...
 
     async def list_aggregate_shipments(self, aggregate_id: UUID) -> list[ShipmentInclusion]: ...
+
+    async def create_upload_job(
+        self, company_id: UUID, provider_name: str, request_id: UUID
+    ) -> UUID: ...
+
+    async def save_upload_record(self, job_id: UUID, record: RawImportRecord) -> UUID: ...
+
+    async def save_normalized_shipment(
+        self, job_id: UUID, shipment: NormalizedShipment, raw_record_id: UUID
+    ) -> tuple[UUID, bool]: ...
+
+    async def save_entity_match(self, shipment_id: UUID, match: ImporterEntityMatch) -> None: ...
+
+    async def finish_upload_job(
+        self,
+        job_id: UUID,
+        *,
+        status: str,
+        total_raw: int,
+        total_normalized: int,
+        total_deduped: int,
+        total_matched: int,
+        total_promoted: int,
+        error_message: str | None = None,
+    ) -> None: ...
+
+    async def get_latest_upload_job(
+        self, company_id: UUID
+    ) -> tuple[UUID, str, int, int, int, int, int] | None: ...
+
+    async def get_current_aggregate_for_company(
+        self, company_id: UUID
+    ) -> ImporterEvidenceAggregate | None: ...
 
 
 class ImportEvidencePromotionRepository(Protocol):

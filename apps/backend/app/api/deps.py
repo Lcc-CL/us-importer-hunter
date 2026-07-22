@@ -4,8 +4,8 @@ Resources (engine, session factory, redis) live on ``app.state``; these
 providers expose them to routes and services via dependency injection.
 """
 
-from collections.abc import AsyncIterator
-from typing import Annotated
+from collections.abc import AsyncIterator, Callable
+from typing import Annotated, cast
 
 from fastapi import Depends, Request
 from redis.asyncio import Redis
@@ -18,6 +18,7 @@ from app.domain.repositories import UnitOfWork
 from app.domain.services import (
     DecisionMakerSelectionService,
     EmailDraftGenerator,
+    ImportEvidenceProjectionReader,
     OpportunityScoringService,
 )
 from app.services.contact import DeterministicDecisionMakerSelectionService
@@ -34,6 +35,7 @@ from app.workflows.company_ingestion import CompanyIngestionWorkflow
 from app.workflows.contact_ingestion import ContactIngestionWorkflow
 from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
 from app.workflows.email import EmailDraftGenerationWorkflow
+from app.workflows.import_evidence import EvidenceFlowUnitOfWork, EvidenceToDraftWorkflow
 from app.workflows.mvp_prospect_analysis import (
     ApproveEmailDraftWorkflow,
     MvpProspectAnalysisWorkflow,
@@ -120,25 +122,35 @@ def get_company_ingestion_workflow(uow_factory: UowFactoryDep) -> CompanyIngesti
     return CompanyIngestionWorkflow(uow_factory)
 
 
-CompanyIngestionDep = Annotated[
-    CompanyIngestionWorkflow, Depends(get_company_ingestion_workflow)
+CompanyIngestionDep = Annotated[CompanyIngestionWorkflow, Depends(get_company_ingestion_workflow)]
+
+
+def get_import_evidence_projection_reader(
+    request: Request,
+) -> ImportEvidenceProjectionReader | None:
+    session_factory = getattr(request.app.state, "session_factory", None)
+    return (
+        SqlAlchemyImportEvidenceProjectionReader(session_factory)
+        if session_factory is not None
+        else None
+    )
+
+
+ImportEvidenceProjectionReaderDep = Annotated[
+    ImportEvidenceProjectionReader | None,
+    Depends(get_import_evidence_projection_reader),
 ]
 
 
 def get_opportunity_workflow(
-    request: Request,
     uow_factory: UowFactoryDep,
     scoring: OpportunityScoringDep,
+    import_evidence_reader: ImportEvidenceProjectionReaderDep,
 ) -> OpportunityApplicationWorkflow:
-    session_factory = getattr(request.app.state, "session_factory", None)
     return OpportunityApplicationWorkflow(
         uow_factory,
         scoring,
-        import_evidence_reader=(
-            SqlAlchemyImportEvidenceProjectionReader(session_factory)
-            if session_factory is not None
-            else None
-        ),
+        import_evidence_reader=import_evidence_reader,
     )
 
 
@@ -151,9 +163,7 @@ def get_contact_ingestion_workflow(uow_factory: UowFactoryDep) -> ContactIngesti
     return ContactIngestionWorkflow(uow_factory)
 
 
-ContactIngestionDep = Annotated[
-    ContactIngestionWorkflow, Depends(get_contact_ingestion_workflow)
-]
+ContactIngestionDep = Annotated[ContactIngestionWorkflow, Depends(get_contact_ingestion_workflow)]
 
 
 def get_decision_maker_workflow(
@@ -175,9 +185,7 @@ def get_email_draft_workflow(
     return EmailDraftGenerationWorkflow(uow_factory, generator)
 
 
-EmailDraftWorkflowDep = Annotated[
-    EmailDraftGenerationWorkflow, Depends(get_email_draft_workflow)
-]
+EmailDraftWorkflowDep = Annotated[EmailDraftGenerationWorkflow, Depends(get_email_draft_workflow)]
 
 
 def get_mvp_prospect_analysis_workflow(
@@ -205,9 +213,7 @@ def get_mvp_prospect_query_workflow(uow_factory: UowFactoryDep) -> MvpProspectQu
     return MvpProspectQueryWorkflow(uow_factory)
 
 
-MvpProspectQueryDep = Annotated[
-    MvpProspectQueryWorkflow, Depends(get_mvp_prospect_query_workflow)
-]
+MvpProspectQueryDep = Annotated[MvpProspectQueryWorkflow, Depends(get_mvp_prospect_query_workflow)]
 
 
 def get_approve_email_draft_workflow(uow_factory: UowFactoryDep) -> ApproveEmailDraftWorkflow:
@@ -217,6 +223,24 @@ def get_approve_email_draft_workflow(uow_factory: UowFactoryDep) -> ApproveEmail
 ApproveEmailDraftDep = Annotated[
     ApproveEmailDraftWorkflow, Depends(get_approve_email_draft_workflow)
 ]
+
+
+def get_evidence_to_draft_workflow(
+    uow_factory: UowFactoryDep,
+    opportunity: OpportunityWorkflowDep,
+    decision_maker: DecisionMakerWorkflowDep,
+    email: EmailDraftWorkflowDep,
+) -> EvidenceToDraftWorkflow:
+    evidence_factory = cast(Callable[[], EvidenceFlowUnitOfWork], uow_factory)
+    return EvidenceToDraftWorkflow(
+        evidence_factory,
+        opportunity=opportunity,
+        decision_maker=decision_maker,
+        email_draft=email,
+    )
+
+
+EvidenceToDraftDep = Annotated[EvidenceToDraftWorkflow, Depends(get_evidence_to_draft_workflow)]
 
 
 def get_research_extractor(settings: SettingsDep) -> ResearchExtractor:
