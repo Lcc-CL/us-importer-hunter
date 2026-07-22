@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.database.repositories import (
     SqlAlchemyCompanyRepository,
     SqlAlchemyContactRepository,
+    SqlAlchemyImportEvidencePromotionRepository,
     SqlAlchemyImportEvidenceRepository,
     SqlAlchemyOpportunityRepository,
     SqlAlchemyOutreachRepository,
@@ -32,6 +33,7 @@ from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
     CompanyRepository,
     ContactRepository,
+    ImportEvidencePromotionRepository,
     ImportEvidenceRepository,
     ImportEvidenceUnitOfWork,
     OpportunityRepository,
@@ -45,6 +47,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     companies: CompanyRepository
     contacts: ContactRepository
     import_evidence: ImportEvidenceRepository
+    import_evidence_promotions: ImportEvidencePromotionRepository
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
     research_runs: ResearchRunRepository
@@ -61,6 +64,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self.companies = SqlAlchemyCompanyRepository(self._session)
         self.contacts = SqlAlchemyContactRepository(self._session)
         self.import_evidence = SqlAlchemyImportEvidenceRepository(self._session)
+        self.import_evidence_promotions = SqlAlchemyImportEvidencePromotionRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)
         self.outreaches = SqlAlchemyOutreachRepository(self._session)
         self.research_runs = SqlAlchemyResearchRunRepository(self._session)

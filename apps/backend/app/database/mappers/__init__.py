@@ -11,6 +11,7 @@ from app.database.mappers.company import CompanyMapper
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
 from app.database.mappers.import_evidence import (
     ImporterEvidenceAggregateMapper,
+    ImportEvidencePromotionMapper,
     ImportEvidenceQualityMapper,
 )
 from app.database.mappers.opportunity import OpportunityMapper
@@ -21,6 +22,7 @@ from app.database.mappers.task import TaskMapper
 __all__ = [
     "CompanyMapper",
     "ImportEvidenceQualityMapper",
+    "ImportEvidencePromotionMapper",
     "ImporterEvidenceAggregateMapper",
     "ContactMapper",
     "FitAssessmentMapper",

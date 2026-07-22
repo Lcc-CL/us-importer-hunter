@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -268,6 +269,162 @@ class ImporterEvidenceAggregateShipmentModel(Base):
     inclusion_status: Mapped[str] = mapped_column(String(20))
     inclusion_reason: Mapped[str] = mapped_column(Text)
     source_provider_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+_CANONICAL_SIGNAL_CHECK = (
+    "signal_kind IN ('import_activity','china_dependency','shipping_fit',"
+    "'cargo_value_potential','company_scale','growth_signal','contactability',"
+    "'logistics_complexity')"
+)
+
+
+class ImportEvidenceSignalPromotionModel(Base):
+    __tablename__ = "import_evidence_signal_promotions"
+    __table_args__ = (
+        CheckConstraint(_CANONICAL_SIGNAL_CHECK, name="ck_import_promotion_signal_kind"),
+        CheckConstraint(
+            "status IN ('CANDIDATE','PROMOTED','SKIPPED','BLOCKED','SUPERSEDED','FAILED')",
+            name="ck_import_promotion_status",
+        ),
+        CheckConstraint(
+            "quality_status IS NULL OR quality_status IN ('VERIFIED','USABLE','REVIEW','REJECTED')",
+            name="ck_import_promotion_quality_status",
+        ),
+        CheckConstraint(
+            "quality_score IS NULL OR quality_score BETWEEN 0 AND 100",
+            name="ck_import_promotion_quality_score",
+        ),
+        CheckConstraint(
+            "length(trim(input_fingerprint)) > 0",
+            name="ck_import_promotion_fingerprint_not_empty",
+        ),
+        UniqueConstraint(
+            "aggregate_id",
+            "signal_kind",
+            "input_fingerprint",
+            name="uq_import_promotion_input",
+        ),
+        Index(
+            "uq_import_promotion_current_company_kind",
+            "company_id",
+            "signal_kind",
+            unique=True,
+            postgresql_where=text("is_current"),
+        ),
+        Index("ix_import_promotions_aggregate", "aggregate_id"),
+        ForeignKeyConstraint(
+            ["promoted_signal_id"],
+            ["import_evidence_company_signals.id"],
+            ondelete="SET NULL",
+            name="fk_import_promotion_signal",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by_id"],
+            ["import_evidence_signal_promotions.id"],
+            ondelete="SET NULL",
+            name="fk_import_promotion_superseded_by",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    aggregate_id: Mapped[UUID] = mapped_column(
+        ForeignKey("importer_evidence_aggregates.id", ondelete="CASCADE")
+    )
+    company_id: Mapped[UUID] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    signal_kind: Mapped[str] = mapped_column(String(40))
+    signal_detail: Mapped[str] = mapped_column(Text)
+    normalized_value_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    source_summary_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    evidence_snapshot_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    quality_status: Mapped[str | None] = mapped_column(String(20))
+    quality_score: Mapped[float | None] = mapped_column(Float)
+    promotion_version: Mapped[str] = mapped_column(String(64))
+    input_fingerprint: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(20))
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    promoted_signal_id: Mapped[UUID | None] = mapped_column()
+    superseded_by_id: Mapped[UUID | None] = mapped_column()
+    rejection_reasons_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ImportEvidenceCompanySignalModel(Base):
+    __tablename__ = "import_evidence_company_signals"
+    __table_args__ = (
+        CheckConstraint(_CANONICAL_SIGNAL_CHECK, name="ck_import_projection_signal_kind"),
+        CheckConstraint(
+            "quality_status IN ('VERIFIED','USABLE')",
+            name="ck_import_projection_quality_status",
+        ),
+        CheckConstraint(
+            "quality_score BETWEEN 0 AND 100",
+            name="ck_import_projection_quality_score",
+        ),
+        CheckConstraint(
+            "ownership = 'import_evidence'",
+            name="ck_import_projection_ownership",
+        ),
+        UniqueConstraint("promotion_id", name="uq_import_projection_promotion"),
+        Index(
+            "uq_import_projection_active_company_kind",
+            "company_id",
+            "signal_kind",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+        ForeignKeyConstraint(
+            ["promotion_id"],
+            ["import_evidence_signal_promotions.id"],
+            ondelete="CASCADE",
+            name="fk_import_projection_promotion",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by_id"],
+            ["import_evidence_company_signals.id"],
+            ondelete="SET NULL",
+            name="fk_import_projection_superseded_by",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    promotion_id: Mapped[UUID] = mapped_column()
+    aggregate_id: Mapped[UUID] = mapped_column(
+        ForeignKey("importer_evidence_aggregates.id", ondelete="CASCADE")
+    )
+    company_id: Mapped[UUID] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    signal_kind: Mapped[str] = mapped_column(String(40))
+    signal_detail: Mapped[str] = mapped_column(Text)
+    normalized_value_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    provenance_json: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    quality_status: Mapped[str] = mapped_column(String(20))
+    quality_score: Mapped[float] = mapped_column(Float)
+    ownership: Mapped[str] = mapped_column(String(30), default="import_evidence")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    superseded_by_id: Mapped[UUID | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ImportEvidencePromotionQualityAssessmentModel(Base):
+    __tablename__ = "import_evidence_promotion_quality_assessments"
+
+    promotion_id: Mapped[UUID] = mapped_column(
+        ForeignKey("import_evidence_signal_promotions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    quality_assessment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("import_evidence_quality_assessments.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

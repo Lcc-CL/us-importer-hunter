@@ -7,16 +7,73 @@ from uuid import UUID
 from app.database.models.import_evidence import (
     ImporterEvidenceAggregateModel,
     ImporterEvidenceAggregateShipmentModel,
+    ImportEvidenceCompanySignalModel,
     ImportEvidenceQualityAssessmentModel,
+    ImportEvidenceSignalPromotionModel,
 )
 from app.domain.import_evidence.models import (
     AggregateStatus,
     ImporterEvidenceAggregate,
+    ImportEvidenceCompanySignal,
+    ImportEvidenceSignalPromotion,
     InclusionStatus,
+    PromotionStatus,
     QualityAssessment,
     QualityStatus,
     ShipmentInclusion,
 )
+
+
+class ImportEvidencePromotionMapper:
+    @staticmethod
+    def promotion_to_domain(
+        model: ImportEvidenceSignalPromotionModel,
+        quality_ids: tuple[UUID, ...] = (),
+    ) -> ImportEvidenceSignalPromotion:
+        return ImportEvidenceSignalPromotion(
+            id=model.id,
+            aggregate_id=model.aggregate_id,
+            company_id=model.company_id,
+            signal_kind=model.signal_kind,
+            signal_detail=model.signal_detail,
+            normalized_value_json=dict(model.normalized_value_json or {}),
+            source_summary_json=dict(model.source_summary_json or {}),
+            evidence_snapshot_json=dict(model.evidence_snapshot_json or {}),
+            quality_status=(QualityStatus(model.quality_status) if model.quality_status else None),
+            quality_score=model.quality_score,
+            promotion_version=model.promotion_version,
+            input_fingerprint=model.input_fingerprint,
+            status=PromotionStatus(model.status),
+            is_current=model.is_current,
+            promoted_signal_id=model.promoted_signal_id,
+            superseded_by_id=model.superseded_by_id,
+            quality_assessment_ids=quality_ids,
+            rejection_reasons=tuple(model.rejection_reasons_json or ()),
+            promoted_at=model.promoted_at,
+            superseded_at=model.superseded_at,
+            created_at=model.created_at,
+            updated_at=model.updated_at,
+        )
+
+    @staticmethod
+    def signal_to_domain(model: ImportEvidenceCompanySignalModel) -> ImportEvidenceCompanySignal:
+        return ImportEvidenceCompanySignal(
+            id=model.id,
+            promotion_id=model.promotion_id,
+            aggregate_id=model.aggregate_id,
+            company_id=model.company_id,
+            signal_kind=model.signal_kind,
+            signal_detail=model.signal_detail,
+            normalized_value_json=dict(model.normalized_value_json or {}),
+            provenance_json=dict(model.provenance_json or {}),
+            quality_status=QualityStatus(model.quality_status),
+            quality_score=model.quality_score,
+            ownership=model.ownership,
+            is_active=model.is_active,
+            superseded_by_id=model.superseded_by_id,
+            created_at=model.created_at,
+            superseded_at=model.superseded_at,
+        )
 
 
 class ImportEvidenceQualityMapper:

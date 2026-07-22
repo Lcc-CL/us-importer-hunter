@@ -14,8 +14,11 @@ from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
 from app.domain.import_evidence.models import (
     ImporterEvidenceAggregate,
+    ImportEvidenceCompanySignal,
+    ImportEvidenceSignalPromotion,
     QualityAssessment,
     ShipmentInclusion,
+    SignalPromotionCandidate,
 )
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
@@ -155,8 +158,33 @@ class ImportEvidenceRepository(Protocol):
     async def list_aggregate_shipments(self, aggregate_id: UUID) -> list[ShipmentInclusion]: ...
 
 
+class ImportEvidencePromotionRepository(Protocol):
+    async def get_quality_assessments(
+        self, quality_assessment_ids: tuple[UUID, ...]
+    ) -> list[QualityAssessment]: ...
+
+    async def apply_candidates(
+        self, candidates: tuple[SignalPromotionCandidate, ...]
+    ) -> tuple[list[ImportEvidenceSignalPromotion], bool]: ...
+
+    async def get_promotion_by_id(
+        self, promotion_id: UUID
+    ) -> ImportEvidenceSignalPromotion | None: ...
+
+    async def list_current_promotions(
+        self, company_id: UUID
+    ) -> list[ImportEvidenceSignalPromotion]: ...
+
+    async def list_promotion_history(
+        self, *, company_id: UUID | None = None, aggregate_id: UUID | None = None
+    ) -> list[ImportEvidenceSignalPromotion]: ...
+
+    async def list_active_signals(self, company_id: UUID) -> list[ImportEvidenceCompanySignal]: ...
+
+
 class ImportEvidenceUnitOfWork(Protocol):
     import_evidence: ImportEvidenceRepository
+    import_evidence_promotions: ImportEvidencePromotionRepository
 
     async def __aenter__(self) -> "ImportEvidenceUnitOfWork": ...
 

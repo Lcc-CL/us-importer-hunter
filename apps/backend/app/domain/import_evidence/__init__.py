@@ -3,10 +3,15 @@
 from app.domain.import_evidence.models import (
     AggregateStatus,
     ImporterEvidenceAggregate,
+    ImportEvidenceCompanySignal,
+    ImportEvidenceScoringProjection,
+    ImportEvidenceSignalPromotion,
     InclusionStatus,
+    PromotionStatus,
     QualityAssessment,
     QualityStatus,
     ShipmentInclusion,
+    SignalPromotionCandidate,
     stable_fingerprint,
 )
 from app.domain.import_evidence.values import (
@@ -19,14 +24,19 @@ from app.domain.import_evidence.values import (
 
 __all__ = [
     "AggregateStatus",
+    "ImportEvidenceCompanySignal",
+    "ImportEvidenceScoringProjection",
+    "ImportEvidenceSignalPromotion",
     "EntityMatchMethod",
     "EntityMatchStatus",
     "ImportEvidenceJobStatus",
     "ImporterEvidenceAggregate",
     "InclusionStatus",
+    "PromotionStatus",
     "QualityAssessment",
     "QualityLevel",
     "QualityStatus",
+    "SignalPromotionCandidate",
     "ShipmentInclusion",
     "ValueType",
     "stable_fingerprint",

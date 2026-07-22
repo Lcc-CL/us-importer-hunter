@@ -33,6 +33,15 @@ class InclusionStatus(StrEnum):
     SKIPPED = "skipped"
 
 
+class PromotionStatus(StrEnum):
+    CANDIDATE = "CANDIDATE"
+    PROMOTED = "PROMOTED"
+    SKIPPED = "SKIPPED"
+    BLOCKED = "BLOCKED"
+    SUPERSEDED = "SUPERSEDED"
+    FAILED = "FAILED"
+
+
 @dataclass(frozen=True)
 class QualityAssessment:
     id: UUID = field(default_factory=uuid4)
@@ -138,6 +147,79 @@ class ImporterEvidenceAggregate:
     inclusions: tuple[ShipmentInclusion, ...] = ()
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     superseded_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class SignalPromotionCandidate:
+    aggregate_id: UUID
+    company_id: UUID | None
+    signal_kind: str
+    signal_detail: str
+    normalized_value_json: dict[str, Any]
+    source_summary_json: dict[str, Any]
+    evidence_snapshot_json: dict[str, Any]
+    quality_status: QualityStatus | None
+    quality_score: float | None
+    promotion_version: str
+    input_fingerprint: str
+    status: PromotionStatus
+    quality_assessment_ids: tuple[UUID, ...] = ()
+    rejection_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ImportEvidenceCompanySignal:
+    id: UUID = field(default_factory=uuid4)
+    promotion_id: UUID | None = None
+    aggregate_id: UUID | None = None
+    company_id: UUID | None = None
+    signal_kind: str = ""
+    signal_detail: str = ""
+    normalized_value_json: dict[str, Any] = field(default_factory=dict)
+    provenance_json: dict[str, Any] = field(default_factory=dict)
+    quality_status: QualityStatus = QualityStatus.REJECTED
+    quality_score: float = 0.0
+    ownership: str = "import_evidence"
+    is_active: bool = True
+    superseded_by_id: UUID | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    superseded_at: datetime | None = None
+
+    @property
+    def rendered_signal(self) -> str:
+        return f"{self.signal_kind}: {self.signal_detail}"
+
+
+@dataclass(frozen=True)
+class ImportEvidenceSignalPromotion:
+    id: UUID = field(default_factory=uuid4)
+    aggregate_id: UUID | None = None
+    company_id: UUID | None = None
+    signal_kind: str = ""
+    signal_detail: str = ""
+    normalized_value_json: dict[str, Any] = field(default_factory=dict)
+    source_summary_json: dict[str, Any] = field(default_factory=dict)
+    evidence_snapshot_json: dict[str, Any] = field(default_factory=dict)
+    quality_status: QualityStatus | None = None
+    quality_score: float | None = None
+    promotion_version: str = "import-evidence-signal-promotion-v1"
+    input_fingerprint: str = ""
+    status: PromotionStatus = PromotionStatus.CANDIDATE
+    is_current: bool = True
+    promoted_signal_id: UUID | None = None
+    superseded_by_id: UUID | None = None
+    quality_assessment_ids: tuple[UUID, ...] = ()
+    rejection_reasons: tuple[str, ...] = ()
+    promoted_at: datetime | None = None
+    superseded_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(frozen=True)
+class ImportEvidenceScoringProjection:
+    signals: tuple[ImportEvidenceCompanySignal, ...] = ()
+    research_signals: tuple[str, ...] = ()
 
 
 def stable_fingerprint(payload: dict[str, Any]) -> str:
