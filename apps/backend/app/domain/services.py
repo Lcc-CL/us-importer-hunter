@@ -15,6 +15,7 @@ from uuid import UUID
 
 from app.domain.clock import utcnow
 from app.domain.exceptions import DomainError
+from app.domain.import_evidence.models import ImportEvidenceScoringProjection
 from app.domain.values import (
     CompanyName,
     OpportunityAssessment,
@@ -56,7 +57,12 @@ class OpportunityScoringInput:
     sources: tuple[SourceReference, ...]
     scoring_version: str
     user_lens_version: str | None = None
+    signal_selection_reasons: tuple[str, ...] = ()
     assessed_at: datetime = field(default_factory=utcnow)
+
+
+class ImportEvidenceProjectionReader(Protocol):
+    async def read_for_company(self, company_id: UUID) -> ImportEvidenceScoringProjection: ...
 
 
 class OpportunityScoringService(Protocol):

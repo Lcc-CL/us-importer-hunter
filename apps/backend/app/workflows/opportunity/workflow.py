@@ -27,10 +27,16 @@ from uuid import UUID
 from app.domain.company import Company
 from app.domain.events import CompanyFactsChanged, CompanyIngested
 from app.domain.exceptions import DuplicateOperation
+from app.domain.import_evidence.models import ImportEvidenceScoringProjection
 from app.domain.opportunity import CLOSED_STAGES, Opportunity
 from app.domain.repositories import UnitOfWork
-from app.domain.services import OpportunityScoringInput, OpportunityScoringService
+from app.domain.services import (
+    ImportEvidenceProjectionReader,
+    OpportunityScoringInput,
+    OpportunityScoringService,
+)
 from app.domain.values import OpportunityAssessment
+from app.services.scoring.evidence_merge import ScoringEvidenceMergePolicy
 
 
 class OpportunityProcessingAction(StrEnum):
@@ -62,9 +68,13 @@ class OpportunityApplicationWorkflow:
         self,
         uow_factory: Callable[[], UnitOfWork],
         scoring_service: OpportunityScoringService,
+        import_evidence_reader: ImportEvidenceProjectionReader | None = None,
+        evidence_merge_policy: ScoringEvidenceMergePolicy | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._scoring = scoring_service
+        self._import_evidence_reader = import_evidence_reader
+        self._evidence_merge = evidence_merge_policy or ScoringEvidenceMergePolicy()
 
     async def handle(
         self,
@@ -81,14 +91,21 @@ class OpportunityApplicationWorkflow:
                     company_id=event.company_id,
                     notes=("company not found — nothing to assess",),
                 )
-            if not company.sources:
+            projection = None
+            if self._import_evidence_reader is not None:
+                try:
+                    projection = await self._import_evidence_reader.read_for_company(company.id)
+                except Exception:  # noqa: BLE001 - optional reader must fail open
+                    projection = None
+            scoring_input = self._build_input(company, user_lens_version, projection)
+            if not scoring_input.sources:
                 return OpportunityProcessingOutcome(
                     action=OpportunityProcessingAction.SKIPPED,
                     company_id=company.id,
                     notes=("company has no source references — nothing trustworthy to score",),
                 )
 
-            assessment = await self._scoring.assess(self._build_input(company, user_lens_version))
+            assessment = await self._scoring.assess(scoring_input)
             incomplete = self._incompleteness(assessment)
             if incomplete:
                 return OpportunityProcessingOutcome(
@@ -155,9 +172,7 @@ class OpportunityApplicationWorkflow:
                     action=OpportunityProcessingAction.SKIPPED,
                     company_id=company.id,
                     opportunity_id=opportunity.id,
-                    notes=(
-                        "concurrent duplicate assessment rejected — idempotent skip",
-                    ),
+                    notes=("concurrent duplicate assessment rejected — idempotent skip",),
                 )
             events = opportunity.drain_events()
             assert len(events) == pending_count
@@ -184,17 +199,26 @@ class OpportunityApplicationWorkflow:
             )
 
     def _build_input(
-        self, company: Company, user_lens_version: str | None
+        self,
+        company: Company,
+        user_lens_version: str | None,
+        import_projection: ImportEvidenceScoringProjection | None = None,
     ) -> OpportunityScoringInput:
+        merged = self._evidence_merge.merge(
+            company_signals=company.signals,
+            company_sources=company.sources,
+            import_projection=import_projection,
+        )
         return OpportunityScoringInput(
             company_id=company.id,
             company_name=company.name.value,
             website_host=company.website.host if company.website else None,
             verified=company.verified,
-            signals=company.signals,
-            sources=company.sources,
+            signals=merged.signals,
+            sources=merged.sources,
             scoring_version=self._scoring.scoring_version,
             user_lens_version=user_lens_version,
+            signal_selection_reasons=merged.selection_reasons,
         )
 
     @staticmethod
