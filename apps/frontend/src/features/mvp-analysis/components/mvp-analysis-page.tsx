@@ -5,12 +5,16 @@ import { Anchor, ExternalLink, Languages } from "lucide-react";
 
 import {
   API_BASE_URL,
+  ApiError,
   analyzeProspect,
   approveDraft,
   getClientErrorDetails,
+  getImportEvidence,
   getProspect,
+  uploadImportEvidence,
   type ClientErrorDetails,
   type DraftApprovalResponse,
+  type EvidenceUploadResponse,
   type ProspectAnalysisRequest,
   type ProspectAnalysisResponse,
   type ProspectDetailResponse,
@@ -18,6 +22,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import type { MvpPageState, SubmittedProspectContext } from "../types";
 import { AnalysisResult } from "./analysis-result";
+import { ImportEvidencePanel } from "./import-evidence-panel";
 import { ProspectForm } from "./prospect-form";
 import { ProviderBadge } from "./provider-badge";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
@@ -58,6 +63,8 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   const [analysis, setAnalysis] = useState<ProspectAnalysisResponse | null>(null);
   const [detail, setDetail] = useState<ProspectDetailResponse | null>(null);
   const [approval, setApproval] = useState<DraftApprovalResponse | null>(null);
+  const [evidence, setEvidence] = useState<EvidenceUploadResponse | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [error, setError] = useState<ClientErrorDetails | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(initialCompanyId ?? null);
   const [context, setContext] = useState<SubmittedProspectContext | null>(null);
@@ -115,6 +122,14 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
         const saved = await getProspect(initialCompanyId as string);
         if (!active) return;
         setDetail(saved);
+        try {
+          const currentEvidence = await getImportEvidence(initialCompanyId as string);
+          if (active) setEvidence(currentEvidence);
+        } catch (caught: unknown) {
+          if (!(caught instanceof ApiError && caught.status === 404) && active) {
+            setEvidenceError(getClientErrorDetails(caught).message);
+          }
+        }
         setPageState("success");
       } catch (caught: unknown) {
         if (!active) return;
@@ -252,6 +267,27 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
     }
   }
 
+  async function handleEvidenceUpload(file: File) {
+    if (!companyId || isBusy) return;
+    setEvidenceError(null);
+    try {
+      const senderProfile = missing.sender
+        ? undefined
+        : {
+            name: effectiveSender.name.trim(),
+            company: effectiveSender.company.trim(),
+            value_proposition: effectiveSender.valueProposition.trim(),
+          };
+      const imported = await uploadImportEvidence(companyId, file, senderProfile);
+      setEvidence(imported);
+      const saved = await getProspect(companyId);
+      setDetail(saved);
+      setPageState("success");
+    } catch (caught: unknown) {
+      setEvidenceError(getClientErrorDetails(caught).message);
+    }
+  }
+
   async function handleApprove(outreachId: string, version: number) {
     if (isBusy || !approverName.trim()) return;
     setPageState("approving");
@@ -372,6 +408,16 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
                 sender={effectiveSender}
               />
             </details>
+
+            {pendingResearch || companyId ? (
+              <ImportEvidencePanel
+                companyId={companyId}
+                disabled={isBusy}
+                error={evidenceError}
+                onUpload={handleEvidenceUpload}
+                result={evidence}
+              />
+            ) : null}
           </div>
           <AnalysisResult
             analysis={analysis}
