@@ -71,7 +71,7 @@ def run_alembic(command: list[str], db_name: str) -> None:
 
 @pytest.fixture(scope="session")
 def pg_settings() -> Settings:
-    settings = Settings()
+    settings = Settings(_env_file=None)
     try:
         asyncio.run(_probe(settings.database_url))
     except Exception:  # noqa: BLE001 — any connection failure means "no PG here"
