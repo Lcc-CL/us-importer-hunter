@@ -266,6 +266,33 @@ export interface RuntimeStatusResponse {
   environment: string;
 }
 
+export type EvidenceFlowStatus = "completed" | "partial" | "needs_review";
+
+export interface EvidenceUploadResponse {
+  status: EvidenceFlowStatus;
+  company_id: string;
+  import_job_id: string | null;
+  aggregate_id: string | null;
+  records_received: number;
+  records_normalized: number;
+  shipments_matched: number;
+  quality_status: string | null;
+  quality_score: number | null;
+  promoted_signals: string[];
+  previous_qualification_score: number | null;
+  qualification_score: number | null;
+  qualification_status: string | null;
+  qualification_reasons: string[];
+  draft_status: string;
+  warnings: string[];
+}
+
+export interface EvidenceSender {
+  name: string;
+  company: string;
+  value_proposition: string;
+}
+
 export interface DraftApprovalRequest {
   approver_name: string;
 }
@@ -377,6 +404,34 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+async function requestForm<T>(path: string, form: FormData): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_V1_URL}${path}`, {
+      method: "POST",
+      body: form,
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiNetworkError(
+      "Unable to reach the API. Confirm the backend is running on the configured URL.",
+    );
+  }
+
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = isRecord(payload) && typeof payload.detail === "string"
+      ? payload.detail
+      : `The API returned HTTP ${response.status}.`;
+    throw new ApiError(response.status, {
+      code: "import_evidence_upload_failed",
+      message: detail,
+      request_id: response.headers.get("X-Request-ID") ?? "not_available",
+    });
+  }
+  return payload as T;
+}
+
 export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return requestJson<RuntimeStatusResponse>("/health/runtime");
 }
@@ -413,6 +468,31 @@ export function analyzeProspect(
 export function getProspect(companyId: string): Promise<ProspectDetailResponse> {
   return requestJson<ProspectDetailResponse>(
     `/mvp/prospects/${encodeURIComponent(companyId)}`,
+  );
+}
+
+export function getImportEvidence(companyId: string): Promise<EvidenceUploadResponse> {
+  return requestJson<EvidenceUploadResponse>(
+    `/companies/${encodeURIComponent(companyId)}/import-evidence`,
+  );
+}
+
+export function uploadImportEvidence(
+  companyId: string,
+  file: File,
+  sender?: EvidenceSender,
+): Promise<EvidenceUploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("provider", "csv");
+  if (sender) {
+    form.append("sender_name", sender.name);
+    form.append("sender_company", sender.company);
+    form.append("sender_value_proposition", sender.value_proposition);
+  }
+  return requestForm<EvidenceUploadResponse>(
+    `/companies/${encodeURIComponent(companyId)}/import-evidence/upload`,
+    form,
   );
 }
 
