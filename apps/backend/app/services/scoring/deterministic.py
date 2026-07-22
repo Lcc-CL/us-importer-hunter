@@ -41,7 +41,7 @@ from app.domain.values import (
 
 SCORING_VERSION = "mvp-explainable-scoring-v1"
 
-_TRUSTED_SOURCES = frozenset({"importyeti"})
+_TRUSTED_SOURCES = frozenset({"importyeti", "import_evidence"})
 
 # keyword detectors per dimension: (keywords, normalized_value_when_found).
 # normalized values are placeholder calibrations: a matched signal is treated
@@ -113,8 +113,7 @@ class DeterministicOpportunityScoringService:
     async def assess(self, scoring_input: OpportunityScoringInput) -> OpportunityAssessment:
         # step 1 — score each dimension explainably
         dimensions = tuple(
-            self._assess_dimension(dimension, scoring_input)
-            for dimension in ScoringDimension
+            self._assess_dimension(dimension, scoring_input) for dimension in ScoringDimension
         )
         breakdown = ScoreBreakdown.from_dimensions(dimensions)
         score = OpportunityScore(min(breakdown.total_score, 100.0))
@@ -231,9 +230,7 @@ class DeterministicOpportunityScoringService:
     # -- helpers ----------------------------------------------------------
 
     @staticmethod
-    def _first_kind_match(
-        signals: tuple[str, ...], dimension: ScoringDimension
-    ) -> str | None:
+    def _first_kind_match(signals: tuple[str, ...], dimension: ScoringDimension) -> str | None:
         """Match by the signal's declared kind (the "<kind>:" prefix), mapped
         through the alias table — language-independent, unlike keyword search."""
         for signal in signals:
@@ -275,4 +272,5 @@ class DeterministicOpportunityScoringService:
         )
         if not scoring_input.sources:
             reasons.append("no source references — confidence floor applied")
+        reasons.extend(scoring_input.signal_selection_reasons)
         return tuple(reasons)

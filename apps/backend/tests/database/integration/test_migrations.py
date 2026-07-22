@@ -76,6 +76,12 @@ EXPECTED_TABLES = {
     "outcomes",
     "tasks",
     "task_attempts",
+    "import_evidence_quality_assessments",
+    "import_evidence_signal_promotions",
+    "import_evidence_company_signals",
+    "import_evidence_promotion_quality_assessments",
+    "importer_evidence_aggregates",
+    "importer_evidence_aggregate_shipments",
 }
 
 

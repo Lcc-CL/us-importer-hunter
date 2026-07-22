@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.uow import SqlAlchemyUnitOfWork
 from app.domain.repositories import UnitOfWork
 from app.domain.services import (
@@ -125,10 +126,20 @@ CompanyIngestionDep = Annotated[
 
 
 def get_opportunity_workflow(
+    request: Request,
     uow_factory: UowFactoryDep,
     scoring: OpportunityScoringDep,
 ) -> OpportunityApplicationWorkflow:
-    return OpportunityApplicationWorkflow(uow_factory, scoring)
+    session_factory = getattr(request.app.state, "session_factory", None)
+    return OpportunityApplicationWorkflow(
+        uow_factory,
+        scoring,
+        import_evidence_reader=(
+            SqlAlchemyImportEvidenceProjectionReader(session_factory)
+            if session_factory is not None
+            else None
+        ),
+    )
 
 
 OpportunityWorkflowDep = Annotated[

@@ -12,6 +12,14 @@ from uuid import UUID
 
 from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
+from app.domain.import_evidence.models import (
+    ImporterEvidenceAggregate,
+    ImportEvidenceCompanySignal,
+    ImportEvidenceSignalPromotion,
+    QualityAssessment,
+    ShipmentInclusion,
+    SignalPromotionCandidate,
+)
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
 from app.domain.research import ResearchRun
@@ -73,9 +81,7 @@ class ContactRepository(Protocol):
         """Dedup lookup: strong match on a company-scoped email channel."""
         ...
 
-    async def find_by_linkedin_url(
-        self, company_id: UUID, normalized_url: str
-    ) -> Contact | None:
+    async def find_by_linkedin_url(self, company_id: UUID, normalized_url: str) -> Contact | None:
         """Dedup lookup: strong match on a company-scoped LinkedIn channel."""
         ...
 
@@ -117,9 +123,81 @@ class ResearchRunRepository(Protocol):
         self, company_id: UUID, *, limit: int = 20
     ) -> "list[ResearchRun]": ...
 
-    async def list_for_website(
-        self, website: str, *, limit: int = 10
-    ) -> "list[ResearchRun]": ...
+    async def list_for_website(self, website: str, *, limit: int = 10) -> "list[ResearchRun]": ...
+
+
+class ImportEvidenceRepository(Protocol):
+    """Versioned persistence for customs quality and importer aggregates."""
+
+    async def save_quality_assessment(
+        self, assessment: QualityAssessment
+    ) -> tuple[QualityAssessment, bool]: ...
+
+    async def get_current_quality_assessment(
+        self, normalized_shipment_id: UUID
+    ) -> QualityAssessment | None: ...
+
+    async def list_quality_assessment_history(
+        self, normalized_shipment_id: UUID
+    ) -> list[QualityAssessment]: ...
+
+    async def save_aggregate(
+        self, aggregate: ImporterEvidenceAggregate
+    ) -> tuple[ImporterEvidenceAggregate, bool]: ...
+
+    async def get_aggregate_by_id(self, aggregate_id: UUID) -> ImporterEvidenceAggregate | None: ...
+
+    async def get_current_aggregate(
+        self, importer_identity: str, window_days: int
+    ) -> ImporterEvidenceAggregate | None: ...
+
+    async def list_aggregate_history(
+        self, importer_identity: str, window_days: int
+    ) -> list[ImporterEvidenceAggregate]: ...
+
+    async def list_aggregate_shipments(self, aggregate_id: UUID) -> list[ShipmentInclusion]: ...
+
+
+class ImportEvidencePromotionRepository(Protocol):
+    async def get_quality_assessments(
+        self, quality_assessment_ids: tuple[UUID, ...]
+    ) -> list[QualityAssessment]: ...
+
+    async def apply_candidates(
+        self, candidates: tuple[SignalPromotionCandidate, ...]
+    ) -> tuple[list[ImportEvidenceSignalPromotion], bool]: ...
+
+    async def get_promotion_by_id(
+        self, promotion_id: UUID
+    ) -> ImportEvidenceSignalPromotion | None: ...
+
+    async def list_current_promotions(
+        self, company_id: UUID
+    ) -> list[ImportEvidenceSignalPromotion]: ...
+
+    async def list_promotion_history(
+        self, *, company_id: UUID | None = None, aggregate_id: UUID | None = None
+    ) -> list[ImportEvidenceSignalPromotion]: ...
+
+    async def list_active_signals(self, company_id: UUID) -> list[ImportEvidenceCompanySignal]: ...
+
+
+class ImportEvidenceUnitOfWork(Protocol):
+    import_evidence: ImportEvidenceRepository
+    import_evidence_promotions: ImportEvidencePromotionRepository
+
+    async def __aenter__(self) -> "ImportEvidenceUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def rollback(self) -> None: ...
 
 
 class UnitOfWork(Protocol):
