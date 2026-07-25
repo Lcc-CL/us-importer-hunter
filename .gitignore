@@ -1,5 +1,7 @@
 # Environment
 .env
+.env.save
+.env.backup*
 .env.local
 .env.*.local
 
@@ -36,3 +38,7 @@ e2e/playwright-report/
 e2e/test-results/
 e2e/blob-report/
 e2e/.cache/
+
+.env
+.env.save
+.env.backup*
