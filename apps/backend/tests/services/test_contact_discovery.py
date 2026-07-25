@@ -119,3 +119,52 @@ class TestDepartmentDisplay:
         response = DiscoveredContactResponse.from_contact(dept)
         assert response.name == ""  # the page named no one, so neither do we
         assert response.display_name == "Purchasing Team"
+
+
+class TestDepartmentContactMode:
+    """DEPARTMENT_CONTACT never persists a caller-asserted person name."""
+
+    def test_department_mode_rejects_a_person_name(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from app.schemas.mvp import ProspectContactRequest
+
+        with pytest.raises(ValidationError):
+            ProspectContactRequest(
+                contact_mode="DEPARTMENT_CONTACT",
+                name="Jane Doe",
+                source="company_website",
+                email="purchasing@example.com",
+            )
+
+    def test_department_mode_requires_an_email(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from app.schemas.mvp import ProspectContactRequest
+
+        with pytest.raises(ValidationError):
+            ProspectContactRequest(
+                contact_mode="DEPARTMENT_CONTACT", source="company_website"
+            )
+
+    def test_department_salutation_is_system_derived(self) -> None:
+        from app.schemas.mvp import ProspectContactRequest
+
+        request = ProspectContactRequest(
+            contact_mode="DEPARTMENT_CONTACT",
+            source="https://example.com/contact",
+            email="purchasing@example.com",
+        )
+        assert request.name is None  # nothing user-supplied is a person
+        assert request.addressable_name == "Purchasing Team"
+
+    def test_full_contact_still_requires_a_name(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from app.schemas.mvp import ProspectContactRequest
+
+        with pytest.raises(ValidationError):
+            ProspectContactRequest(source="company_website", email="a@b.co")

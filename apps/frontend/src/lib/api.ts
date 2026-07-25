@@ -34,7 +34,9 @@ export interface ProspectSignalRequest {
 }
 
 export interface ProspectContactRequest {
-  name: string;
+  contact_mode?: "FULL_CONTACT" | "DEPARTMENT_CONTACT";
+  /** null in DEPARTMENT_CONTACT mode — no person is asserted. */
+  name: string | null;
   source: string;
   title?: string | null;
   email?: string | null;

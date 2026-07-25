@@ -111,8 +111,30 @@ async function stubJourney(
     await route.fulfill({ status: 500, body: "{}" });
   });
 
+  // Discovery finds nothing in these journeys: the manual path stays the
+  // subject under test. Registered after the wildcard so it wins the match.
+  const emptyDiscovery = {
+    discovery_status: "COMPANY_ONLY",
+    pages_scanned: 2,
+    pages_failed: 0,
+    primary: null,
+    alternatives: [],
+    supporting: [],
+    rejected: [],
+    review_required: true,
+    selection_reasons: [],
+  };
+
   await page.route(API, async (route) => {
     const url = route.request().url();
+    if (url.includes("/contacts/discover")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(emptyDiscovery),
+      });
+      return;
+    }
     if (url.includes("/confirm")) {
       await route.fulfill({
         status: 200,
@@ -145,6 +167,9 @@ async function acceptAndConfirm(page: Page): Promise<void> {
 }
 
 async function fillGuidedFields(page: Page): Promise<void> {
+  // Contacts are optional now: the manual fields live behind the discovery
+  // card's "add contact manually" action instead of blocking the flow.
+  await page.getByTestId("discovery-manual-edit").click();
   await page.getByTestId("guided-contact-name").fill("Maria Chen");
   await page.getByTestId("guided-contact-email").fill("maria@acme.example");
   // Provenance is never defaulted: a contact found on LinkedIn must not be
@@ -233,17 +258,36 @@ test.describe("guided research-to-draft", () => {
     await expect(page.getByText("Freight partnership for Acme")).toBeVisible();
   });
 
-  test("a missing contact asks for the contact only", async ({ page }) => {
+  test("a missing contact shows the gap but never blocks the analysis", async ({
+    page,
+  }) => {
     const state = await stubJourney(page);
     await page.goto("/");
     await research(page);
     await acceptAndConfirm(page);
 
-    await expect(page.getByTestId("guided-missing")).toBeVisible();
-    await expect(page.getByTestId("guided-missing-contact")).toBeVisible();
-    // The whole five-section form must not be thrown at the user.
+    // COMPANY_ONLY: the gap is stated, the manual form stays folded, and the
+    // whole five-section form is never thrown at the user.
+    await expect(page.getByTestId("contact-discovery-none")).toBeVisible();
+    await expect(page.getByTestId("guided-missing-contact")).toBeHidden();
     await expect(page.getByLabel("Source 1 name")).toBeHidden();
-    expect(state.analyzeCalls).toBe(0);
+
+    // Only the sender still gates Continue.
+    await expect(page.getByTestId("guided-continue")).toBeDisabled();
+    await page.getByTestId("guided-sender-name").fill("Alex Morgan");
+    await page.getByTestId("guided-sender-company").fill("Harbor Bridge Logistics");
+    await page.getByTestId("guided-sender-value").fill("我们简化亚洲到美国的进口运输。");
+    await expect(page.getByTestId("guided-continue")).toBeEnabled();
+
+    await page.getByTestId("guided-continue").click();
+    await expect(page.getByTestId("research-step-analysis")).toHaveAttribute(
+      "data-state",
+      "done",
+    );
+    // No contact was invented: the analysis ran in COMPANY_ONLY mode.
+    expect(state.analyzeCalls).toBe(1);
+    const body = state.analyzeBodies[0] as { contact: unknown };
+    expect(body.contact).toBeNull();
   });
 
   test("the prompt does not vanish while the user is still typing", async ({ page }) => {
@@ -256,7 +300,9 @@ test.describe("guided research-to-draft", () => {
     await acceptAndConfirm(page);
 
     await expect(page.getByTestId("guided-continue")).toBeDisabled();
-    await fillGuidedFields(page);
+    await page.getByTestId("guided-sender-name").fill("Alex Morgan");
+    await page.getByTestId("guided-sender-company").fill("Harbor Bridge Logistics");
+    await page.getByTestId("guided-sender-value").fill("我们简化亚洲到美国的进口运输。");
     await expect(page.getByTestId("guided-missing")).toBeVisible();
     await expect(page.getByTestId("guided-continue")).toBeEnabled();
   });
@@ -303,8 +349,11 @@ test.describe("guided research-to-draft", () => {
     await page.getByTestId("accept-0").click();
     await page.getByTestId("research-confirm").click();
 
-    await expect(page.getByTestId("guided-missing-contact")).toBeVisible();
+    // The sender is not asked for again; the contact belongs to the previous
+    // prospect, is not carried over, and its absence does not block.
     await expect(page.getByTestId("guided-missing-sender")).toHaveCount(0);
+    await expect(page.getByTestId("contact-discovery-none")).toBeVisible();
+    await expect(page.getByTestId("guided-continue")).toBeEnabled();
   });
 
   test("REVIEW never produces a draft and says what is missing", async ({ page }) => {

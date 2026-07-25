@@ -266,11 +266,17 @@ test("部门邮箱直达部门级草稿并可刷新恢复", async ({ page }) => 
   await expect(page.getByText(SUBJECT)).toBeVisible();
   await expect(page.getByText("Hi Purchasing Team,")).toBeVisible();
 
-  // 请求里的联系人是部门称呼 + 部门邮箱，没有虚构的具名联系人
+  // 请求里是部门模式：不携带任何人名，称呼由后端从邮箱推导
   const body = captured.analyzeBodies[0] as {
-    contact: { name: string; email: string; source: string };
+    contact: {
+      contact_mode?: string;
+      name: string | null;
+      email: string;
+      source: string;
+    };
   };
-  expect(body.contact.name).toBe("Purchasing Team");
+  expect(body.contact.contact_mode).toBe("DEPARTMENT_CONTACT");
+  expect(body.contact.name).toBeNull();
   expect(body.contact.email).toBe(DEPT_EMAIL);
   expect(body.contact.source).toBe(SOURCE_URL);
 
