@@ -1,0 +1,91 @@
+# Production topology — mirrors the Zeabur deployment:
+#   browser → frontend (public) → backend (private network only) → postgres/redis
+#
+# The backend publishes no host port: it is reachable only on the compose
+# network, exactly like Zeabur's private networking. The frontend proxies the
+# allow-listed /api/v1/* paths to it via BACKEND_INTERNAL_URL (next.config.ts).
+#
+# Usage (local rehearsal):
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up --build
+#
+# No secrets live in this file; they come from the env file / platform settings.
+
+services:
+  backend:
+    build:
+      context: ./apps/backend
+      target: prod
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: ${REDIS_URL:-}
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      RESEARCH_EXTRACTOR_PROVIDER: ${RESEARCH_EXTRACTOR_PROVIDER:-deepseek}
+      RESEARCH_MODEL: ${RESEARCH_MODEL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-pro}
+      EMAIL_GENERATOR_PROVIDER: ${EMAIL_GENERATOR_PROVIDER:-fake}
+      BACKEND_CORS_ORIGINS: '["${FRONTEND_ORIGIN:-http://localhost:3000}"]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./apps/frontend
+      target: prod
+      args:
+        # Empty on purpose: the browser talks same-origin; the server-side
+        # proxy (BACKEND_INTERNAL_URL) reaches the backend privately.
+        NEXT_PUBLIC_API_BASE_URL: ""
+        NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-true}
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: ${POSTGRES_DB:-importer_hunter}
+    volumes:
+      - pgdata-prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-importer_hunter}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata-prod:

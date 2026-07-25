@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import PostgresDsn, RedisDsn, computed_field
+from pydantic import AliasChoices, Field, PostgresDsn, RedisDsn, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,14 +43,21 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     backend_cors_origins: list[str] = ["http://localhost:3000"]
 
-    # PostgreSQL
+    # PostgreSQL. Managed platforms (Zeabur) hand out one DATABASE_URL; when
+    # set it wins over the individual POSTGRES_* fields below.
+    database_url_env: str = Field(
+        "", validation_alias=AliasChoices("DATABASE_URL", "database_url_env")
+    )
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_user: str = "app"
     postgres_password: str = "change-me"
     postgres_db: str = "importer_hunter"
 
-    # Redis
+    # Redis. REDIS_URL, when set, wins over the individual fields.
+    redis_url_env: str = Field(
+        "", validation_alias=AliasChoices("REDIS_URL", "redis_url_env")
+    )
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_db: int = 0
@@ -97,6 +104,14 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
+        override = self.database_url_env.strip()
+        if override:
+            # Platform URLs say postgresql://; the async engine needs asyncpg.
+            if override.startswith("postgresql://"):
+                return override.replace("postgresql://", "postgresql+asyncpg://", 1)
+            if override.startswith("postgres://"):
+                return override.replace("postgres://", "postgresql+asyncpg://", 1)
+            return override
         return str(
             PostgresDsn.build(
                 scheme="postgresql+asyncpg",
@@ -121,6 +136,9 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def redis_url(self) -> str:
+        override = self.redis_url_env.strip()
+        if override:
+            return override
         return str(
             RedisDsn.build(
                 scheme="redis",
