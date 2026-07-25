@@ -95,14 +95,19 @@ export function buildAnalysisRequest(
         detail: signal.detail,
       })),
     },
-    contact: {
-      name: contact.name.trim(),
-      source: contact.source.trim(),
-      title: contact.title.trim() || null,
-      email: contact.email.trim() || null,
-      linkedin_url: contact.linkedin_url.trim() || null,
-      phone: contact.phone.trim() || null,
-    },
+    // COMPANY_ONLY mode: an incomplete contact is sent as null, never as a
+    // half-filled record. The backend saves the analysis as PARTIAL and the
+    // draft simply waits for a contact — analysis is not blocked.
+    contact: contactIsComplete(contact)
+      ? {
+          name: contact.name.trim(),
+          source: contact.source.trim(),
+          title: contact.title.trim() || null,
+          email: contact.email.trim() || null,
+          linkedin_url: contact.linkedin_url.trim() || null,
+          phone: contact.phone.trim() || null,
+        }
+      : null,
     sender: {
       name: sender.name.trim(),
       company: sender.company.trim(),

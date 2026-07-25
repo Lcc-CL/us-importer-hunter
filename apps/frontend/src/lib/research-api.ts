@@ -250,3 +250,44 @@ export function confirmResearchRun(
     { method: "POST", body: JSON.stringify(input) },
   );
 }
+
+/* --- website contact discovery (read-only) ----------------------------- */
+
+export type DiscoverySourceType = "named" | "department" | "generic";
+export type DiscoveryStatus = "FULL_CONTACT" | "DEPARTMENT_CONTACT" | "COMPANY_ONLY";
+
+export interface DiscoveredContact {
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+  source_url: string;
+  source_type: DiscoverySourceType;
+  evidence_snippet: string;
+  confidence: number;
+}
+
+export interface RankedContact {
+  contact: DiscoveredContact;
+  score: number;
+  reasons: string[];
+}
+
+export interface ContactDiscovery {
+  discovery_status: DiscoveryStatus;
+  pages_scanned: number;
+  pages_failed: number;
+  primary: RankedContact | null;
+  alternatives: RankedContact[];
+  supporting: RankedContact[];
+  rejected: RankedContact[];
+  review_required: boolean;
+  selection_reasons: string[];
+}
+
+export function discoverContacts(runId: string): Promise<ContactDiscovery> {
+  return requestJson<ContactDiscovery>(
+    `/research/runs/${encodeURIComponent(runId)}/contacts/discover`,
+    { method: "POST" },
+  );
+}

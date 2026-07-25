@@ -53,7 +53,7 @@ interface ResearchPanelProps {
    * qualification. Returning a promise lets the panel keep its button in a
    * running state until the analysis actually starts.
    */
-  onConfirmed: (payload: ApplicationPayload) => Promise<void> | void;
+  onConfirmed: (payload: ApplicationPayload, researchId: string) => Promise<void> | void;
   /** Steps owned downstream (analysis, draft) so the nav can show one flow. */
   downstreamSteps?: Partial<Record<FlowStep, StepState>>;
   /** Localized "what to do next" / "why it is stuck", from the guided flow. */
@@ -197,7 +197,7 @@ export function ResearchPanel({
         setApplied({ sources: payload.sources.length, signals: payload.signals.length });
         setState("applied");
         // The guided flow takes over here: map, qualify, and draft if it can.
-        await onConfirmed(payload);
+        await onConfirmed(payload, response.research_id);
         return;
       }
       setState("applied");

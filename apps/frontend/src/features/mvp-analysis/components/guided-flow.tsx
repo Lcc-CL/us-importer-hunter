@@ -46,18 +46,35 @@ export function MissingFieldsPrompt({
   onContinue,
 }: MissingFieldsPromptProps) {
   const { t } = useI18n();
-  const ready = !stillMissing.contact && !stillMissing.sender;
+  // Only the sender gates Continue: analysis runs without a contact
+  // (COMPANY_ONLY) — the contact block below is an optional manual top-up.
+  const ready = !stillMissing.sender;
+  const nothingMissing = !missing.contact && !missing.sender;
 
   return (
     <section
-      className="rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-4"
+      className={
+        nothingMissing
+          ? "rounded-2xl border border-slate-200 bg-white px-4 py-4"
+          : "rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-4"
+      }
       data-testid="guided-missing"
     >
-      <p className="flex items-center gap-2 text-sm font-semibold text-amber-900">
-        <TriangleAlert className="size-4" />
-        {t("guided.missing.title")}
+      <p
+        className={`flex items-center gap-2 text-sm font-semibold ${
+          nothingMissing ? "text-slate-800" : "text-amber-900"
+        }`}
+      >
+        {nothingMissing ? null : <TriangleAlert className="size-4" />}
+        {t(nothingMissing ? "guided.ready.title" : "guided.missing.title")}
       </p>
-      <p className="mt-1 text-xs leading-5 text-amber-900/80">{t("guided.missing.note")}</p>
+      <p
+        className={`mt-1 text-xs leading-5 ${
+          nothingMissing ? "text-slate-500" : "text-amber-900/80"
+        }`}
+      >
+        {t(nothingMissing ? "guided.ready.note" : "guided.missing.note")}
+      </p>
 
       {missing.contact ? (
         <div className="mt-4" data-testid="guided-missing-contact">
