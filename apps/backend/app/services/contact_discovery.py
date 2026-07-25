@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from html import unescape
 
-from app.services.contact.role_matcher import classify_title
+from app.domain.contact.roles import DecisionRole
+from app.services.contact.role_matcher import RoleClassification, classify_title
 
 #: Local parts that address a function, not a person. Order is preference:
 #: earlier prefixes make better fallback recipients for logistics outreach.
@@ -49,6 +50,40 @@ _NAME_TITLE_RE = re.compile(
 )
 #: How much page text around a hit is kept as evidence.
 _SNIPPET_RADIUS = 120
+
+#: Capitalized phrases that look like "First Last" but are org/nav vocabulary,
+#: not people. A false person is worse than a missed one (the anti-fabrication
+#: rule), so any hit containing one of these words is dropped.
+_NON_NAME_WORDS = frozenset(
+    """product products development customer customers service services quality
+    team sales support manufacturing engineering operations company tools about
+    contact contacts privacy policy terms united states america american new free
+    shop home careers press media news catalog warranty resources training safety
+    education distributor distributors dealer locator search account order orders
+    international global corporate group division department journeyman lineman
+    """.split()
+)
+
+
+def _plausible_person_name(name: str) -> bool:
+    words = name.split()
+    if not 2 <= len(words) <= 3:
+        return False
+    return not any(word.lower() in _NON_NAME_WORDS for word in words)
+
+
+def _title_names_a_role(classification: RoleClassification) -> bool:
+    """Only a confidently-classified real role makes a name+title pair a person.
+
+    Product listings and "City, ST" patterns match the name regex constantly;
+    demanding a known decision role with real confidence is what keeps them out.
+    """
+    roles = set(classification.roles)
+    return (
+        classification.confidence >= 0.5
+        and bool(roles)
+        and DecisionRole.UNKNOWN not in roles
+    )
 
 
 class DiscoverySourceType(StrEnum):
@@ -141,8 +176,10 @@ def _name_near(flat: str, needle: str) -> tuple[str, str] | None:
     best: tuple[str, str] | None = None
     for match in _NAME_TITLE_RE.finditer(window):
         name, raw_title = match.group(1).strip(), match.group(2).strip(" ,–—-|:")
+        if not _plausible_person_name(name):
+            continue
         classification = classify_title(raw_title)
-        if classification.confidence > 0.0:
+        if _title_names_a_role(classification):
             best = (name, raw_title)
     return best
 
@@ -189,8 +226,10 @@ def extract_contacts(pages: list[tuple[str, str, str]]) -> list[DiscoveredContac
 
         for match in _NAME_TITLE_RE.finditer(page.flat):
             name, raw_title = match.group(1).strip(), match.group(2).strip(" ,–—-|:")
+            if not _plausible_person_name(name):
+                continue
             classification = classify_title(raw_title)
-            if classification.confidence <= 0.0:
+            if not _title_names_a_role(classification):
                 continue
             key = (name.lower(), "", url)
             if key in seen or any(
