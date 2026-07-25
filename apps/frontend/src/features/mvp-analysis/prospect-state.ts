@@ -14,7 +14,10 @@
 import type { ProspectAnalysisRequest } from "@/lib/api";
 import type { ApplicationPayload } from "@/lib/research-api";
 
+export type ContactMode = "FULL_CONTACT" | "DEPARTMENT_CONTACT";
+
 export interface ProspectContact {
+  mode: ContactMode;
   name: string;
   title: string;
   email: string;
@@ -30,6 +33,7 @@ export interface ProspectSender {
 }
 
 export const EMPTY_CONTACT: ProspectContact = {
+  mode: "FULL_CONTACT",
   name: "",
   title: "",
   email: "",
@@ -57,6 +61,10 @@ export interface MissingFields {
  * is spent.
  */
 export function contactIsComplete(contact: ProspectContact): boolean {
+  // DEPARTMENT_CONTACT: the mailbox is the contact — no person name exists.
+  if (contact.mode === "DEPARTMENT_CONTACT") {
+    return Boolean(contact.email.trim()) && Boolean(contact.source.trim());
+  }
   const reachable = [contact.email, contact.linkedin_url, contact.phone].some((value) =>
     value.trim(),
   );
@@ -100,7 +108,10 @@ export function buildAnalysisRequest(
     // draft simply waits for a contact — analysis is not blocked.
     contact: contactIsComplete(contact)
       ? {
-          name: contact.name.trim(),
+          contact_mode: contact.mode,
+          // A department contact never asserts a person name; the backend
+          // derives the salutation from the mailbox itself.
+          name: contact.mode === "DEPARTMENT_CONTACT" ? null : contact.name.trim(),
           source: contact.source.trim(),
           title: contact.title.trim() || null,
           email: contact.email.trim() || null,

@@ -30,6 +30,15 @@ export function attachConsoleGuard(page: Page): ConsoleGuard {
     if (type !== "error" && type !== "warning") return;
     const text = message.text();
     if (IGNORED.some((pattern) => pattern.test(text))) return;
+    // Probing GET /companies/{id}/import-evidence answers 404 when no evidence
+    // was uploaded yet — an expected branch the app handles, but the browser
+    // still logs the resource failure. Only that exact resource is excused.
+    if (
+      /Failed to load resource.*404/i.test(text) &&
+      /\/import-evidence$/.test(message.location().url ?? "")
+    ) {
+      return;
+    }
     // A React key warning arrives as a plain warning; keep it either way.
     if (type === "warning" && !DUPLICATE_KEY.some((p) => p.test(text))) return;
     collected.push(`[console.${type}] ${text}`);

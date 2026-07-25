@@ -210,8 +210,12 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
    * so DEPARTMENT_CONTACT drafts need no manual name and invent no person. */
   const applyDiscoveredContact = (ranked: RankedContact) => {
     const found = ranked.contact;
+    const isDepartment = found.source_type === "department";
     setContact({
-      name: found.name || found.display_name,
+      mode: isDepartment ? "DEPARTMENT_CONTACT" : "FULL_CONTACT",
+      // Department contacts carry no person name — the backend derives the
+      // salutation ("Purchasing Team") from the mailbox itself.
+      name: isDepartment ? "" : found.name || found.display_name,
       title: found.title,
       email: found.email,
       linkedin_url: "",

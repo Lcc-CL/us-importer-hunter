@@ -124,6 +124,25 @@ async function stubFlow(page: Page) {
       await route.fulfill({ status: route.request().method() === "POST" ? 201 : 200, contentType: "application/json", body: JSON.stringify(COMPLETED_RUN) });
     }
   });
+
+  // Discovery finds nothing here: the manual path stays under test.
+  await page.route("**/api/v1/research/runs/*/contacts/discover", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        discovery_status: "COMPANY_ONLY",
+        pages_scanned: 2,
+        pages_failed: 0,
+        primary: null,
+        alternatives: [],
+        supporting: [],
+        rejected: [],
+        review_required: true,
+        selection_reasons: [],
+      }),
+    }),
+  );
   await page.route("**/api/v1/mvp/prospects/analyze", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(analysis) }),
   );
@@ -151,6 +170,8 @@ test("研究 → CSV 证据 → 资格更新 → Draft → Reload", async ({ pag
   await page.getByTestId("accept-1").click();
   await page.getByTestId("research-confirm").click();
 
+  await expect(page.getByTestId("contact-discovery-none")).toBeVisible();
+  await page.getByTestId("discovery-manual-edit").click();
   await page.getByTestId("guided-contact-name").fill("Maria Chen");
   await page.getByTestId("guided-contact-email").fill("maria@pacifichomegoods.example");
   await page.getByTestId("guided-contact-source").fill("company_website");

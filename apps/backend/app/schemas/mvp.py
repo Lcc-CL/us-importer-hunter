@@ -2,13 +2,14 @@
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.domain.services import SenderProfile
 from app.domain.values import DimensionStatus, OpportunityAssessment, SourceReference
+from app.services.contact_discovery import department_display_name
 from app.workflows.mvp_prospect_analysis import (
     DraftApprovalOutcome,
     MvpProspectAnalysisCommand,
@@ -59,12 +60,40 @@ class ProspectCompanyRequest(BaseModel):
 
 
 class ProspectContactRequest(BaseModel):
-    name: NonBlank
+    """FULL_CONTACT names a real person. DEPARTMENT_CONTACT names nobody:
+    `name` must be omitted, `email` is required, and the stored addressable
+    name is derived from the mailbox prefix ("Purchasing Team") — a
+    salutation the system generates, never a person the caller asserts."""
+
+    contact_mode: Literal["FULL_CONTACT", "DEPARTMENT_CONTACT"] = "FULL_CONTACT"
+    name: NonBlank | None = None
     source: NonBlank
     title: NonBlank | None = None
     email: NonBlank | None = None
     linkedin_url: NonBlank | None = None
     phone: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def _mode_consistency(self) -> "ProspectContactRequest":
+        if self.contact_mode == "DEPARTMENT_CONTACT":
+            if self.name is not None:
+                raise ValueError(
+                    "a department contact must not carry a person name — "
+                    "the salutation is derived from the mailbox"
+                )
+            if self.email is None:
+                raise ValueError("a department contact requires an email")
+        elif self.name is None:
+            raise ValueError("a named contact requires a name")
+        return self
+
+    @property
+    def addressable_name(self) -> str:
+        """What drafts and records may address: the person's name, or the
+        department salutation generated from the mailbox prefix."""
+        if self.name is not None:
+            return self.name
+        return department_display_name(self.email or "")
 
 
 class SenderRequest(BaseModel):
@@ -151,7 +180,7 @@ class ProspectAnalysisRequest(BaseModel):
             ),
             contact=(
                 ProspectContactInput(
-                    name=self.contact.name,
+                    name=self.contact.addressable_name,
                     source=self.contact.source,
                     title=self.contact.title,
                     email=self.contact.email,

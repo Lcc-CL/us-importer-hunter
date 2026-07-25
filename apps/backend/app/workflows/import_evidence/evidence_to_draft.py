@@ -33,11 +33,11 @@ from app.services.import_evidence.aggregate import AggregateShipmentInput
 from app.services.import_evidence.entity_resolver import (
     DeterministicEntityResolver,
     ResolutionResult,
-    normalize_company_name,
     normalize_domain,
 )
 from app.services.import_evidence.quality import EvidenceQualityScorer
 from app.services.import_evidence.upload import ParsedEvidenceRow, parse_company_csv
+from app.shared.normalization import normalize_company_name
 from app.workflows.decision_maker import (
     DecisionMakerSelectionAction,
     DecisionMakerSelectionWorkflow,
