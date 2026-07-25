@@ -29,7 +29,7 @@ from app.domain.import_evidence.values import (
     NormalizedShipment,
     RawImportRecord,
 )
-from app.services.import_evidence.entity_resolver import normalize_company_name
+from app.shared.normalization import normalize_company_name
 
 
 class SqlAlchemyImportEvidenceRepository:

@@ -6,13 +6,13 @@ separate status. Manual confirmations are never overwritten.
 """
 
 import re
-import unicodedata
 from dataclasses import dataclass, field
 
 from app.domain.import_evidence.values import (
     EntityMatchMethod,
     EntityMatchStatus,
 )
+from app.shared.normalization import normalize_company_name
 
 # -- thresholds (named, not magic) ---------------------------------------------
 
@@ -20,56 +20,12 @@ AUTO_MATCH_THRESHOLD: float = 92.0
 REVIEW_THRESHOLD: float = 80.0
 FUZZY_ONLY_MAX_SCORE: float = 85.0  # fuzzy-only caps below auto_match
 
-COMPANY_SUFFIXES = (
-    "incorporated",
-    "inc",
-    "corporation",
-    "corp",
-    "company",
-    "co",
-    "limited",
-    "ltd",
-    "llc",
-    "l.l.c.",
-    "llp",
-    "l.l.p.",
-    "plc",
-    "gmbh",
-    "s.a.",
-    "s.a",
-    "sa",
-    "bv",
-    "b.v.",
-    "pty ltd",
-    "pty. ltd.",
-    "pte ltd",
-    "pte. ltd.",
-)
 
 # Roles that disqualify a record as importer evidence
 NON_IMPORTER_ROLES = ("broker", "notify_party", "forwarder", "carrier", "agent")
 
 
 # -- normalization ------------------------------------------------------------
-
-
-def normalize_company_name(raw: str) -> str:
-    """Remove suffixes, punctuation, extra whitespace; lowercase."""
-    if not raw:
-        return ""
-    n = unicodedata.normalize("NFKD", raw)
-    n = "".join(c for c in n if not unicodedata.combining(c))
-    n = n.lower()
-    # Remove periods from abbreviations before suffix removal
-    n = n.replace(".", " ")
-    n = re.sub(r"[,\-–—()\[\]{}«»\"'`′]+", " ", n)
-    n = re.sub(r"\s+", " ", n).strip()
-    # Remove suffixes as whole tokens
-    tokens = n.split()
-    result = [
-        t for t in tokens if t not in COMPANY_SUFFIXES and t.rstrip(".") not in COMPANY_SUFFIXES
-    ]
-    return " ".join(result) if result else n
 
 
 def normalize_domain(raw: str) -> str:

@@ -41,6 +41,25 @@ async function stubResearch(page: Page): Promise<void> {
       body: JSON.stringify(COMPLETED_RUN),
     });
   });
+
+  // Discovery finds nothing here: the manual path stays under test.
+  await page.route("**/api/v1/research/runs/*/contacts/discover", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        discovery_status: "COMPANY_ONLY",
+        pages_scanned: 2,
+        pages_failed: 0,
+        primary: null,
+        alternatives: [],
+        supporting: [],
+        rejected: [],
+        review_required: true,
+        selection_reasons: [],
+      }),
+    }),
+  );
 }
 
 async function researchAndConfirm(page: Page): Promise<void> {
@@ -50,6 +69,8 @@ async function researchAndConfirm(page: Page): Promise<void> {
   await expect(page.getByTestId("research-result")).toBeVisible();
   await page.getByTestId("accept-0").click();
   await page.getByTestId("research-confirm").click();
+  await expect(page.getByTestId("contact-discovery-none")).toBeVisible();
+  await page.getByTestId("discovery-manual-edit").click();
 }
 
 function storedProfile(page: Page): Promise<string | null> {

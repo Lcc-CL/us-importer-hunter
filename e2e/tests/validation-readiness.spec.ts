@@ -47,6 +47,25 @@ async function stubResearch(page: Page): Promise<{ analyzeBodies: unknown[] }> {
       body: JSON.stringify(COMPLETED_RUN),
     });
   });
+
+  // Discovery finds nothing here: the manual path stays under test.
+  await page.route("**/api/v1/research/runs/*/contacts/discover", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        discovery_status: "COMPANY_ONLY",
+        pages_scanned: 2,
+        pages_failed: 0,
+        primary: null,
+        alternatives: [],
+        supporting: [],
+        rejected: [],
+        review_required: true,
+        selection_reasons: [],
+      }),
+    }),
+  );
   return state;
 }
 
@@ -57,6 +76,8 @@ async function researchAndConfirm(page: Page): Promise<void> {
   await expect(page.getByTestId("research-result")).toBeVisible();
   await page.getByTestId("accept-0").click();
   await page.getByTestId("research-confirm").click();
+  await expect(page.getByTestId("contact-discovery-none")).toBeVisible();
+  await page.getByTestId("discovery-manual-edit").click();
 }
 
 test.describe("unified contact and sender state", () => {
@@ -93,8 +114,11 @@ test.describe("unified contact and sender state", () => {
 
     await researchAndConfirm(page);
 
-    // Everything it needs is already known, so it never stops to ask.
-    await expect(page.getByTestId("guided-missing")).toHaveCount(0);
+    // Everything it needs is already known: no field is asked for again and
+    // the flow is immediately continuable. (The ready-state card itself stays
+    // visible — it hosts the Continue button.)
+    await expect(page.getByTestId("guided-missing-sender")).toHaveCount(0);
+    await expect(page.getByTestId("guided-continue")).toBeEnabled();
   });
 
   test("the sender syncs in both directions", async ({ page }) => {
