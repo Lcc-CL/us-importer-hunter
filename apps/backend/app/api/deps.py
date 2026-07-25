@@ -266,6 +266,27 @@ def get_research_extractor(settings: SettingsDep) -> ResearchExtractor:
             timeout_seconds=settings.research_extractor_timeout_seconds,
             max_input_chars=settings.research_extractor_max_input_chars,
         )
+    if settings.research_extractor_provider == "deepseek":
+        if not settings.deepseek_api_key.strip():
+            raise ProviderUnavailableError(
+                "research extractor is set to deepseek but DEEPSEEK_API_KEY is not configured"
+            )
+        if not settings.deepseek_model.strip():
+            raise ProviderUnavailableError(
+                "research extractor is set to deepseek but no model is configured"
+            )
+        return OpenAIResearchExtractor(
+            model=settings.deepseek_model,
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url or None,
+            provider="deepseek",
+            # Structured extraction wants plain JSON output; reasoning traces
+            # add cost and can leak into content on OpenAI-compatible gateways.
+            extra_body={"thinking": {"type": "disabled"}},
+            prompt_version=settings.research_prompt_version,
+            timeout_seconds=settings.research_extractor_timeout_seconds,
+            max_input_chars=settings.research_extractor_max_input_chars,
+        )
     raise ProviderUnavailableError("configured research extractor is unavailable")
 
 

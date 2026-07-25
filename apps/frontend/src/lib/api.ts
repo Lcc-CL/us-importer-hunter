@@ -261,7 +261,7 @@ export interface RuntimeStatusResponse {
   provider: "fake" | "openai";
   model: string;
   /** The research extractor, configured independently of the draft provider. */
-  research_provider: "fake" | "openai";
+  research_provider: "fake" | "openai" | "deepseek";
   research_model: string;
   environment: string;
 }

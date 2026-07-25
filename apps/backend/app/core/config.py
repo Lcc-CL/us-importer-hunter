@@ -62,9 +62,14 @@ class Settings(BaseSettings):
     #: Optional OpenAI-compatible endpoint. Empty means the SDK default.
     openai_base_url: str = ""
 
+    # DeepSeek (official API) — used when research_extractor_provider=deepseek.
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-v4-pro"
+
     # Research extraction (v0.2 phase 5, ADR-0027). Fake stays the default so
     # no code path reaches a paid provider without an explicit opt-in.
-    research_extractor_provider: Literal["fake", "openai"] = "fake"
+    research_extractor_provider: Literal["fake", "openai", "deepseek"] = "fake"
     #: Empty falls back to openai_model — never a literal in the extractor.
     research_model: str = ""
     research_prompt_version: str = "website-research-v1"
