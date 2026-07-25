@@ -205,11 +205,13 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
    * case only that block is asked for.
    */
   /** A discovered contact becomes the analysis contact — never invented,
-   * always carrying the page it was read from as its source. */
+   * always carrying the page it was read from as its source. A department
+   * mailbox uses its salutation ("Purchasing Team") as the addressable name,
+   * so DEPARTMENT_CONTACT drafts need no manual name and invent no person. */
   const applyDiscoveredContact = (ranked: RankedContact) => {
     const found = ranked.contact;
     setContact({
-      name: found.name,
+      name: found.name || found.display_name,
       title: found.title,
       email: found.email,
       linkedin_url: "",
@@ -236,6 +238,9 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
     let found: ContactDiscovery | null = null;
     try {
       found = await discoverContacts(researchId);
+      // A response that is not actually a discovery result (proxy pages,
+      // stubbed environments) is treated as "nothing found", never a crash.
+      if (!found || typeof found.discovery_status !== "string") found = null;
     } catch {
       found = null;
     }

@@ -94,3 +94,28 @@ class TestRanking:
         assert selection.review_required is True
         # purchasing/procurement outranks sales for logistics outreach
         assert selection.primary.contact.email.startswith("procurement")
+
+
+class TestDepartmentDisplay:
+    def test_prefixes_map_to_team_salutations(self) -> None:
+        from app.services.contact_discovery import department_display_name
+
+        assert department_display_name("purchasing@example.com") == "Purchasing Team"
+        assert department_display_name("procurement@example.com") == "Procurement Team"
+        assert department_display_name("imports@example.com") == "Import Team"
+        assert department_display_name("logistics@example.com") == "Logistics Team"
+        assert department_display_name("operations@example.com") == "Operations Team"
+        assert department_display_name("sales@example.com") == "Sales Team"
+        assert department_display_name("info@example.com") == "Team"
+        assert department_display_name("unknownbox@example.com") == "Team"
+
+    def test_response_display_name_never_invents_a_person(self) -> None:
+        from app.schemas.contact_discovery import DiscoveredContactResponse
+
+        [dept] = extract_contacts(
+            [("https://example.com/contact", "<p>purchasing@example.com</p>",
+              "purchasing@example.com")]
+        )
+        response = DiscoveredContactResponse.from_contact(dept)
+        assert response.name == ""  # the page named no one, so neither do we
+        assert response.display_name == "Purchasing Team"

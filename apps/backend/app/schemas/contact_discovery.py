@@ -7,7 +7,9 @@ from pydantic import BaseModel
 from app.services.contact_discovery import (
     ContactSelection,
     DiscoveredContact,
+    DiscoverySourceType,
     RankedContact,
+    department_display_name,
 )
 
 
@@ -18,11 +20,22 @@ class DiscoveredContactResponse(BaseModel):
     phone: str
     source_url: str
     source_type: Literal["named", "department", "generic"]
+    #: How a draft may address this contact. A person's real name, or the
+    #: department salutation ("Purchasing Team") — never an invented person.
+    display_name: str
     evidence_snippet: str
     confidence: float
 
     @classmethod
     def from_contact(cls, contact: DiscoveredContact) -> "DiscoveredContactResponse":
+        if contact.name:
+            display = contact.name
+        elif contact.email and contact.source_type is DiscoverySourceType.DEPARTMENT:
+            display = department_display_name(contact.email)
+        elif contact.email:
+            display = "Team"
+        else:
+            display = ""
         return cls(
             name=contact.name,
             title=contact.title,
@@ -30,6 +43,7 @@ class DiscoveredContactResponse(BaseModel):
             phone=contact.phone,
             source_url=contact.source_url,
             source_type=contact.source_type.value,
+            display_name=display,
             evidence_snippet=contact.evidence_snippet,
             confidence=contact.confidence,
         )

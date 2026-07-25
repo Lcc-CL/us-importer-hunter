@@ -263,6 +263,8 @@ export interface DiscoveredContact {
   phone: string;
   source_url: string;
   source_type: DiscoverySourceType;
+  /** A real person's name or a department salutation — never invented. */
+  display_name: string;
   evidence_snippet: string;
   confidence: number;
 }

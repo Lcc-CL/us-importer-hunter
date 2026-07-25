@@ -35,6 +35,36 @@ DEPARTMENT_PREFIXES = (
     "hello",
 )
 
+#: Department mailbox prefix → the salutation the draft may address. This is a
+#: naming rule, not a person: drafts greet "Purchasing Team", never an invented
+#: individual.
+DEPARTMENT_DISPLAY_NAMES: dict[str, str] = {
+    "purchasing": "Purchasing Team",
+    "procurement": "Procurement Team",
+    "import": "Import Team",
+    "imports": "Import Team",
+    "logistics": "Logistics Team",
+    "supplychain": "Supply Chain Team",
+    "operations": "Operations Team",
+    "sales": "Sales Team",
+    "info": "Team",
+    "contact": "Team",
+    "office": "Team",
+    "hello": "Team",
+}
+
+
+def department_display_name(email: str) -> str:
+    """Salutation for a functional mailbox. Longest prefix wins; 'Team' is the
+    honest default for anything unrecognized."""
+    local = email.split("@", 1)[0].lower().replace("-", "").replace("_", "").replace(".", "")
+    best = ""
+    for prefix in DEPARTMENT_DISPLAY_NAMES:
+        if local.startswith(prefix) and len(prefix) > len(best):
+            best = prefix
+    return DEPARTMENT_DISPLAY_NAMES[best] if best else "Team"
+
+
 #: Local parts that are useless for outreach and dropped outright.
 _IGNORED_PREFIXES = ("noreply", "no-reply", "donotreply", "webmaster", "abuse", "privacy")
 
