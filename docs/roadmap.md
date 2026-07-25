@@ -58,6 +58,11 @@ human confirmation before the existing qualification and draft workflow runs.
 `company_signals`；重新研究与刷新；JS 站点的无头渲染；`reviewer_name` 接入
 真实身份系统。
 
+**v0.3.1 待办（联系人发现，2026-07-25 记录）：** 联系人提取应复用研究阶段的
+cleaned text（当前 discover 端点对 run 的页面重新抓取，多一次公网访问）；
+sender_email 与 signature 进入 Sender Profile 与分析契约；外部联系人 Provider；
+联系人邮箱验证（当前一律 unverified）；Zeabur 部署配置。
+
 ## Later
 
 - Celery (batch research runs), Qdrant + rag service (semantic search),

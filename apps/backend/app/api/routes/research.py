@@ -15,8 +15,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import ClaimPromotionDep, ResearchWorkflowDep, UowFactoryDep
+from app.api.deps import ClaimPromotionDep, ResearchWorkflowDep, SettingsDep, UowFactoryDep
 from app.domain.research import OutputLanguage, PromotionDecision
+from app.schemas.contact_discovery import ContactDiscoveryResponse
 from app.schemas.mvp import ApiErrorResponse
 from app.schemas.research import (
     ConfirmResearchRequest,
@@ -26,6 +27,15 @@ from app.schemas.research import (
     ResearchRunRequest,
     ResearchRunResponse,
     ResearchRunSummaryResponse,
+)
+from app.services.contact_discovery import extract_contacts, rank_contacts
+from app.tools.website import (
+    FetchedPage,
+    FetchLimits,
+    SafeFetcher,
+    SiteScope,
+    clean_html,
+    create_research_client,
 )
 from app.workflows.research import (
     ClaimDecision,
@@ -179,3 +189,55 @@ async def confirm_research_run(
             status_code=422, detail=str(exc)
         ) from exc
     return ConfirmResearchResponse.from_outcome(outcome)
+
+
+@router.post(
+    "/research/runs/{run_id}/contacts/discover",
+    response_model=ContactDiscoveryResponse,
+    summary="Discover public contacts from a run's fetched pages",
+    description=(
+        "Re-reads only the pages this run already fetched and deterministically "
+        "extracts public contacts (mailto/tel links, visible emails, name+title "
+        "text). No LLM, no external contact source, nothing persisted, nothing "
+        "invented: every hit carries its verbatim evidence snippet and page URL. "
+        "COMPANY_ONLY is a valid outcome — analysis is never blocked on it."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def discover_run_contacts(
+    run_id: UUID, uow_factory: UowFactoryDep, settings: SettingsDep
+) -> ContactDiscoveryResponse:
+    async with uow_factory() as uow:
+        run = await uow.research_runs.get_by_id(run_id)
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"research run not found: {run_id}"
+        )
+
+    fetcher = SafeFetcher(
+        limits=FetchLimits(
+            max_page_bytes=settings.research_max_page_bytes,
+            max_decompressed_bytes=settings.research_max_decompressed_bytes,
+            request_timeout_seconds=settings.research_request_timeout_seconds,
+            max_redirects=settings.research_max_redirects,
+            user_agent=settings.research_user_agent,
+        ),
+        scope=SiteScope.from_url(run.website),
+    )
+    pages: list[tuple[str, str, str]] = []
+    failed = 0
+    async with create_research_client(
+        timeout=settings.research_request_timeout_seconds
+    ) as client:
+        for page in run.pages[: settings.research_max_pages]:
+            outcome = await fetcher.fetch(client, page.url)
+            if isinstance(outcome, FetchedPage):
+                cleaned = clean_html(outcome.html, max_chars=settings.research_max_page_chars)
+                pages.append((page.url, outcome.html, cleaned.text))
+            else:
+                failed += 1
+
+    selection = rank_contacts(extract_contacts(pages))
+    return ContactDiscoveryResponse.from_selection(
+        selection, pages_scanned=len(pages), pages_failed=failed
+    )

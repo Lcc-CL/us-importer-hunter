@@ -107,6 +107,8 @@ class OpenAIResearchExtractor:
         prompt_version: str = PROMPT_VERSION,
         timeout_seconds: float = 30.0,
         max_input_chars: int = 24_000,
+        provider: str = "openai",
+        extra_body: dict[str, Any] | None = None,
         client: object | None = None,  # test seam: .chat.completions.create
     ) -> None:
         if not model.strip():
@@ -115,6 +117,8 @@ class OpenAIResearchExtractor:
                 "no research model configured — set RESEARCH_MODEL or OPENAI_MODEL",
             )
         self._model = model.strip()
+        self._provider = provider.strip() or "openai"
+        self._extra_body = extra_body
         self._api_key = api_key
         self._base_url = (base_url or "").strip() or None
         self._prompt_version = prompt_version.strip() or PROMPT_VERSION
@@ -126,7 +130,7 @@ class OpenAIResearchExtractor:
     @property
     def identity(self) -> ExtractorIdentity:
         return ExtractorIdentity(
-            provider="openai", model=self._model, prompt_version=self._prompt_version
+            provider=self._provider, model=self._model, prompt_version=self._prompt_version
         )
 
     async def extract(self, payload: ExtractionInput) -> ExtractionResult:
@@ -153,16 +157,19 @@ class OpenAIResearchExtractor:
         """At most MAX_ATTEMPTS calls; only 429/5xx justify the second one."""
         last: ExtractionError | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            request_kwargs: dict[str, Any] = {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "response_format": {"type": "json_object"},
+                "timeout": self._timeout,
+            }
+            if self._extra_body:
+                request_kwargs["extra_body"] = self._extra_body
             try:
-                response: Any = await client.chat.completions.create(
-                    model=self._model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    response_format={"type": "json_object"},
-                    timeout=self._timeout,
-                )
+                response: Any = await client.chat.completions.create(**request_kwargs)
             except ExtractionError:
                 raise
             except Exception as exc:  # SDK errors never leak past this boundary

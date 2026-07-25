@@ -34,6 +34,6 @@ class RuntimeStatusResponse(BaseModel):
     #: The research extractor, reported separately because it is configured
     #: independently — a deployment can draft with a real model while still
     #: researching with the Fake one, and the panel must say so.
-    research_provider: Literal["fake", "openai"]
+    research_provider: Literal["fake", "openai", "deepseek"]
     research_model: str
     environment: str

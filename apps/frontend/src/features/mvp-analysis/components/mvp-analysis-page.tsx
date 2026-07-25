@@ -27,7 +27,13 @@ import { ProspectForm } from "./prospect-form";
 import { ProviderBadge } from "./provider-badge";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
 import type { FlowStep, StepState } from "@/features/research/step-nav";
+import { ContactDiscoveryCard } from "./contact-discovery-card";
 import { MissingFieldsPrompt } from "./guided-flow";
+import {
+  discoverContacts,
+  type ContactDiscovery,
+  type RankedContact,
+} from "@/lib/research-api";
 import {
   clearSenderProfile,
   mergeSenderProfile,
@@ -91,6 +97,10 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   // visible in the other and the analysis always reads what the user last saw.
   const [contact, setContact] = useState<ProspectContact>(EMPTY_CONTACT);
   const [sender, setSender] = useState<ProspectSender>(EMPTY_SENDER);
+  // Automatic contact discovery for the confirmed research run. Failure is a
+  // valid state (COMPANY_ONLY) and never blocks the analysis.
+  const [discovery, setDiscovery] = useState<ContactDiscovery | null>(null);
+  const [discovering, setDiscovering] = useState(false);
   // The saved profile is external state, read through useSyncExternalStore so
   // hydration sees the server's empty snapshot first and swaps in the stored
   // values afterwards — no effect, no setState-during-render.
@@ -147,11 +157,14 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
   const decision = analysis?.opportunity.qualification_decision ?? null;
   const missing = missingFieldsFor(contact, effectiveSender);
 
+  // Only a missing sender blocks the flow now; a missing contact is a valid
+  // COMPANY_ONLY analysis, not a blocker.
+  const senderBlocks = awaitingFields !== null && missing.sender;
   const downstreamSteps: Partial<Record<FlowStep, StepState>> = {
     analysis:
       pageState === "submitting"
         ? "current"
-        : awaitingFields
+        : senderBlocks
           ? "blocked"
           : analysis
             ? "done"
@@ -165,14 +178,10 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
           : "todo",
   };
 
-  const guidedNextAction = awaitingFields
-    ? t(missing.contact ? "guided.missing.contact" : "guided.missing.sender")
-    : null;
+  const guidedNextAction = senderBlocks ? t("guided.missing.sender") : null;
   const guidedBlockedBy = (() => {
-    if (awaitingFields && (missing.contact || missing.sender)) {
-      return missing.contact
-        ? t("guided.missing.contactHint")
-        : t("guided.missing.senderHint");
+    if (senderBlocks) {
+      return t("guided.missing.senderHint");
     }
     if (!analysis) return null;
     if (decision === "review") return t("guided.result.review");
@@ -195,30 +204,63 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
    * immediately, unless a contact or sender is genuinely missing, in which
    * case only that block is asked for.
    */
-  async function handleResearchConfirmed(payload: ApplicationPayload) {
+  /** A discovered contact becomes the analysis contact — never invented,
+   * always carrying the page it was read from as its source. A department
+   * mailbox uses its salutation ("Purchasing Team") as the addressable name,
+   * so DEPARTMENT_CONTACT drafts need no manual name and invent no person. */
+  const applyDiscoveredContact = (ranked: RankedContact) => {
+    const found = ranked.contact;
+    setContact({
+      name: found.name || found.display_name,
+      title: found.title,
+      email: found.email,
+      linkedin_url: "",
+      phone: found.phone,
+      source: found.source_url,
+    });
+  };
+
+  async function handleResearchConfirmed(payload: ApplicationPayload, researchId: string) {
     // A different company means the contact on screen belongs to the previous
-    // prospect. It is shown for confirmation rather than cleared: overwriting
-    // what the user typed would be worse than asking them to look at it.
+    // prospect: contacts are per-company and must never carry over.
     const isNewCompany =
       pendingResearch !== null && payload.company_name !== pendingResearch.company_name;
     setPendingResearch(payload);
     // Still applied to the old form so Advanced editing starts pre-filled.
     setAppliedPayload((current) => ({ version: (current?.version ?? 0) + 1, payload }));
+    if (isNewCompany) setContact(EMPTY_CONTACT);
 
-    const gap = missingFieldsFor(contact, effectiveSender);
-    if (gap.contact || gap.sender || isNewCompany) {
-      setAwaitingFields({ contact: gap.contact || isNewCompany, sender: gap.sender });
-      return;
+    // Automatic discovery first; the manual form is the fallback, not the
+    // default. A failed discovery is treated as "nothing found" and the flow
+    // continues — COMPANY_ONLY analysis is always available.
+    setDiscovery(null);
+    setDiscovering(true);
+    let found: ContactDiscovery | null = null;
+    try {
+      found = await discoverContacts(researchId);
+      // A response that is not actually a discovery result (proxy pages,
+      // stubbed environments) is treated as "nothing found", never a crash.
+      if (!found || typeof found.discovery_status !== "string") found = null;
+    } catch {
+      found = null;
+    }
+    setDiscovery(found);
+    setDiscovering(false);
+    if (found?.primary && (isNewCompany || !contact.name.trim())) {
+      applyDiscoveredContact(found.primary);
     }
 
-    setAwaitingFields(null);
-    await handleAnalyze(buildAnalysisRequest(payload, contact, effectiveSender));
+    // Only the sender can still block: it is user-level, restored from the
+    // saved profile, and required because a draft cannot be written without
+    // knowing who is writing.
+    const gap = missingFieldsFor(contact, effectiveSender);
+    setAwaitingFields({ contact: false, sender: gap.sender });
   }
 
   async function handleGuidedContinue() {
     if (!pendingResearch || isBusy) return;
     const gap = missingFieldsFor(contact, effectiveSender);
-    if (gap.contact || gap.sender) return;
+    if (gap.sender) return;
     setAwaitingFields(null);
     await handleAnalyze(buildAnalysisRequest(pendingResearch, contact, effectiveSender));
   }
@@ -364,6 +406,21 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
                 downstreamSteps={downstreamSteps}
                 nextAction={guidedNextAction}
                 onConfirmed={handleResearchConfirmed}
+              />
+            ) : null}
+
+            {pendingResearch ? (
+              <ContactDiscoveryCard
+                discovery={discovery}
+                loading={discovering}
+                onManualEdit={() =>
+                  setAwaitingFields((current) => ({
+                    contact: true,
+                    sender: current?.sender ?? missing.sender,
+                  }))
+                }
+                onSelect={applyDiscoveredContact}
+                selectedEmail={contact.email}
               />
             ) : null}
 

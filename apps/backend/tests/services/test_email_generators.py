@@ -113,3 +113,15 @@ class TestOpenAIAdapter:
     async def test_context_fingerprint_is_stable(self) -> None:
         assert CONTEXT.fingerprint() == CONTEXT.fingerprint()
         assert len(CONTEXT.fingerprint()) == 64
+
+
+class TestDepartmentContactDraft:
+    async def test_department_salutation_is_used_verbatim(self) -> None:
+        """DEPARTMENT_CONTACT mode: the draft greets the team, never an
+        invented person — 'Purchasing Team' flows through as the contact name."""
+        from dataclasses import replace
+
+        context = replace(CONTEXT, contact_name="Purchasing Team", contact_title=None)
+        draft = await FakeEmailDraftGenerator().generate(context)
+        assert "Hi Purchasing Team," in draft.body
+        assert "Maria Chen" not in draft.body

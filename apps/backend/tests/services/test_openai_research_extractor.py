@@ -709,6 +709,43 @@ class TestProviderSelection:
     def test_prompt_version_is_configurable_and_defaults_to_v1(self) -> None:
         assert self._settings().research_prompt_version == PROMPT_VERSION
 
+    def test_deepseek_is_selected_with_its_own_credentials(self) -> None:
+        from app.api.deps import get_research_extractor
+
+        chosen = get_research_extractor(
+            self._settings(
+                research_extractor_provider="deepseek",
+                deepseek_api_key=SECRET,
+            )
+        )
+        assert isinstance(chosen, OpenAIResearchExtractor)
+        assert chosen.identity.provider == "deepseek"
+        assert chosen.identity.model == "deepseek-v4-pro"
+        assert chosen._base_url == "https://api.deepseek.com"
+        assert chosen._extra_body == {"thinking": {"type": "disabled"}}
+
+    def test_deepseek_without_key_raises_instead_of_falling_back(self) -> None:
+        from app.api.deps import get_research_extractor
+        from app.shared.exceptions import ProviderUnavailableError
+
+        with pytest.raises(ProviderUnavailableError):
+            get_research_extractor(
+                self._settings(research_extractor_provider="deepseek", deepseek_api_key="")
+            )
+
+    async def test_extra_body_is_forwarded_to_the_provider_request(self) -> None:
+        instance = OpenAIResearchExtractor(
+            model="deepseek-v4-pro",
+            api_key=SECRET,
+            provider="deepseek",
+            extra_body={"thinking": {"type": "disabled"}},
+            client=FakeClient(FakeResponse(body())),
+        )
+        await instance.extract(PAYLOAD)
+        call = calls_of(instance)[0]
+        assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+        assert call["response_format"] == {"type": "json_object"}
+
     def test_base_url_is_reused_from_openai_settings(self) -> None:
         from app.api.deps import get_research_extractor
 

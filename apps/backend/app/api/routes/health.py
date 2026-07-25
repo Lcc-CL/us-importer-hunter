@@ -37,7 +37,11 @@ async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
         model=settings.openai_model if provider == "openai" else "fake-static-v1",
         research_provider=research,
         research_model=(
-            settings.resolved_research_model if research == "openai" else "fake-research-v1"
+            settings.resolved_research_model
+            if research == "openai"
+            else settings.deepseek_model
+            if research == "deepseek"
+            else "fake-research-v1"
         ),
         environment=settings.app_env,
     )
