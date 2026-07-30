@@ -10,6 +10,21 @@ from app.domain.discovery.aggregate import (
     DiscoveryRun,
     DiscoveryRunStatus,
 )
+from app.domain.discovery.provider import (
+    CompanyCandidate,
+    CompanyDiscoveryProvider,
+    CompanyDiscoveryQuery,
+    CompanyDiscoverySearchResult,
+    DiscoveryProviderError,
+    DiscoveryProviderFailure,
+    DiscoveryProviderUnavailable,
+)
+from app.domain.discovery.task import (
+    DiscoveryCandidate,
+    DiscoveryCandidateStatus,
+    DiscoveryTask,
+    DiscoveryTaskStatus,
+)
 from app.domain.discovery.values import (
     DiscoveryResult,
     DiscoveryStats,
@@ -25,4 +40,15 @@ __all__ = [
     "DiscoveryStats",
     "RawCompanySnapshot",
     "Signal",
+    "CompanyCandidate",
+    "CompanyDiscoveryProvider",
+    "CompanyDiscoveryQuery",
+    "CompanyDiscoverySearchResult",
+    "DiscoveryCandidate",
+    "DiscoveryCandidateStatus",
+    "DiscoveryProviderError",
+    "DiscoveryProviderFailure",
+    "DiscoveryProviderUnavailable",
+    "DiscoveryTask",
+    "DiscoveryTaskStatus",
 ]

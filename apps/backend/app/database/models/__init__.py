@@ -12,6 +12,7 @@ from app.database.models.company import (
     CompanySourceModel,
 )
 from app.database.models.contact import ContactModel
+from app.database.models.discovery_task import DiscoveryCandidateModel, DiscoveryTaskModel
 from app.database.models.import_evidence import (
     ImporterEntityMatchModel,
     ImporterEvidenceAggregateModel,
@@ -47,6 +48,8 @@ __all__ = [
     "CompanySignalModel",
     "CompanySourceModel",
     "ContactModel",
+    "DiscoveryCandidateModel",
+    "DiscoveryTaskModel",
     "ImportEvidenceConflictModel",
     "ImportEvidenceCompanySignalModel",
     "ImportEvidenceJobModel",

@@ -67,7 +67,7 @@ class WebsiteUrl:
 
     @property
     def host(self) -> str:
-        return urlparse(self.value).netloc
+        return urlparse(self.value).netloc.removeprefix("www.")
 
 
 @dataclass(frozen=True)

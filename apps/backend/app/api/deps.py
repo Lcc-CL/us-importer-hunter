@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.uow import SqlAlchemyUnitOfWork
-from app.domain.repositories import UnitOfWork
+from app.domain.discovery import CompanyDiscoveryProvider
+from app.domain.repositories import DiscoveryTaskUnitOfWork, UnitOfWork
 from app.domain.services import (
     DecisionMakerSelectionService,
     EmailDraftGenerator,
@@ -30,10 +31,12 @@ from app.services.research import (
 )
 from app.services.scoring import DeterministicOpportunityScoringService
 from app.shared.exceptions import ProviderUnavailableError
+from app.tools.importyeti import ImportYetiCompanyDiscoveryProvider
 from app.tools.website import FetchLimits, SafeFetcher, SiteScope
 from app.workflows.company_ingestion import CompanyIngestionWorkflow
 from app.workflows.contact_ingestion import ContactIngestionWorkflow
 from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
+from app.workflows.discovery_task import DiscoveryTaskQueryWorkflow, DiscoveryTaskWorkflow
 from app.workflows.email import EmailDraftGenerationWorkflow
 from app.workflows.import_evidence import EvidenceFlowUnitOfWork, EvidenceToDraftWorkflow
 from app.workflows.mvp_prospect_analysis import (
@@ -123,6 +126,48 @@ def get_company_ingestion_workflow(uow_factory: UowFactoryDep) -> CompanyIngesti
 
 
 CompanyIngestionDep = Annotated[CompanyIngestionWorkflow, Depends(get_company_ingestion_workflow)]
+
+
+def get_company_discovery_provider() -> CompanyDiscoveryProvider:
+    return ImportYetiCompanyDiscoveryProvider()
+
+
+CompanyDiscoveryProviderDep = Annotated[
+    CompanyDiscoveryProvider, Depends(get_company_discovery_provider)
+]
+
+
+def get_discovery_task_workflow(
+    uow_factory: UowFactoryDep,
+    provider: CompanyDiscoveryProviderDep,
+    company_ingestion: CompanyIngestionDep,
+) -> DiscoveryTaskWorkflow:
+    discovery_uow_factory = cast(
+        Callable[[], DiscoveryTaskUnitOfWork], uow_factory
+    )
+    return DiscoveryTaskWorkflow(
+        uow_factory=discovery_uow_factory,
+        provider=provider,
+        company_ingestion=company_ingestion,
+    )
+
+
+DiscoveryTaskWorkflowDep = Annotated[
+    DiscoveryTaskWorkflow, Depends(get_discovery_task_workflow)
+]
+
+
+def get_discovery_task_query_workflow(
+    uow_factory: UowFactoryDep,
+) -> DiscoveryTaskQueryWorkflow:
+    return DiscoveryTaskQueryWorkflow(
+        cast(Callable[[], DiscoveryTaskUnitOfWork], uow_factory)
+    )
+
+
+DiscoveryTaskQueryDep = Annotated[
+    DiscoveryTaskQueryWorkflow, Depends(get_discovery_task_query_workflow)
+]
 
 
 def get_import_evidence_projection_reader(

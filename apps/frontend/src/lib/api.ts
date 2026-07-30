@@ -22,6 +22,57 @@ export type StageStatus =
 
 export type ApprovalStatus = "generated" | "approved" | "rejected";
 
+export type DiscoveryTaskStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "partial_failed"
+  | "failed";
+
+export interface DiscoveryTaskResponse {
+  task_id: string;
+  original_prompt: string;
+  requested_count: number;
+  effective_count: number;
+  parsed_region: string;
+  parsed_category: string;
+  parsed_keywords: string[];
+  provider: string;
+  status: DiscoveryTaskStatus;
+  discovered_count: number;
+  ingested_count: number;
+  duplicate_count: number;
+  failed_count: number;
+  error_summary: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface DiscoveryCompanyResponse {
+  candidate_id: string;
+  company_id: string | null;
+  company_name: string;
+  website: string | null;
+  domain: string | null;
+  address: string | null;
+  region: string | null;
+  product_description: string | null;
+  import_evidence: string | null;
+  source: string;
+  source_url: string | null;
+  external_id: string | null;
+  status: "discovered" | "ingested" | "duplicate" | "failed";
+  is_duplicate: boolean;
+  failure_reason: string | null;
+  created_at: string;
+}
+
+export interface DiscoveryCompanyListResponse {
+  task_id: string;
+  companies: DiscoveryCompanyResponse[];
+}
+
 export interface ProspectSourceRequest {
   source: string;
   reference: string;
@@ -406,7 +457,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-async function requestForm<T>(path: string, form: FormData): Promise<T> {
+async function requestForm<T>(
+  path: string,
+  form: FormData,
+  errorCode = "form_upload_failed",
+): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_V1_URL}${path}`, {
@@ -426,7 +481,7 @@ async function requestForm<T>(path: string, form: FormData): Promise<T> {
       ? payload.detail
       : `The API returned HTTP ${response.status}.`;
     throw new ApiError(response.status, {
-      code: "import_evidence_upload_failed",
+      code: errorCode,
       message: detail,
       request_id: response.headers.get("X-Request-ID") ?? "not_available",
     });
@@ -436,6 +491,41 @@ async function requestForm<T>(path: string, form: FormData): Promise<T> {
 
 export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return requestJson<RuntimeStatusResponse>("/health/runtime");
+}
+
+export function createDiscoveryTask(prompt: string): Promise<DiscoveryTaskResponse> {
+  return requestJson<DiscoveryTaskResponse>("/discovery-tasks", {
+    method: "POST",
+    body: JSON.stringify({ prompt }),
+  });
+}
+
+export function createManualCsvDiscoveryTask(
+  prompt: string,
+  file: File,
+): Promise<DiscoveryTaskResponse> {
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("file", file);
+  return requestForm<DiscoveryTaskResponse>(
+    "/discovery-tasks/manual-csv",
+    form,
+    "discovery_csv_upload_failed",
+  );
+}
+
+export function getDiscoveryTask(taskId: string): Promise<DiscoveryTaskResponse> {
+  return requestJson<DiscoveryTaskResponse>(
+    `/discovery-tasks/${encodeURIComponent(taskId)}`,
+  );
+}
+
+export function getDiscoveryTaskCompanies(
+  taskId: string,
+): Promise<DiscoveryCompanyListResponse> {
+  return requestJson<DiscoveryCompanyListResponse>(
+    `/discovery-tasks/${encodeURIComponent(taskId)}/companies`,
+  );
 }
 
 export interface DecisionMakerConfirmRequest {
@@ -495,6 +585,7 @@ export function uploadImportEvidence(
   return requestForm<EvidenceUploadResponse>(
     `/companies/${encodeURIComponent(companyId)}/import-evidence/upload`,
     form,
+    "import_evidence_upload_failed",
   );
 }
 

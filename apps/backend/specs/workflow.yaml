@@ -4,6 +4,26 @@
 # EventBus (ADR-0004/0015); Execution context wraps every run in a Task.
 
 workflows:
+  discovery_task:
+    package: app.workflows.discovery_task
+    description: >
+      D1 synchronous importer-discovery supervisor. Deterministically parses a
+      Chinese goal, persists a generic execution Task plus DiscoveryTask detail,
+      invokes one Company Discovery Provider, deduplicates candidates by domain
+      then normalized name and address, and feeds non-duplicate claims through
+      company_ingestion. Candidate failures are isolated and persisted. The
+      default ImportYeti adapter fails closed until an official API contract is
+      available; manual_csv is an explicitly labelled development adapter.
+    steps:
+      - { id: parse_prompt, service: discovery_prompt_parser }
+      - { id: search_provider, provider: company_discovery_provider }
+      - { id: normalize_deduplicate, service: discovery_candidate_preparation }
+      - { id: ingest_companies, workflow: company_ingestion, for_each: candidate }
+      - { id: persist_terminal_status, aggregate: discovery_task }
+    statuses: [pending, running, completed, partial_failed, failed]
+    execution: sync
+    status: implemented
+
   import_evidence_closure:
     package: app.workflows.import_evidence
     description: >
@@ -70,7 +90,7 @@ workflows:
     package: app.workflows.company_ingestion
     description: >
       The Discovery → Company seam (ADR-0019): normalize a discovered
-      claim, deduplicate (name, then website host), create or merge the
+      claim, deduplicate (website host, then normalized name), create or merge the
       canonical Company. One UnitOfWork per event; rejection is an
       outcome, not an exception.
     consumes: [CompanyDiscovered]

@@ -4,7 +4,7 @@ The application-layer consumer of Discovery's events (ADR-0019):
 
     CompanyDiscovered
         → normalize (SnapshotNormalizer: raw text → CompanyName/WebsiteUrl)
-        → deduplicate (RepositoryCompanyDeduplicator: name, then host)
+        → deduplicate (RepositoryCompanyDeduplicator: host, then name)
         → create Company | merge into existing (alias / source / signal / website)
         → commit (one Unit of Work per event)
 

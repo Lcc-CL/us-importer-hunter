@@ -5,9 +5,22 @@ tools:
   importyeti:
     package: app.tools.importyeti
     purpose: US customs / bill-of-lading data — importer discovery
-    transport: TBD          # no official public API; access method unresolved
-    needs_browser: TBD
-    rate_limit: TBD
+    transport: unavailable
+    needs_browser: false
+    rate_limit: unavailable
+    status: REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY
+    note: >
+      ImportYeti's official public site does not currently publish a Data API
+      base URL, authentication contract, or response schema. The adapter fails
+      closed; website scraping and invented API contracts are prohibited.
+
+  manual_csv:
+    package: app.services.discovery.manual_csv
+    purpose: User-supplied real company candidate rows for D1 development validation
+    transport: csv_upload
+    needs_browser: false
+    status: development_only
+    note: Always labels provenance as manual_csv and is never automatic discovery.
 
   google:
     package: app.tools.google
