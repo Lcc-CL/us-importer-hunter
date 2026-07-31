@@ -16,8 +16,7 @@ async def test_importyeti_reports_api_capability_blocker_without_scraping() -> N
         category="hardware",
         keywords=("五金", "hardware", "importer"),
     )
-    with pytest.raises(
-        DiscoveryProviderUnavailable,
-        match="REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY",
-    ):
+    with pytest.raises(DiscoveryProviderUnavailable) as caught:
         await provider.search(query)
+    assert caught.value.error_code == "REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY"
+    assert "website scraping is disabled" in str(caught.value)

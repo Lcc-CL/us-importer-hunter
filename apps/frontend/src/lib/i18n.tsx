@@ -38,6 +38,7 @@ const zh = {
   "discovery.creating": "正在执行…",
   "discovery.providerNotice":
     "ImportYeti 尚未公开可验证的官方 Data API 契约，自动入口会明确失败关闭，不会抓取网站或伪造结果。可上传你实际取得的 CSV 验证真实数据闭环。",
+  "discovery.providerUnavailable": "当前未配置可用的自动发现数据源，可使用 CSV 导入。",
   "discovery.csvCreate": "用真实 CSV 创建",
   "discovery.csvHelp":
     "必填列：company_name，以及 source_url 或 external_id 之一；可选 website、address、region、product_description、import_evidence。结果始终标记为 manual_csv。",
@@ -204,6 +205,13 @@ const zh = {
 
   "error.network_error": "无法连接后端服务。请确认后端已在配置的地址上运行。",
   "error.unexpected_client_error": "处理请求时发生了意外错误。",
+  "error.discovery_csv_empty": "CSV 文件为空，请上传包含表头和数据行的 UTF-8 CSV。",
+  "error.discovery_csv_invalid_encoding": "CSV 编码错误，请使用 UTF-8 编码。",
+  "error.discovery_csv_invalid_header":
+    "CSV 表头错误：必须包含 company_name，以及 source_url 或 external_id。",
+  "error.discovery_csv_too_large": "CSV 文件过大，最大允许 2 MB。",
+  "error.discovery_csv_too_many_rows": "CSV 数据行过多，最大允许 1000 行。",
+  "error.discovery_csv_malformed": "CSV 格式无法解析，请检查引号和分隔符。",
 
   "research.title": "自动研究（内部测试）",
   "research.notice": "内部测试功能，当前不得暴露到匿名公网环境。",
@@ -368,6 +376,8 @@ const en: Record<MessageKey, string> = {
   "discovery.creating": "Running…",
   "discovery.providerNotice":
     "ImportYeti does not currently publish a verifiable official Data API contract. Automatic discovery fails closed instead of scraping or fabricating results. Upload a CSV you actually obtained to verify the real-data workflow.",
+  "discovery.providerUnavailable":
+    "No automatic discovery data source is configured. You can import a CSV instead.",
   "discovery.csvCreate": "Create from real CSV",
   "discovery.csvHelp":
     "Required columns: company_name and either source_url or external_id. Optional: website, address, region, product_description, import_evidence. Results are always labelled manual_csv.",
@@ -542,6 +552,15 @@ const en: Record<MessageKey, string> = {
     "Unable to reach the API. Confirm the backend is running on the configured URL.",
   "error.unexpected_client_error":
     "Something unexpected happened while processing the request.",
+  "error.discovery_csv_empty":
+    "The CSV is empty. Upload a UTF-8 CSV with a header and data rows.",
+  "error.discovery_csv_invalid_encoding": "The CSV must use UTF-8 encoding.",
+  "error.discovery_csv_invalid_header":
+    "The CSV header must include company_name and either source_url or external_id.",
+  "error.discovery_csv_too_large": "The CSV exceeds the 2 MB limit.",
+  "error.discovery_csv_too_many_rows": "The CSV exceeds the 1000-row limit.",
+  "error.discovery_csv_malformed":
+    "The CSV could not be parsed. Check quoting and delimiters.",
 
   "research.title": "Automatic research (internal)",
   "research.notice": "Internal testing feature — must not be exposed to an anonymous public environment.",

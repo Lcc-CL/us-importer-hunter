@@ -14,7 +14,7 @@ from app.domain.discovery import (
     DiscoveryTask,
     RawCompanySnapshot,
 )
-from app.domain.discovery.provider import limit_candidates
+from app.domain.discovery.provider import DiscoveryProviderError, limit_candidates
 from app.domain.events import CompanyDiscovered
 from app.domain.repositories import DiscoveryTaskUnitOfWork
 from app.domain.task import Task
@@ -69,8 +69,19 @@ class DiscoveryTaskWorkflow:
         )
         try:
             search_result = await selected_provider.search(query)
+        except DiscoveryProviderError as exc:
+            await self._fail_tasks(
+                execution_task.id,
+                error_code=exc.error_code,
+                error_summary=str(exc) or type(exc).__name__,
+            )
+            return await self._require_task(execution_task.id)
         except Exception as exc:  # provider boundary: persist terminal failure, never hang
-            await self._fail_tasks(execution_task.id, str(exc) or type(exc).__name__)
+            await self._fail_tasks(
+                execution_task.id,
+                error_code="DISCOVERY_PROVIDER_ERROR",
+                error_summary=str(exc) or type(exc).__name__,
+            )
             return await self._require_task(execution_task.id)
 
         candidates = limit_candidates(search_result.candidates, limit=parsed.effective_count)
@@ -139,7 +150,7 @@ class DiscoveryTaskWorkflow:
             task = await uow.discovery_tasks.get_by_id(task_id)
             assert task is not None
             persisted: list[DiscoveryCandidate] = []
-            for item in prepared:
+            for position, item in enumerate(prepared):
                 source_reference = item.candidate.source_url or item.candidate.external_id
                 assert source_reference is not None
                 candidate = DiscoveryCandidate(
@@ -147,6 +158,7 @@ class DiscoveryTaskWorkflow:
                         NAMESPACE_URL,
                         f"{task_id}|{item.candidate.source}|{source_reference}|{len(persisted)}",
                     ),
+                    position=position,
                     source=item.candidate.source,
                     source_url=item.candidate.source_url,
                     external_id=item.candidate.external_id,
@@ -226,6 +238,7 @@ class DiscoveryTaskWorkflow:
             all_failures = (*provider_failures, *candidate_failures)
             discovery.complete(
                 provider_failures=len(provider_failures),
+                error_code="DISCOVERY_RESULT_ERRORS" if all_failures else None,
                 error_summary="; ".join(all_failures) or None,
             )
             if discovery.status.value == "failed":
@@ -236,13 +249,15 @@ class DiscoveryTaskWorkflow:
             await uow.discovery_tasks.save(discovery)
             await uow.commit()
 
-    async def _fail_tasks(self, task_id: UUID, error: str) -> None:
+    async def _fail_tasks(
+        self, task_id: UUID, *, error_code: str, error_summary: str
+    ) -> None:
         async with self._uow_factory() as uow:
             execution = await uow.tasks.get_by_id(task_id)
             discovery = await uow.discovery_tasks.get_by_id(task_id)
             assert execution is not None and discovery is not None
-            discovery.fail(error)
-            execution.fail(error)
+            discovery.fail(error_code=error_code, error_summary=error_summary)
+            execution.fail(f"{error_code}: {error_summary}")
             await uow.tasks.save(execution)
             await uow.discovery_tasks.save(discovery)
             await uow.commit()

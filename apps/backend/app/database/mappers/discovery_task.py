@@ -26,6 +26,7 @@ class DiscoveryTaskMapper:
             provider=task.provider,
             status=task.status.value,
             provider_failure_count=task.provider_failure_count,
+            error_code=task.error_code,
             error_summary=task.error_summary,
             created_at=task.created_at,
             started_at=task.started_at,
@@ -33,6 +34,7 @@ class DiscoveryTaskMapper:
             candidates=[
                 DiscoveryCandidateModel(
                     id=item.id,
+                    position=item.position,
                     task_id=task.id,
                     source=item.source,
                     source_url=item.source_url,
@@ -76,12 +78,14 @@ class DiscoveryTaskMapper:
         )
         task._status = DiscoveryTaskStatus(model.status)
         task._provider_failure_count = model.provider_failure_count
+        task._error_code = model.error_code
         task._error_summary = model.error_summary
         task._started_at = model.started_at
         task._completed_at = model.completed_at
         task._candidates = [
             DiscoveryCandidate(
                 id=item.id,
+                position=item.position,
                 source=item.source,
                 source_url=item.source_url,
                 external_id=item.external_id,

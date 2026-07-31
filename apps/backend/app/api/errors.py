@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.schemas.mvp import ApiErrorResponse
 from app.shared.exceptions import (
     ApplicationConflictError,
+    InvalidInputError,
     ProviderUnavailableError,
     ResourceNotFoundError,
 )
@@ -52,6 +53,10 @@ def register_error_handlers(app: FastAPI) -> None:
         request: Request, exc: ApplicationConflictError
     ) -> JSONResponse:
         return _response(request, status=409, code="invalid_state", message=str(exc))
+
+    @app.exception_handler(InvalidInputError)
+    async def invalid_input(request: Request, exc: InvalidInputError) -> JSONResponse:
+        return _response(request, status=422, code=exc.code, message=str(exc))
 
     @app.exception_handler(ProviderUnavailableError)
     async def provider_unavailable(

@@ -20,6 +20,9 @@ tools:
     transport: csv_upload
     needs_browser: false
     status: development_only
+    limits:
+      max_bytes: 2097152
+      max_rows: 1000
     note: Always labels provenance as manual_csv and is never automatic discovery.
 
   google:

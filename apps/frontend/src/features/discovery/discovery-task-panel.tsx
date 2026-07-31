@@ -38,6 +38,15 @@ function statusTone(status: DiscoveryTaskStatus): string {
   return "bg-sky-100 text-sky-800";
 }
 
+const CSV_ERROR_KEYS = {
+  discovery_csv_empty: "error.discovery_csv_empty",
+  discovery_csv_invalid_encoding: "error.discovery_csv_invalid_encoding",
+  discovery_csv_invalid_header: "error.discovery_csv_invalid_header",
+  discovery_csv_too_large: "error.discovery_csv_too_large",
+  discovery_csv_too_many_rows: "error.discovery_csv_too_many_rows",
+  discovery_csv_malformed: "error.discovery_csv_malformed",
+} as const;
+
 export function DiscoveryTaskPanel({ initialTaskId }: DiscoveryTaskPanelProps) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState(EXAMPLE_PROMPT);
@@ -113,7 +122,9 @@ export function DiscoveryTaskPanel({ initialTaskId }: DiscoveryTaskPanelProps) {
         await createManualCsvDiscoveryTask(prompt.trim(), csvFile),
       );
     } catch (caught: unknown) {
-      setError(getClientErrorDetails(caught).message);
+      const details = getClientErrorDetails(caught);
+      const key = CSV_ERROR_KEYS[details.code as keyof typeof CSV_ERROR_KEYS];
+      setError(key ? t(key) : details.message);
     } finally {
       setBusy(false);
     }
@@ -241,7 +252,15 @@ export function DiscoveryTaskPanel({ initialTaskId }: DiscoveryTaskPanelProps) {
 
           {task.error_summary ? (
             <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-800">
-              {task.error_summary}
+              {task.error_code === "REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY" ? (
+                <p className="font-medium" data-testid="provider-unavailable-message">
+                  {t("discovery.providerUnavailable")}
+                </p>
+              ) : null}
+              {task.error_code ? (
+                <p className="mt-1 font-mono text-xs">{task.error_code}</p>
+              ) : null}
+              <p className="mt-1">{task.error_summary}</p>
             </div>
           ) : null}
 

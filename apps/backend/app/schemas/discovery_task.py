@@ -29,6 +29,7 @@ class DiscoveryTaskResponse(BaseModel):
     ingested_count: int
     duplicate_count: int
     failed_count: int
+    error_code: str | None
     error_summary: str | None
     created_at: datetime
     started_at: datetime | None
@@ -50,6 +51,7 @@ class DiscoveryTaskResponse(BaseModel):
             ingested_count=task.ingested_count,
             duplicate_count=task.duplicate_count,
             failed_count=task.failed_count,
+            error_code=task.error_code,
             error_summary=task.error_summary,
             created_at=task.created_at,
             started_at=task.started_at,
@@ -59,6 +61,7 @@ class DiscoveryTaskResponse(BaseModel):
 
 class DiscoveryCompanyResponse(BaseModel):
     candidate_id: UUID
+    position: int
     company_id: UUID | None
     company_name: str
     website: str | None
@@ -79,6 +82,7 @@ class DiscoveryCompanyResponse(BaseModel):
     def from_domain(cls, candidate: DiscoveryCandidate) -> Self:
         return cls(
             candidate_id=candidate.id,
+            position=candidate.position,
             company_id=candidate.company_id,
             company_name=candidate.company_name,
             website=candidate.website,

@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import (
@@ -22,6 +23,7 @@ from app.domain.discovery import (
 from app.domain.events import CompanyDiscovered
 from app.domain.values import SourceReference
 from app.main import create_app
+from app.services.discovery.manual_csv import MAX_MANUAL_CSV_BYTES, MAX_MANUAL_CSV_ROWS
 from app.workflows.company_ingestion import CompanyIngestionWorkflow
 from tests.database.integration.conftest import UowFactory
 
@@ -208,11 +210,185 @@ async def test_default_importyeti_blocker_is_persisted_as_terminal_failure(
         created = response.json()
         assert created["provider"] == "importyeti"
         assert created["status"] == "failed"
-        assert "REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY" in created["error_summary"]
+        assert created["failed_count"] == 1
+        assert created["error_code"] == "REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY"
+        assert "website scraping is disabled" in created["error_summary"]
 
         saved = await client.get(
             f"/api/v1/discovery-tasks/{created['task_id']}"
         )
         assert saved.status_code == 200, saved.text
         assert saved.json()["status"] == "failed"
+        assert saved.json()["error_code"] == "REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY"
         assert saved.json()["completed_at"] is not None
+
+
+async def test_manual_csv_complex_partial_failure_dedup_and_repeat_upload(
+    uow_factory: UowFactory,
+) -> None:
+    content = (
+        b"company_name,source_url,external_id,website,address,region,"
+        b"product_description,import_evidence\n"
+        b"Atlas Hardware,https://evidence.example/atlas-1,,https://atlas.example,"
+        b"1 Harbor Way,US,Hand tools,BOL-ATLAS-1\n"
+        b"Atlas Hardware Alias,https://evidence.example/atlas-2,,atlas.example/about,"
+        b"1 Harbor Way,US,Hand tools,BOL-ATLAS-2\n"
+        b"Harbor Supply,https://evidence.example/harbor-1,,,100 Main St,US,,\n"
+        b"Harbor Supply,https://evidence.example/harbor-2,,,100 Main St,US,,\n"
+        b"Optional Fields,https://evidence.example/optional,,,,,,\n"
+        b"Invalid Row,,,,,,,\n"
+        b"Bad Website,https://evidence.example/bad-url,,not a valid url,"
+        b"9 Test Ave,US,Lighting importer,BOL-BAD-URL\n"
+    )
+
+    first_visible: dict[str, dict[str, object]] = {}
+    async for client in make_default_provider_client(uow_factory):
+        first = await client.post(
+            "/api/v1/discovery-tasks/manual-csv",
+            data={"prompt": "帮我找 20 家北美五金进口商"},
+            files={"file": ("d1-synthetic.csv", content, "text/csv")},
+        )
+        assert first.status_code == 201, first.text
+        first_task = first.json()
+        assert first_task["provider"] == "manual_csv"
+        assert first_task["status"] == "partial_failed"
+        assert first_task["discovered_count"] == 6
+        assert first_task["ingested_count"] == 4
+        assert first_task["duplicate_count"] == 2
+        assert first_task["failed_count"] == 1
+        assert first_task["error_code"] == "DISCOVERY_RESULT_ERRORS"
+        assert "row 7 requires company_name and source_url/external_id" in first_task[
+            "error_summary"
+        ]
+
+        first_companies = await client.get(
+            f"/api/v1/discovery-tasks/{first_task['task_id']}/companies"
+        )
+        assert first_companies.status_code == 200, first_companies.text
+        first_rows = first_companies.json()["companies"]
+        assert [item["position"] for item in first_rows] == [0, 2, 4, 5]
+        assert [item["company_name"] for item in first_rows] == [
+            "Atlas Hardware",
+            "Harbor Supply",
+            "Optional Fields",
+            "Bad Website",
+        ]
+        assert all(item["source"] == "manual_csv" for item in first_rows)
+        assert all(item["company_id"] is not None for item in first_rows)
+        first_visible = {item["company_name"]: item for item in first_rows}
+
+        repeated_get = await client.get(
+            f"/api/v1/discovery-tasks/{first_task['task_id']}/companies"
+        )
+        assert repeated_get.json()["companies"] == first_rows
+
+        second = await client.post(
+            "/api/v1/discovery-tasks/manual-csv",
+            data={"prompt": "帮我找 20 家北美五金进口商"},
+            files={"file": ("d1-synthetic.csv", content, "text/csv")},
+        )
+        assert second.status_code == 201, second.text
+        second_task = second.json()
+        assert second_task["task_id"] != first_task["task_id"]
+        assert second_task["ingested_count"] == 0
+        assert second_task["duplicate_count"] == 6
+        assert second_task["failed_count"] == 1
+
+        second_companies = await client.get(
+            f"/api/v1/discovery-tasks/{second_task['task_id']}/companies"
+        )
+        second_rows = second_companies.json()["companies"]
+        assert [item["position"] for item in second_rows] == [0, 2, 4, 5]
+        assert {
+            item["company_name"]: item["company_id"] for item in second_rows
+        } == {
+            name: item["company_id"] for name, item in first_visible.items()
+        }
+
+
+@pytest.mark.parametrize(
+    ("content", "error_code"),
+    [
+        (b"", "discovery_csv_empty"),
+        (b"\xff\xfeinvalid", "discovery_csv_invalid_encoding"),
+        (b"name,source_url\nAtlas,record-1\n", "discovery_csv_invalid_header"),
+        (
+            b"company_name,source_url\n" + (b"x" * MAX_MANUAL_CSV_BYTES),
+            "discovery_csv_too_large",
+        ),
+        (
+            (
+                "company_name,source_url\n"
+                + "\n".join(
+                    f"Company {index},record-{index}"
+                    for index in range(MAX_MANUAL_CSV_ROWS + 1)
+                )
+            ).encode(),
+            "discovery_csv_too_many_rows",
+        ),
+    ],
+)
+async def test_manual_csv_file_errors_are_structured_4xx(
+    uow_factory: UowFactory,
+    content: bytes,
+    error_code: str,
+) -> None:
+    async for client in make_default_provider_client(uow_factory):
+        response = await client.post(
+            "/api/v1/discovery-tasks/manual-csv",
+            data={"prompt": "帮我找 20 家北美五金进口商"},
+            files={"file": ("invalid.csv", content, "text/csv")},
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["code"] == error_code
+        assert response.json()["message"]
+        UUID(response.json()["request_id"])
+
+
+async def test_missing_discovery_task_is_structured_404(
+    uow_factory: UowFactory,
+) -> None:
+    missing_id = uuid4()
+    async for client in make_default_provider_client(uow_factory):
+        for path in (
+            f"/api/v1/discovery-tasks/{missing_id}",
+            f"/api/v1/discovery-tasks/{missing_id}/companies",
+        ):
+            response = await client.get(path)
+            assert response.status_code == 404
+            assert response.json()["code"] == "resource_not_found"
+            UUID(response.json()["request_id"])
+
+
+async def test_manual_csv_blank_prompt_is_structured_4xx(
+    uow_factory: UowFactory,
+) -> None:
+    async for client in make_default_provider_client(uow_factory):
+        response = await client.post(
+            "/api/v1/discovery-tasks/manual-csv",
+            data={"prompt": "   "},
+            files={
+                "file": (
+                    "valid.csv",
+                    b"company_name,source_url\nAtlas,https://evidence.example/atlas\n",
+                    "text/csv",
+                )
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "discovery_prompt_invalid"
+
+
+async def test_discovery_openapi_exposes_structured_error_and_order_fields(
+    uow_factory: UowFactory,
+) -> None:
+    async for client in make_default_provider_client(uow_factory):
+        response = await client.get("/openapi.json")
+        assert response.status_code == 200
+        schemas = response.json()["components"]["schemas"]
+        assert "error_code" in schemas["DiscoveryTaskResponse"]["properties"]
+        assert "position" in schemas["DiscoveryCompanyResponse"]["properties"]
+        manual_responses = response.json()["paths"][
+            "/api/v1/discovery-tasks/manual-csv"
+        ]["post"]["responses"]
+        assert "422" in manual_responses

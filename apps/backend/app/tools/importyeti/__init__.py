@@ -19,8 +19,9 @@ class ImportYetiCompanyDiscoveryProvider:
     async def search(self, query: CompanyDiscoveryQuery) -> CompanyDiscoverySearchResult:
         del query
         raise DiscoveryProviderUnavailable(
-            "REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY: ImportYeti official Data API capability "
-            "is not publicly documented or configured; website scraping is disabled"
+            "ImportYeti official Data API capability is not publicly documented or configured; "
+            "website scraping is disabled",
+            error_code="REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY",
         )
 
 

@@ -13,7 +13,8 @@ workflows:
       then normalized name and address, and feeds non-duplicate claims through
       company_ingestion. Candidate failures are isolated and persisted. The
       default ImportYeti adapter fails closed until an official API contract is
-      available; manual_csv is an explicitly labelled development adapter.
+      available with a machine-readable error code; manual_csv is an explicitly
+      labelled development adapter with file-level validation before task creation.
     steps:
       - { id: parse_prompt, service: discovery_prompt_parser }
       - { id: search_provider, provider: company_discovery_provider }

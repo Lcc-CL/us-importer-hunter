@@ -21,9 +21,18 @@ class ProviderUnavailableError(ApplicationError):
     """An explicitly selected external provider cannot serve the request."""
 
 
+class InvalidInputError(ApplicationError):
+    """Input passed transport validation but is invalid for an application use case."""
+
+    def __init__(self, *, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 __all__ = [
     "ApplicationConflictError",
     "ApplicationError",
+    "InvalidInputError",
     "ProviderUnavailableError",
     "ResourceNotFoundError",
 ]

@@ -8,9 +8,17 @@ from typing import Protocol
 class DiscoveryProviderError(Exception):
     """A configured discovery source could not complete the search."""
 
+    default_error_code = "DISCOVERY_PROVIDER_ERROR"
+
+    def __init__(self, message: str, *, error_code: str | None = None) -> None:
+        super().__init__(message)
+        self.error_code = error_code or self.default_error_code
+
 
 class DiscoveryProviderUnavailable(DiscoveryProviderError):
     """The source cannot be used because capability or credentials are absent."""
+
+    default_error_code = "DISCOVERY_PROVIDER_UNAVAILABLE"
 
 
 @dataclass(frozen=True)

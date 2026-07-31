@@ -3,7 +3,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -43,6 +52,7 @@ class DiscoveryTaskModel(Base):
     provider_failure_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0"
     )
+    error_code: Mapped[str | None] = mapped_column(String(100))
     error_summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -51,7 +61,7 @@ class DiscoveryTaskModel(Base):
     candidates: Mapped[list["DiscoveryCandidateModel"]] = relationship(
         cascade="all, delete-orphan",
         lazy="selectin",
-        order_by="DiscoveryCandidateModel.created_at",
+        order_by="DiscoveryCandidateModel.position",
     )
 
 
@@ -62,11 +72,14 @@ class DiscoveryCandidateModel(Base):
             "status IN ('discovered','ingested','duplicate','failed')",
             name="ck_discovery_candidates_status",
         ),
+        CheckConstraint("position >= 0", name="ck_discovery_candidates_position_nonnegative"),
+        UniqueConstraint("task_id", "position", name="uq_discovery_candidates_task_position"),
         Index("ix_discovery_candidates_task_status", "task_id", "status"),
         Index("ix_discovery_candidates_domain", "normalized_domain"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
+    position: Mapped[int] = mapped_column(Integer)
     task_id: Mapped[UUID] = mapped_column(
         ForeignKey("discovery_tasks.id", ondelete="CASCADE"), nullable=False
     )

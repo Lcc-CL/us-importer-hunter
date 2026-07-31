@@ -32,6 +32,7 @@ def upgrade() -> None:
         sa.Column(
             "provider_failure_count", sa.Integer(), server_default="0", nullable=False
         ),
+        sa.Column("error_code", sa.String(length=100), nullable=True),
         sa.Column("error_summary", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
@@ -64,6 +65,7 @@ def upgrade() -> None:
     op.create_table(
         "discovery_task_candidates",
         sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("task_id", sa.Uuid(), nullable=False),
         sa.Column("source", sa.String(length=100), nullable=False),
         sa.Column("source_url", sa.Text(), nullable=True),
@@ -83,6 +85,9 @@ def upgrade() -> None:
         sa.Column("failure_reason", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
+            "position >= 0", name="ck_discovery_candidates_position_nonnegative"
+        ),
+        sa.CheckConstraint(
             "status IN ('discovered','ingested','duplicate','failed')",
             name="ck_discovery_candidates_status",
         ),
@@ -94,6 +99,9 @@ def upgrade() -> None:
             ["task_id"], ["discovery_tasks.id"], ondelete="CASCADE"
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "task_id", "position", name="uq_discovery_candidates_task_position"
+        ),
     )
     op.create_index(
         "ix_discovery_candidates_domain",

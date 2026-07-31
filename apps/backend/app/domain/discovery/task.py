@@ -28,6 +28,7 @@ class DiscoveryCandidateStatus(StrEnum):
 @dataclass(frozen=True)
 class DiscoveryCandidate:
     id: UUID
+    position: int
     source: str
     source_url: str | None
     external_id: str | None
@@ -45,6 +46,10 @@ class DiscoveryCandidate:
     duplicate_of_id: UUID | None
     failure_reason: str | None
     created_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.position < 0:
+            raise DomainError("candidate position must be nonnegative")
 
     def ingested(self, company_id: UUID) -> "DiscoveryCandidate":
         return dataclasses.replace(
@@ -101,6 +106,7 @@ class DiscoveryTask:
         self._provider = provider
         self._created_at = created_at
         self._status = DiscoveryTaskStatus.PENDING
+        self._error_code: str | None = None
         self._error_summary: str | None = None
         self._started_at: datetime | None = None
         self._completed_at: datetime | None = None
@@ -166,30 +172,56 @@ class DiscoveryTask:
                 return
         raise DomainError(f"candidate was not found: {candidate.id}")
 
-    def complete(self, *, provider_failures: int = 0, error_summary: str | None = None) -> None:
+    def complete(
+        self,
+        *,
+        provider_failures: int = 0,
+        error_code: str | None = None,
+        error_summary: str | None = None,
+    ) -> None:
         if self._status is not DiscoveryTaskStatus.RUNNING:
             raise InvalidStateTransition(f"cannot complete a {self._status.value} discovery task")
-        self._provider_failure_count = max(0, provider_failures)
-        failed = self.failed_count
+        normalized_provider_failures = max(0, provider_failures)
+        failed = sum(
+            candidate.status is DiscoveryCandidateStatus.FAILED
+            for candidate in self._candidates
+        ) + normalized_provider_failures
         processed = self.ingested_count + self.duplicate_count
         if failed and processed:
-            self._status = DiscoveryTaskStatus.PARTIAL_FAILED
+            terminal_status = DiscoveryTaskStatus.PARTIAL_FAILED
         elif failed and not processed:
-            self._status = DiscoveryTaskStatus.FAILED
+            terminal_status = DiscoveryTaskStatus.FAILED
         else:
-            self._status = DiscoveryTaskStatus.COMPLETED
-        self._error_summary = (
+            terminal_status = DiscoveryTaskStatus.COMPLETED
+        normalized_error_code = error_code.strip() if error_code and error_code.strip() else None
+        normalized_error_summary = (
             error_summary.strip() if error_summary and error_summary.strip() else None
         )
+        if terminal_status is not DiscoveryTaskStatus.COMPLETED and (
+            normalized_error_code is None or normalized_error_summary is None
+        ):
+            raise DomainError("failed discovery completion requires an error code and summary")
+        self._provider_failure_count = normalized_provider_failures
+        self._status = terminal_status
+        self._error_code = normalized_error_code
+        self._error_summary = normalized_error_summary
         self._completed_at = utcnow()
 
-    def fail(self, error: str) -> None:
+    def fail(
+        self,
+        *,
+        error_code: str,
+        error_summary: str,
+        provider_failures: int = 1,
+    ) -> None:
         if self._status is not DiscoveryTaskStatus.RUNNING:
             raise InvalidStateTransition(f"cannot fail a {self._status.value} discovery task")
-        if not error.strip():
-            raise DomainError("discovery task failure requires an error")
+        if not error_code.strip() or not error_summary.strip():
+            raise DomainError("discovery task failure requires an error code and summary")
         self._status = DiscoveryTaskStatus.FAILED
-        self._error_summary = error.strip()
+        self._provider_failure_count = max(0, provider_failures)
+        self._error_code = error_code.strip()
+        self._error_summary = error_summary.strip()
         self._completed_at = utcnow()
 
     @property
@@ -250,6 +282,10 @@ class DiscoveryTask:
     @property
     def provider_failure_count(self) -> int:
         return self._provider_failure_count
+
+    @property
+    def error_code(self) -> str | None:
+        return self._error_code
 
     @property
     def error_summary(self) -> str | None:

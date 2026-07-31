@@ -43,6 +43,7 @@ export interface DiscoveryTaskResponse {
   ingested_count: number;
   duplicate_count: number;
   failed_count: number;
+  error_code: string | null;
   error_summary: string | null;
   created_at: string;
   started_at: string | null;
@@ -51,6 +52,7 @@ export interface DiscoveryTaskResponse {
 
 export interface DiscoveryCompanyResponse {
   candidate_id: string;
+  position: number;
   company_id: string | null;
   company_name: string;
   website: string | null;
@@ -477,14 +479,15 @@ async function requestForm<T>(
 
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = isRecord(payload) && typeof payload.detail === "string"
-      ? payload.detail
-      : `The API returned HTTP ${response.status}.`;
-    throw new ApiError(response.status, {
+    const fallback: ApiErrorPayload = {
       code: errorCode,
-      message: detail,
+      message: `The API returned HTTP ${response.status}.`,
       request_id: response.headers.get("X-Request-ID") ?? "not_available",
-    });
+    };
+    throw new ApiError(
+      response.status,
+      isApiErrorPayload(payload) ? payload : fallback,
+    );
   }
   return payload as T;
 }
