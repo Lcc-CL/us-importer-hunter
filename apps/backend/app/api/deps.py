@@ -14,8 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.uow import SqlAlchemyUnitOfWork
+from app.domain.calibration import (
+    DraftProviderMode,
+    ResearchProviderMode,
+    WebsiteFetchMode,
+)
 from app.domain.discovery import CompanyDiscoveryProvider
 from app.domain.repositories import (
+    CalibrationUnitOfWork,
     DiscoveryTaskUnitOfWork,
     ProspectBatchUnitOfWork,
     UnitOfWork,
@@ -38,6 +44,11 @@ from app.services.scoring import DeterministicOpportunityScoringService
 from app.shared.exceptions import ProviderUnavailableError
 from app.tools.importyeti import ImportYetiCompanyDiscoveryProvider
 from app.tools.website import FetchLimits, SafeFetcher, SiteScope
+from app.workflows.calibration import (
+    CalibrationReportWorkflow,
+    CreateCalibrationRunWorkflow,
+    HumanEvaluationWorkflow,
+)
 from app.workflows.company_ingestion import CompanyIngestionWorkflow
 from app.workflows.contact_ingestion import ContactIngestionWorkflow
 from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
@@ -454,3 +465,59 @@ def get_prospect_job_query_workflow(
 
 
 ProspectJobQueryDep = Annotated[ProspectJobQueryWorkflow, Depends(get_prospect_job_query_workflow)]
+
+
+def get_calibration_create_workflow(
+    uow_factory: UowFactoryDep,
+    batch_submission: ProspectBatchSubmissionDep,
+    settings: SettingsDep,
+) -> CreateCalibrationRunWorkflow:
+    return CreateCalibrationRunWorkflow(
+        uow_factory=cast(Callable[[], CalibrationUnitOfWork], uow_factory),
+        batch_submission=batch_submission,
+        website_fetch_mode=WebsiteFetchMode.REAL_HTTP,
+        research_provider_mode=(
+            ResearchProviderMode.DETERMINISTIC_FAKE
+            if settings.research_extractor_provider == "fake"
+            else ResearchProviderMode.REAL
+        ),
+        draft_provider_mode=(
+            DraftProviderMode.DETERMINISTIC_FAKE
+            if settings.email_generator_provider == "fake"
+            else DraftProviderMode.REAL
+        ),
+    )
+
+
+CalibrationCreateDep = Annotated[
+    CreateCalibrationRunWorkflow,
+    Depends(get_calibration_create_workflow),
+]
+
+
+def get_calibration_report_workflow(
+    uow_factory: UowFactoryDep,
+) -> CalibrationReportWorkflow:
+    return CalibrationReportWorkflow(
+        cast(Callable[[], CalibrationUnitOfWork], uow_factory)
+    )
+
+
+CalibrationReportDep = Annotated[
+    CalibrationReportWorkflow,
+    Depends(get_calibration_report_workflow),
+]
+
+
+def get_calibration_evaluation_workflow(
+    uow_factory: UowFactoryDep,
+) -> HumanEvaluationWorkflow:
+    return HumanEvaluationWorkflow(
+        cast(Callable[[], CalibrationUnitOfWork], uow_factory)
+    )
+
+
+CalibrationEvaluationDep = Annotated[
+    HumanEvaluationWorkflow,
+    Depends(get_calibration_evaluation_workflow),
+]

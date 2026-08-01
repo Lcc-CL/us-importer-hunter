@@ -19,7 +19,7 @@
   绝不能带 `NEXT_PUBLIC_` 前缀。
 - 白名单路径见 `apps/frontend/next.config.ts`：`health/runtime`、
   `research/*`、`mvp/*`、`companies/*`、`discovery-tasks/*`、
-  `prospect-batches/*`，无任意 URL 代理。
+  `prospect-batches/*`、`calibrations/*`，无任意 URL 代理。
 
 ## Zeabur 控制台步骤
 
@@ -54,6 +54,12 @@
    后过期 lease 能恢复，且 Backend 的查询接口在 Worker 停止时仍可读取。
    浏览器直接访问 `https://<前端域名>/api/v1/health/runtime` 应返回 JSON
    且**不含**任何密钥；backend 无公网地址可访问。
+
+D4a 校准页面、评价保存与 CSV/JSON 导出依赖 `calibrations/*` 白名单。
+如果 Research 或 Draft 配置为真实 Provider，普通 3–5 家校准入口会主动拒绝，
+避免未经凭据轮换确认和双样本限流就产生付费请求；当前 Staging 校准 smoke 应使用
+`RESEARCH_EXTRACTOR_PROVIDER=fake` 与 `EMAIL_GENERATOR_PROVIDER=fake`。这只是配置
+检查说明，不代表已完成 Zeabur 部署或线上验证。
 
 本地演练：`docker compose -f docker-compose.prod.yml --env-file .env.production up --build`。
 

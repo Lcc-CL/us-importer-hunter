@@ -7,6 +7,8 @@ from app.domain.prospect_batch.aggregate import (
     ProspectBatchCompanyStatus,
     ProspectBatchStage,
     ProspectBatchStatus,
+    ProspectContactType,
+    ProspectStageTiming,
 )
 
 __all__ = [
@@ -14,6 +16,8 @@ __all__ = [
     "ProspectBatch",
     "ProspectBatchCompany",
     "ProspectBatchCompanyStatus",
+    "ProspectContactType",
     "ProspectBatchStage",
+    "ProspectStageTiming",
     "ProspectBatchStatus",
 ]

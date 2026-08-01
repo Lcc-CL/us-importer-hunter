@@ -79,6 +79,10 @@ class ProspectBatchCompanyModel(Base):
             "status IN ('queued','running','completed','needs_review','failed')",
             name="ck_prospect_batch_companies_status",
         ),
+        CheckConstraint(
+            "contact_type IS NULL OR contact_type IN ('personal','department','generic')",
+            name="ck_prospect_batch_companies_contact_type",
+        ),
         UniqueConstraint("batch_id", "position", name="uq_prospect_batch_position"),
         Index("ix_prospect_batch_companies_status", "batch_id", "status"),
         Index(
@@ -118,6 +122,7 @@ class ProspectBatchCompanyModel(Base):
     contact_name: Mapped[str | None] = mapped_column(Text)
     contact_email: Mapped[str | None] = mapped_column(Text)
     contact_source_url: Mapped[str | None] = mapped_column(Text)
+    contact_type: Mapped[str | None] = mapped_column(String(20))
     draft_subject: Mapped[str | None] = mapped_column(Text)
     draft_status: Mapped[str | None] = mapped_column(String(30))
     error_code: Mapped[str | None] = mapped_column(String(100))
@@ -128,6 +133,9 @@ class ProspectBatchCompanyModel(Base):
     resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resumed_from_stage: Mapped[str | None] = mapped_column(String(40))
     resume_count: Mapped[int] = mapped_column(Integer, default=0)
+    stage_timings_json: Mapped[list[dict[str, str | None]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
 
 class ProspectBatchJobModel(Base):

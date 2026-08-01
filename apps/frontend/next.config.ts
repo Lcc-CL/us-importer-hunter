@@ -28,6 +28,7 @@ const nextConfig: NextConfig = {
       "/api/v1/companies/:path*",
       "/api/v1/discovery-tasks/:path*",
       "/api/v1/prospect-batches/:path*",
+      "/api/v1/calibrations/:path*",
     ].map((source) => ({
       source,
       destination: `${BACKEND_INTERNAL_URL}${source}`,

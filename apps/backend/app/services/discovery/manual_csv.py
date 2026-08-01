@@ -60,11 +60,12 @@ class ManualCsvCompanyDiscoveryProvider:
             reader.fieldnames = normalized_fieldnames
             normalized_fields = set(normalized_fieldnames)
             if "company_name" not in normalized_fields or not normalized_fields.intersection(
-                {"source_url", "external_id"}
+                {"source_url", "external_id", "source_external_id"}
             ):
                 raise ManualCsvValidationError(
                     "discovery_csv_invalid_header",
-                    "manual discovery CSV requires company_name and source_url or external_id",
+                    "manual discovery CSV requires company_name and source_url, "
+                    "external_id, or source_external_id",
                 )
 
             rows: list[Mapping[str, str | None]] = []
@@ -97,7 +98,9 @@ class ManualCsvCompanyDiscoveryProvider:
                 break
             name = (row.get("company_name") or "").strip()
             source_url = (row.get("source_url") or "").strip() or None
-            external_id = (row.get("external_id") or "").strip() or None
+            external_id = (
+                row.get("external_id") or row.get("source_external_id") or ""
+            ).strip() or None
             if not name or not (source_url or external_id):
                 failures.append(
                     DiscoveryProviderFailure(

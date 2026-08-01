@@ -1,5 +1,7 @@
 """ProspectBatch aggregate ↔ persistence mapping."""
 
+from datetime import datetime
+
 from app.database.models.prospect_batch import ProspectBatchCompanyModel, ProspectBatchModel
 from app.domain.prospect_batch import (
     ProspectBatch,
@@ -7,6 +9,8 @@ from app.domain.prospect_batch import (
     ProspectBatchCompanyStatus,
     ProspectBatchStage,
     ProspectBatchStatus,
+    ProspectContactType,
+    ProspectStageTiming,
 )
 
 
@@ -43,6 +47,7 @@ class ProspectBatchMapper:
                     contact_name=item.contact_name,
                     contact_email=item.contact_email,
                     contact_source_url=item.contact_source_url,
+                    contact_type=item.contact_type.value if item.contact_type else None,
                     draft_subject=item.draft_subject,
                     draft_status=item.draft_status,
                     error_code=item.error_code,
@@ -55,6 +60,18 @@ class ProspectBatchMapper:
                         item.resumed_from_stage.value if item.resumed_from_stage else None
                     ),
                     resume_count=item.resume_count,
+                    stage_timings_json=[
+                        {
+                            "stage": timing.stage.value,
+                            "started_at": timing.started_at.isoformat(),
+                            "completed_at": (
+                                timing.completed_at.isoformat()
+                                if timing.completed_at is not None
+                                else None
+                            ),
+                        }
+                        for timing in item.stage_timings
+                    ],
                 )
                 for item in batch.companies
             ],
@@ -87,6 +104,11 @@ class ProspectBatchMapper:
                     contact_name=item.contact_name,
                     contact_email=item.contact_email,
                     contact_source_url=item.contact_source_url,
+                    contact_type=(
+                        ProspectContactType(item.contact_type)
+                        if item.contact_type
+                        else None
+                    ),
                     draft_subject=item.draft_subject,
                     draft_status=item.draft_status,
                     error_code=item.error_code,
@@ -101,6 +123,9 @@ class ProspectBatchMapper:
                         else None
                     ),
                     resume_count=item.resume_count,
+                    stage_timings=tuple(
+                        _timing_from_json(timing) for timing in item.stage_timings_json
+                    ),
                 )
                 for item in model.companies
             ],
@@ -110,3 +135,16 @@ class ProspectBatchMapper:
         batch._completed_at = model.completed_at
         batch._error_summary = model.error_summary
         return batch
+
+
+def _timing_from_json(value: dict[str, str | None]) -> ProspectStageTiming:
+    stage = value.get("stage")
+    started_at = value.get("started_at")
+    completed_at = value.get("completed_at")
+    if stage is None or started_at is None:
+        raise ValueError("persisted stage timing requires stage and started_at")
+    return ProspectStageTiming(
+        stage=ProspectBatchStage(stage),
+        started_at=datetime.fromisoformat(started_at),
+        completed_at=datetime.fromisoformat(completed_at) if completed_at else None,
+    )

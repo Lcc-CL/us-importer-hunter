@@ -9,7 +9,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import app.database.models  # noqa: F401 — register all models on Base.metadata
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.database.base import Base
 
 config = context.config
@@ -17,7 +17,13 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+x_args = context.get_x_argument(as_dictionary=True)
+settings = (
+    Settings(_env_file=None)
+    if x_args.get("dotenv") == "disabled"
+    else get_settings()
+)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 

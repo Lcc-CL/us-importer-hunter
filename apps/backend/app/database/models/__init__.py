@@ -5,6 +5,10 @@ repositories accept and return domain aggregates (ADR-0017). Every model
 module is imported here so Alembic autogenerate sees the full metadata.
 """
 
+from app.database.models.calibration import (
+    CalibrationEvaluationModel,
+    CalibrationRunModel,
+)
 from app.database.models.company import (
     CompanyAliasModel,
     CompanyModel,
@@ -49,6 +53,8 @@ from app.database.models.task import TaskAttemptModel, TaskModel
 
 __all__ = [
     "CompanyAliasModel",
+    "CalibrationEvaluationModel",
+    "CalibrationRunModel",
     "CompanyModel",
     "CompanySignalModel",
     "CompanySourceModel",
