@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.schemas.mvp import ApiErrorResponse
 from app.shared.exceptions import (
     ApplicationConflictError,
+    EvidenceReviewIncompleteError,
     InvalidInputError,
     ProviderUnavailableError,
     ResourceNotFoundError,
@@ -53,6 +54,20 @@ def register_error_handlers(app: FastAPI) -> None:
         request: Request, exc: ApplicationConflictError
     ) -> JSONResponse:
         return _response(request, status=409, code="invalid_state", message=str(exc))
+
+    @app.exception_handler(EvidenceReviewIncompleteError)
+    async def evidence_review_incomplete(
+        request: Request, exc: EvidenceReviewIncompleteError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "code": exc.code,
+                "message": str(exc),
+                "pending_claim_count": exc.pending_claim_count,
+                "request_id": _request_id(request),
+            },
+        )
 
     @app.exception_handler(InvalidInputError)
     async def invalid_input(request: Request, exc: InvalidInputError) -> JSONResponse:

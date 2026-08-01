@@ -57,6 +57,8 @@ import type { ApplicationPayload } from "@/lib/research-api";
 interface MvpAnalysisPageProps {
   initialCompanyId?: string;
   initialTaskId?: string;
+  initialBatchId?: string;
+  initialResearchId?: string;
 }
 
 function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
@@ -69,6 +71,8 @@ function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
 export function MvpAnalysisPage({
   initialCompanyId,
   initialTaskId,
+  initialBatchId,
+  initialResearchId,
 }: MvpAnalysisPageProps) {
   const { t, lang, setLang } = useI18n();
   const [analysis, setAnalysis] = useState<ProspectAnalysisResponse | null>(null);
@@ -81,7 +85,7 @@ export function MvpAnalysisPage({
   const [context, setContext] = useState<SubmittedProspectContext | null>(null);
   const [approverName, setApproverName] = useState("");
   const [pageState, setPageState] = useState<MvpPageState>(
-    initialCompanyId ? "refreshing" : "idle",
+    initialCompanyId && !initialResearchId ? "refreshing" : "idle",
   );
   // Research fills the form; it never submits it. The version counter lets the
   // same payload be applied again after the user edits the fields.
@@ -115,6 +119,12 @@ export function MvpAnalysisPage({
     senderProfileServerSnapshot,
   );
   const effectiveSender = mergeSenderProfile(sender, storedSender);
+  const batchReturnHref = initialBatchId
+    ? `/?${new URLSearchParams({
+        ...(initialTaskId ? { task_id: initialTaskId } : {}),
+        batch_id: initialBatchId,
+      }).toString()}#prospect-batch-panel`
+    : undefined;
 
   const patchContact = (patch: Partial<ProspectContact>) =>
     setContact((current) => ({ ...current, ...patch }));
@@ -129,7 +139,7 @@ export function MvpAnalysisPage({
   };
 
   useEffect(() => {
-    if (!initialCompanyId) return;
+    if (!initialCompanyId || initialResearchId) return;
     let active = true;
 
     async function loadInitialResult() {
@@ -157,7 +167,7 @@ export function MvpAnalysisPage({
     return () => {
       active = false;
     };
-  }, [initialCompanyId]);
+  }, [initialCompanyId, initialResearchId]);
 
   const decision = analysis?.opportunity.qualification_decision ?? null;
   const missing = missingFieldsFor(contact, effectiveSender);
@@ -407,14 +417,19 @@ export function MvpAnalysisPage({
           <ProviderBadge />
         </div>
 
-        <DiscoveryTaskPanel initialTaskId={initialTaskId} />
+        <DiscoveryTaskPanel
+          initialBatchId={initialBatchId}
+          initialTaskId={initialTaskId}
+        />
 
         <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div>
             {RESEARCH_ENABLED ? (
               <ResearchPanel
+                batchReturnHref={batchReturnHref}
                 blockedBy={guidedBlockedBy}
                 downstreamSteps={downstreamSteps}
+                initialResearchId={initialResearchId}
                 nextAction={guidedNextAction}
                 onConfirmed={handleResearchConfirmed}
               />

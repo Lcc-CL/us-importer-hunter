@@ -14,11 +14,13 @@ import {
   type DiscoveryTaskStatus,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { ProspectBatchPanel } from "./prospect-batch-panel";
 
 const EXAMPLE_PROMPT = "帮我找 20 家北美五金进口商";
 
 interface DiscoveryTaskPanelProps {
   initialTaskId?: string;
+  initialBatchId?: string;
 }
 
 function safeEvidenceUrl(value: string | null): string | null {
@@ -47,7 +49,10 @@ const CSV_ERROR_KEYS = {
   discovery_csv_malformed: "error.discovery_csv_malformed",
 } as const;
 
-export function DiscoveryTaskPanel({ initialTaskId }: DiscoveryTaskPanelProps) {
+export function DiscoveryTaskPanel({
+  initialTaskId,
+  initialBatchId,
+}: DiscoveryTaskPanelProps) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState(EXAMPLE_PROMPT);
   const [task, setTask] = useState<DiscoveryTaskResponse | null>(null);
@@ -339,6 +344,12 @@ export function DiscoveryTaskPanel({ initialTaskId }: DiscoveryTaskPanelProps) {
               {t("discovery.empty")}
             </p>
           ) : null}
+
+          <ProspectBatchPanel
+            companies={companies}
+            initialBatchId={initialBatchId}
+            task={task}
+          />
         </div>
       ) : null}
     </section>

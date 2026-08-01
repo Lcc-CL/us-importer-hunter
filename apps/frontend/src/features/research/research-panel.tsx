@@ -8,7 +8,7 @@
  * scoring, draft generation or company creation.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -28,6 +28,7 @@ import { ResearchSummary } from "./research-summary";
 import { StepNav, type FlowStep, type StepState } from "./step-nav";
 import {
   confirmResearchRun,
+  getResearchRun,
   startResearch,
   type ApplicationPayload,
   type ClaimDecisionInput,
@@ -59,6 +60,10 @@ interface ResearchPanelProps {
   /** Localized "what to do next" / "why it is stuck", from the guided flow. */
   nextAction?: string | null;
   blockedBy?: string | null;
+  /** Reload an already persisted batch Research run without fetching the site again. */
+  initialResearchId?: string;
+  /** Preserves task/batch context so the reviewer can return to the batch result. */
+  batchReturnHref?: string;
 }
 
 const inputClass =
@@ -73,14 +78,37 @@ function statusTone(status: string): string {
   return "border-rose-200 bg-rose-50 text-rose-800";
 }
 
+function reviewsForRun(run: ResearchRun): Record<number, ClaimReview> {
+  const promotions = new Map(
+    (run.promotions ?? []).map((item) => [item.claim_position, item]),
+  );
+  return Object.fromEntries(
+    run.claims.map((claim) => {
+      const promotion = promotions.get(claim.position);
+      return [
+        claim.position,
+        {
+          decision: promotion?.decision ?? "pending",
+          editedKind: promotion?.edited_kind ?? claim.kind,
+          editedDetail: promotion?.edited_detail ?? claim.detail,
+        },
+      ];
+    }),
+  );
+}
+
 export function ResearchPanel({
   onConfirmed,
   downstreamSteps,
   nextAction,
   blockedBy,
+  initialResearchId,
+  batchReturnHref,
 }: ResearchPanelProps) {
   const { t, label, lang } = useI18n();
-  const [state, setState] = useState<PanelState>("idle");
+  const [state, setState] = useState<PanelState>(
+    initialResearchId ? "researching" : "idle",
+  );
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
   const [run, setRun] = useState<ResearchRun | null>(null);
@@ -89,6 +117,40 @@ export function ResearchPanel({
   const [applied, setApplied] = useState<{ sources: number; signals: number } | null>(null);
 
   const busy = state === "researching" || state === "confirming";
+
+  useEffect(() => {
+    if (!initialResearchId) return;
+    let active = true;
+
+    async function restoreResearch() {
+      try {
+        const saved = await getResearchRun(initialResearchId as string);
+        if (!active) return;
+        setCompanyName(saved.company_name);
+        setWebsite(saved.website);
+        setRun(saved);
+        setReviews(reviewsForRun(saved));
+        setState(
+          saved.claims.every((claim) =>
+            (saved.promotions ?? []).some(
+              (item) => item.claim_position === claim.position,
+            ),
+          )
+            ? "applied"
+            : "reviewing",
+        );
+      } catch (caught: unknown) {
+        if (!active) return;
+        setError(getClientErrorDetails(caught));
+        setState("error");
+      }
+    }
+
+    void restoreResearch();
+    return () => {
+      active = false;
+    };
+  }, [initialResearchId]);
 
   // The panel owns the first two steps; the guided flow owns the last two and
   // passes them in, so the reviewer sees one journey rather than two widgets.
@@ -128,14 +190,7 @@ export function ResearchPanel({
       setRun(created);
       // Deliberately empty: every claim starts as "pending". Auto-accepting
       // would make the reviewer a rubber stamp.
-      setReviews(
-        Object.fromEntries(
-          created.claims.map((claim) => [
-            claim.position,
-            { decision: "pending", editedKind: claim.kind, editedDetail: claim.detail },
-          ]),
-        ),
-      );
+      setReviews(reviewsForRun(created));
       setState("reviewing");
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught));
@@ -163,6 +218,19 @@ export function ResearchPanel({
     for (const claim of run.claims) {
       const review = reviews[claim.position];
       if (!review || review.decision === "pending") continue;
+      const existing = (run.promotions ?? []).find(
+        (promotion) => promotion.claim_position === claim.position,
+      );
+      if (
+        existing &&
+        existing.decision === review.decision &&
+        (existing.edited_detail ?? "") ===
+          (review.decision === "edited" ? review.editedDetail.trim() : "") &&
+        (existing.edited_kind ?? claim.kind) ===
+          (review.decision === "edited" ? review.editedKind : claim.kind)
+      ) {
+        continue;
+      }
       if (review.decision === "edited") {
         decisions.push({
           claim_position: claim.position,
@@ -187,11 +255,15 @@ export function ResearchPanel({
     setState("confirming");
     setError(null);
     try {
-      // No target_company_id: this phase never writes into an existing company.
+      // Company-bound runs resolve their target from run.company_id; unbound runs
+      // still return a form payload without writing Company facts.
       const response = await confirmResearchRun(run.research_id, {
         reviewer_name: "reviewer",
         decisions,
       });
+      const refreshed = await getResearchRun(run.research_id);
+      setRun(refreshed);
+      setReviews(reviewsForRun(refreshed));
       const payload = response.application_payload;
       if (payload) {
         setApplied({ sources: payload.sources.length, signals: payload.signals.length });
@@ -200,7 +272,15 @@ export function ResearchPanel({
         await onConfirmed(payload, response.research_id);
         return;
       }
-      setState("applied");
+      setState(
+        refreshed.claims.every((claim) =>
+          (refreshed.promotions ?? []).some(
+            (item) => item.claim_position === claim.position,
+          ),
+        )
+          ? "applied"
+          : "reviewing",
+      );
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught));
       setState("error");
@@ -211,6 +291,7 @@ export function ResearchPanel({
     <section
       aria-label="research-panel"
       data-testid="research-panel"
+      id="research-panel"
       className="mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
     >
       <div className="border-b border-slate-200 bg-slate-950 px-5 py-4 text-white sm:px-7">
@@ -243,7 +324,7 @@ export function ResearchPanel({
             <input
               aria-label="Research target name"
               className={inputClass}
-              disabled={busy}
+              disabled={busy || Boolean(initialResearchId)}
               onChange={(event) => setCompanyName(event.target.value)}
               placeholder="Acme Hardware"
               value={companyName}
@@ -254,7 +335,7 @@ export function ResearchPanel({
             <input
               aria-label="Research target website"
               className={inputClass}
-              disabled={busy}
+              disabled={busy || Boolean(initialResearchId)}
               onChange={(event) => setWebsite(event.target.value)}
               placeholder="https://acme.example"
               value={website}
@@ -262,15 +343,21 @@ export function ResearchPanel({
           </label>
         </div>
 
-        <Button
-          className="mt-4 h-10 bg-teal-700 text-white hover:bg-teal-800"
-          disabled={busy || !companyName.trim() || !website.trim()}
-          onClick={() => void handleStart()}
-          type="button"
-        >
-          {state === "researching" ? <LoaderCircle className="animate-spin" /> : <FileSearch />}
-          {state === "researching" ? t("research.running") : t("research.start")}
-        </Button>
+        {!initialResearchId ? (
+          <Button
+            className="mt-4 h-10 bg-teal-700 text-white hover:bg-teal-800"
+            disabled={busy || !companyName.trim() || !website.trim()}
+            onClick={() => void handleStart()}
+            type="button"
+          >
+            {state === "researching" ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <FileSearch />
+            )}
+            {state === "researching" ? t("research.running") : t("research.start")}
+          </Button>
+        ) : null}
 
         {error ? (
           <div
@@ -293,6 +380,7 @@ export function ResearchPanel({
         {run ? (
           <ResearchResult
             applied={applied}
+            batchReturnHref={batchReturnHref}
             busy={busy}
             label={label}
             onConfirm={() => void handleConfirm()}
@@ -300,6 +388,7 @@ export function ResearchPanel({
             onEdit={updateEdit}
             reviews={reviews}
             run={run}
+            reviewOnly={Boolean(initialResearchId && run.company_id)}
             state={state}
             t={t}
           />
@@ -315,6 +404,8 @@ interface ResearchResultProps {
   state: PanelState;
   busy: boolean;
   applied: { sources: number; signals: number } | null;
+  reviewOnly: boolean;
+  batchReturnHref?: string;
   t: (key: MessageKey, params?: Record<string, string | number>) => string;
   label: (group: string, value: string | null | undefined) => string;
   onDecision: (position: number, decision: ReviewDecision | "pending") => void;
@@ -328,6 +419,8 @@ function ResearchResult({
   state,
   busy,
   applied,
+  reviewOnly,
+  batchReturnHref,
   t,
   label,
   onDecision,
@@ -424,6 +517,11 @@ function ResearchResult({
                 claim={claim}
                 key={claim.position}
                 label={label}
+                locked={Boolean(
+                  (run.promotions ?? []).find(
+                    (promotion) => promotion.claim_position === claim.position,
+                  )?.applied_to_company,
+                )}
                 onDecision={onDecision}
                 onEdit={onEdit}
                 review={reviews[claim.position]}
@@ -487,7 +585,7 @@ function ResearchResult({
       ) : null}
 
       {/* --- confirm --- */}
-      {run.claims.length > 0 ? (
+      {run.claims.length > 0 && state !== "applied" ? (
         <div className="border-t border-slate-200 pt-4">
           <Button
             className="h-10 bg-teal-700 text-white hover:bg-teal-800"
@@ -498,8 +596,10 @@ function ResearchResult({
           >
             {state === "confirming" ? <LoaderCircle className="animate-spin" /> : <Check />}
             {state === "confirming"
-              ? t("research.confirmAnalyze.running")
-              : t("research.confirmAnalyze")}
+              ? t("research.confirming")
+              : reviewOnly
+                ? t("research.review.submit")
+                : t("research.confirmAnalyze")}
           </Button>
         </div>
       ) : null}
@@ -516,6 +616,26 @@ function ResearchResult({
           <p className="mt-1 text-xs text-emerald-800">{t("research.applied.note")}</p>
         </div>
       ) : null}
+
+      {reviewOnly && state === "applied" ? (
+        <div
+          className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"
+          data-testid="batch-evidence-review-complete"
+        >
+          <p className="font-semibold">{t("research.review.complete")}</p>
+          <p className="mt-1 text-xs text-emerald-800">
+            {t("research.review.completeNote")}
+          </p>
+          {batchReturnHref ? (
+            <a
+              className="mt-3 inline-flex font-semibold text-emerald-900 underline"
+              href={batchReturnHref}
+            >
+              {t("research.review.returnBatch")}
+            </a>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -527,9 +647,10 @@ interface ClaimRowProps {
   label: (group: string, value: string | null | undefined) => string;
   onDecision: (position: number, decision: ReviewDecision | "pending") => void;
   onEdit: (position: number, patch: Partial<ClaimReview>) => void;
+  locked: boolean;
 }
 
-function ClaimRow({ claim, review, t, label, onDecision, onEdit }: ClaimRowProps) {
+function ClaimRow({ claim, review, t, label, onDecision, onEdit, locked }: ClaimRowProps) {
   const decision = review?.decision ?? "pending";
   const tone =
     decision === "accepted"
@@ -557,6 +678,7 @@ function ClaimRow({ claim, review, t, label, onDecision, onEdit }: ClaimRowProps
         <div className="flex gap-1">
           <DecisionButton
             active={decision === "accepted"}
+            disabled={locked}
             icon={<Check className="size-3.5" />}
             label={t("research.decision.accepted")}
             onClick={() => onDecision(claim.position, "accepted")}
@@ -565,6 +687,7 @@ function ClaimRow({ claim, review, t, label, onDecision, onEdit }: ClaimRowProps
           />
           <DecisionButton
             active={decision === "edited"}
+            disabled={locked}
             icon={<Pencil className="size-3.5" />}
             label={t("research.decision.edited")}
             onClick={() => onDecision(claim.position, "edited")}
@@ -573,6 +696,7 @@ function ClaimRow({ claim, review, t, label, onDecision, onEdit }: ClaimRowProps
           />
           <DecisionButton
             active={decision === "rejected"}
+            disabled={locked}
             icon={<X className="size-3.5" />}
             label={t("research.decision.rejected")}
             onClick={() => onDecision(claim.position, "rejected")}
@@ -589,6 +713,7 @@ function ClaimRow({ claim, review, t, label, onDecision, onEdit }: ClaimRowProps
             <select
               aria-label={`Claim ${claim.position} kind`}
               className={inputClass}
+              disabled={locked}
               onChange={(event) =>
                 onEdit(claim.position, { editedKind: event.target.value as ClaimKind })
               }
@@ -606,6 +731,7 @@ function ClaimRow({ claim, review, t, label, onDecision, onEdit }: ClaimRowProps
             <input
               aria-label={`Claim ${claim.position} detail`}
               className={inputClass}
+              disabled={locked}
               onChange={(event) =>
                 onEdit(claim.position, { editedDetail: event.target.value })
               }
@@ -634,12 +760,18 @@ function ClaimRow({ claim, review, t, label, onDecision, onEdit }: ClaimRowProps
       {decision === "edited" ? (
         <p className="mt-1 text-[11px] text-slate-500">{t("research.edit.readonly")}</p>
       ) : null}
+      {locked ? (
+        <p className="mt-2 text-[11px] font-medium text-emerald-800">
+          {t("research.review.appliedLocked")}
+        </p>
+      ) : null}
     </li>
   );
 }
 
 function DecisionButton({
   active,
+  disabled,
   icon,
   label,
   onClick,
@@ -647,6 +779,7 @@ function DecisionButton({
   tone,
 }: {
   active: boolean;
+  disabled: boolean;
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
@@ -665,6 +798,7 @@ function DecisionButton({
       className={`inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1
                   text-xs font-medium transition ${tones[tone]}`}
       data-testid={testId}
+      disabled={disabled}
       onClick={onClick}
       type="button"
     >

@@ -75,6 +75,110 @@ export interface DiscoveryCompanyListResponse {
   companies: DiscoveryCompanyResponse[];
 }
 
+export type ProspectBatchStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "partial_failed"
+  | "failed";
+
+export type ProspectBatchCompanyStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "needs_review"
+  | "failed";
+
+export interface ProspectBatchResponse {
+  batch_id: string;
+  discovery_task_id: string;
+  requested_count: number;
+  effective_count: number;
+  status: ProspectBatchStatus;
+  queued_count: number;
+  running_count: number;
+  completed_count: number;
+  needs_review_count: number;
+  failed_count: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error_summary: string | null;
+}
+
+export interface ProspectBatchCompanyResponse {
+  company_id: string;
+  company_name: string;
+  position: number;
+  pipeline_version: string;
+  current_stage:
+    | "queued"
+    | "validating"
+    | "researching"
+    | "awaiting_evidence_review"
+    | "scoring"
+    | "discovering_contact"
+    | "generating_draft"
+    | "completed"
+    | "needs_review"
+    | "failed";
+  status: ProspectBatchCompanyStatus;
+  research_id: string | null;
+  opportunity_id: string | null;
+  selected_contact_id: string | null;
+  outreach_id: string | null;
+  draft_version: number | null;
+  draft_id: string | null;
+  score: number | null;
+  qualification_decision: string | null;
+  reasons: string[];
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_source_url: string | null;
+  draft_subject: string | null;
+  draft_status: string | null;
+  error_code: string | null;
+  error_summary: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  blocking_claim_count: number;
+  resumed_at: string | null;
+  resumed_from_stage: string | null;
+  resume_count: number;
+}
+
+export interface ProspectBatchCompanyListResponse {
+  batch_id: string;
+  companies: ProspectBatchCompanyResponse[];
+}
+
+export interface EvidenceBlockerResponse {
+  claim_position: number;
+  status: "pending" | "accepted" | "rejected";
+  decision: "accepted" | "edited" | "rejected" | null;
+  kind: string;
+  detail: string;
+  evidence_snippet: string;
+  source_url: string;
+  fetched_at: string;
+  confidence: number;
+}
+
+export interface ProspectCompanyBlockersResponse {
+  batch_id: string;
+  company_id: string;
+  research_id: string;
+  blocking_claim_count: number;
+  pending_claim_count: number;
+  claims: EvidenceBlockerResponse[];
+}
+
+export interface ProspectBatchSender {
+  name: string;
+  company: string;
+  value_proposition: string;
+}
+
 export interface ProspectSourceRequest {
   source: string;
   reference: string;
@@ -366,12 +470,14 @@ export interface ApiErrorPayload {
   code: string;
   message: string;
   request_id: string;
+  pending_claim_count?: number;
 }
 
 export interface ClientErrorDetails {
   code: string;
   message: string;
   request_id: string | null;
+  pending_claim_count?: number;
 }
 
 export class ApiError extends Error {
@@ -528,6 +634,71 @@ export function getDiscoveryTaskCompanies(
 ): Promise<DiscoveryCompanyListResponse> {
   return requestJson<DiscoveryCompanyListResponse>(
     `/discovery-tasks/${encodeURIComponent(taskId)}/companies`,
+  );
+}
+
+export function createProspectBatch(
+  taskId: string,
+  companyIds: string[],
+  sender?: ProspectBatchSender,
+): Promise<ProspectBatchResponse> {
+  return requestJson<ProspectBatchResponse>(
+    `/discovery-tasks/${encodeURIComponent(taskId)}/batch-process`,
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds, limit: 5, sender }),
+    },
+  );
+}
+
+export function getProspectBatch(batchId: string): Promise<ProspectBatchResponse> {
+  return requestJson<ProspectBatchResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}`,
+  );
+}
+
+export function getProspectBatchCompanies(
+  batchId: string,
+): Promise<ProspectBatchCompanyListResponse> {
+  return requestJson<ProspectBatchCompanyListResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/companies`,
+  );
+}
+
+export function retryProspectBatchCompany(
+  batchId: string,
+  companyId: string,
+  sender?: ProspectBatchSender,
+): Promise<ProspectBatchResponse> {
+  return requestJson<ProspectBatchResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/retry`,
+    {
+      method: "POST",
+      body: JSON.stringify({ sender }),
+    },
+  );
+}
+
+export function getProspectBatchCompanyBlockers(
+  batchId: string,
+  companyId: string,
+): Promise<ProspectCompanyBlockersResponse> {
+  return requestJson<ProspectCompanyBlockersResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/blockers`,
+  );
+}
+
+export function resumeProspectBatchCompany(
+  batchId: string,
+  companyId: string,
+  sender?: ProspectBatchSender,
+): Promise<ProspectBatchResponse> {
+  return requestJson<ProspectBatchResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/resume`,
+    {
+      method: "POST",
+      body: JSON.stringify({ sender }),
+    },
   );
 }
 

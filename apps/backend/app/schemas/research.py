@@ -89,6 +89,16 @@ class RejectedClaimResponse(BaseModel):
     warning: str
 
 
+class ResearchPromotionResponse(BaseModel):
+    claim_position: int
+    decision: str
+    reviewed_at: datetime
+    reviewer_name: str | None
+    edited_detail: str | None
+    edited_kind: str | None
+    applied_to_company: bool
+
+
 class ResearchProfileResponse(BaseModel):
     summary: str | None = None
     industry: str | None = None
@@ -125,6 +135,7 @@ class ResearchRunResponse(BaseModel):
     profile: ResearchProfileResponse
     pages: list[ResearchPageResponse]
     claims: list[ResearchClaimResponse]
+    promotions: list[ResearchPromotionResponse]
     rejected_claims: list[RejectedClaimResponse]
     warnings: list[str]
     #: Dimensions with no reliable evidence. Not a negative signal — the UI
@@ -195,6 +206,18 @@ class ResearchRunResponse(BaseModel):
                     confidence=claim.confidence,
                 )
                 for claim in run.claims
+            ],
+            promotions=[
+                ResearchPromotionResponse(
+                    claim_position=promotion.claim_position,
+                    decision=promotion.decision.value,
+                    reviewed_at=promotion.reviewed_at,
+                    reviewer_name=promotion.reviewer_name,
+                    edited_detail=promotion.edited_detail,
+                    edited_kind=promotion.edited_kind,
+                    applied_to_company=promotion.applied_to_company,
+                )
+                for promotion in run.promotions
             ],
             rejected_claims=[
                 RejectedClaimResponse(

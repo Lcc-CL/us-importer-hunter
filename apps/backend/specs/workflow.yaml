@@ -25,6 +25,33 @@ workflows:
     execution: sync
     status: implemented
 
+  prospect_batch:
+    package: app.workflows.prospect_batch
+    description: >
+      D2 synchronous supervisor for at most five companies saved by a completed
+      or partial_failed manual_csv Discovery Task. Persists a batch header and
+      stable-position company stages, then sequentially reuses website Research,
+      deterministic Opportunity scoring, public website contact discovery,
+      Contact ingestion, decision-maker selection and review-only draft
+      generation. New Research claims always stop at awaiting_evidence_review;
+      no claim is auto-confirmed. Once every claim is accepted or rejected, an
+      explicit Resume continues from scoring without re-running Research. No
+      email is sent.
+    steps:
+      - { id: validate_companies, service: prospect_batch_preflight, for_each: company }
+      - { id: research, workflow: research, for_each: company }
+      - { id: evidence_gate, policy: human_review_required_for_new_claims }
+      - { id: resume_after_review, workflow: prospect_batch, conditional: all_claims_reviewed }
+      - { id: score, workflow: opportunity, conditional: trusted_company_evidence }
+      - { id: discover_contact, service: website_contact_discovery, conditional: qualified }
+      - { id: ingest_contact, workflow: contact_ingestion, conditional: contact_found }
+      - { id: select_decision_maker, workflow: decision_maker, conditional: named_contact }
+      - { id: generate_draft, workflow: email, conditional: draft_prerequisites }
+    statuses: [pending, running, completed, partial_failed, failed]
+    execution: sync
+    limits: { companies: 5, concurrency: 1 }
+    status: implemented
+
   import_evidence_closure:
     package: app.workflows.import_evidence
     description: >
