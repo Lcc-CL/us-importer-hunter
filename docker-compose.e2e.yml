@@ -47,6 +47,39 @@ services:
     networks:
       - app-network
 
+  worker-e2e:
+    build:
+      context: ./apps/backend
+      target: dev
+    command: ["uv", "run", "python", "-m", "app.worker"]
+    environment:
+      APP_ENV: development
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${E2E_DB:-importer_hunter_e2e}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 1
+      RESEARCH_EXTRACTOR_PROVIDER: fake
+      EMAIL_GENERATOR_PROVIDER: fake
+    volumes:
+      - ./apps/backend/app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - app-network
+
   frontend-e2e:
     build:
       context: ./apps/frontend

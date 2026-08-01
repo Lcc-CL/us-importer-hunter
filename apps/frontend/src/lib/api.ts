@@ -106,6 +106,39 @@ export interface ProspectBatchResponse {
   error_summary: string | null;
 }
 
+export type ProspectJobStatus =
+  | "pending"
+  | "leased"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface ProspectBatchCreateResponse {
+  batch_id: string;
+  job_id: string;
+  status: ProspectJobStatus;
+  reused: boolean;
+}
+
+export interface ProspectBatchExecutionResponse {
+  job_id: string;
+  batch_id: string;
+  status: ProspectJobStatus;
+  available_at: string;
+  attempt_count: number;
+  max_attempts: number;
+  heartbeat_at: string | null;
+  last_error_code: string | null;
+  last_error_summary: string | null;
+  recovery_count: number;
+  last_recovered_at: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+}
+
 export interface ProspectBatchCompanyResponse {
   company_id: string;
   company_name: string;
@@ -641,13 +674,23 @@ export function createProspectBatch(
   taskId: string,
   companyIds: string[],
   sender?: ProspectBatchSender,
-): Promise<ProspectBatchResponse> {
-  return requestJson<ProspectBatchResponse>(
+  idempotencyKey?: string,
+): Promise<ProspectBatchCreateResponse> {
+  return requestJson<ProspectBatchCreateResponse>(
     `/discovery-tasks/${encodeURIComponent(taskId)}/batch-process`,
     {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify({ company_ids: companyIds, limit: 5, sender }),
     },
+  );
+}
+
+export function getProspectBatchExecution(
+  batchId: string,
+): Promise<ProspectBatchExecutionResponse | null> {
+  return requestJson<ProspectBatchExecutionResponse | null>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/execution`,
   );
 }
 
@@ -669,8 +712,8 @@ export function retryProspectBatchCompany(
   batchId: string,
   companyId: string,
   sender?: ProspectBatchSender,
-): Promise<ProspectBatchResponse> {
-  return requestJson<ProspectBatchResponse>(
+): Promise<ProspectBatchCreateResponse> {
+  return requestJson<ProspectBatchCreateResponse>(
     `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/retry`,
     {
       method: "POST",
@@ -692,8 +735,8 @@ export function resumeProspectBatchCompany(
   batchId: string,
   companyId: string,
   sender?: ProspectBatchSender,
-): Promise<ProspectBatchResponse> {
-  return requestJson<ProspectBatchResponse>(
+): Promise<ProspectBatchCreateResponse> {
+  return requestJson<ProspectBatchCreateResponse>(
     `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/resume`,
     {
       method: "POST",

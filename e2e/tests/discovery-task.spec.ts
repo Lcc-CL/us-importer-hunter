@@ -43,16 +43,16 @@ test("one-sentence manual CSV discovery survives a page refresh", async ({
 
   const result = panel.getByTestId("discovery-task-result");
   await expect(result.getByText("已完成", { exact: true })).toBeVisible();
-  await expect(result.getByText("E2E Atlas Hardware")).toBeVisible();
-  await expect(result.getByText("E2E Harbor Supply")).toBeVisible();
+  await expect(result.getByRole("heading", { name: "E2E Atlas Hardware" })).toBeVisible();
+  await expect(result.getByRole("heading", { name: "E2E Harbor Supply" })).toBeVisible();
   await expect(result.getByText(/manual_csv/).first()).toBeVisible();
   await expect(page).toHaveURL(/task_id=[0-9a-f-]{36}/);
 
   await page.reload({ waitUntil: "networkidle" });
   const restored = page.getByTestId("discovery-task-result");
   await expect(restored.getByText("已完成", { exact: true })).toBeVisible();
-  await expect(restored.getByText("E2E Atlas Hardware")).toBeVisible();
-  await expect(restored.getByText("E2E Harbor Supply")).toBeVisible();
+  await expect(restored.getByRole("heading", { name: "E2E Atlas Hardware" })).toBeVisible();
+  await expect(restored.getByRole("heading", { name: "E2E Harbor Supply" })).toBeVisible();
 
   expect(guard.duplicateKeyWarnings()).toEqual([]);
   expect(guard.problems()).toEqual([]);

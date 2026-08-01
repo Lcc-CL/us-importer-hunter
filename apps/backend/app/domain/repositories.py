@@ -6,6 +6,7 @@ these signatures (enforced by tests). Operations are aggregate-oriented:
 no generic CRUD base (ADR-0010/0017).
 """
 
+from datetime import datetime, timedelta
 from types import TracebackType
 from typing import Protocol
 from uuid import UUID
@@ -29,6 +30,7 @@ from app.domain.import_evidence.values import (
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
 from app.domain.prospect_batch import ProspectBatch
+from app.domain.prospect_job import ProspectJob
 from app.domain.research import ResearchRun
 from app.domain.task import Task
 from app.domain.values import CompanyName, IdempotencyKey
@@ -141,6 +143,34 @@ class ProspectBatchRepository(Protocol):
         pipeline_version: str,
         exclude_batch_id: UUID | None = None,
     ) -> bool: ...
+
+
+class ProspectJobRepository(Protocol):
+    async def get_by_id(self, job_id: UUID) -> ProspectJob | None: ...
+
+    async def get_by_id_for_update(self, job_id: UUID) -> ProspectJob | None: ...
+
+    async def get_latest_for_batch(self, batch_id: UUID) -> ProspectJob | None: ...
+
+    async def find_by_request_key_hash(self, request_key_hash: str) -> ProspectJob | None: ...
+
+    async def find_active_by_business_key(self, business_key: str) -> ProspectJob | None: ...
+
+    async def add(self, job: ProspectJob) -> None: ...
+
+    async def save(self, job: ProspectJob) -> None: ...
+
+    async def claim_next(
+        self,
+        *,
+        owner: str,
+        now: datetime,
+        lease_ttl: timedelta,
+    ) -> ProspectJob | None: ...
+
+    async def get_stale_for_update(
+        self, *, now: datetime, limit: int
+    ) -> list[ProspectJob]: ...
 
 
 class ResearchRunRepository(Protocol):
@@ -293,6 +323,7 @@ class ProspectBatchUnitOfWork(Protocol):
     companies: CompanyRepository
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
+    prospect_jobs: ProspectJobRepository
     research_runs: ResearchRunRepository
 
     async def __aenter__(self) -> "ProspectBatchUnitOfWork": ...
@@ -305,6 +336,8 @@ class ProspectBatchUnitOfWork(Protocol):
     ) -> None: ...
 
     async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
 
     async def rollback(self) -> None: ...
 

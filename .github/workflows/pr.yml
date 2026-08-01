@@ -1,0 +1,81 @@
+name: PR quality gate
+
+on:
+  pull_request:
+
+jobs:
+  d3a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: change-me
+          POSTGRES_DB: importer_hunter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d importer_hunter"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: importer_hunter
+      RESEARCH_EXTRACTOR_PROVIDER: fake
+      EMAIL_GENERATOR_PROVIDER: fake
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.4"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: apps/backend
+        run: uv sync --frozen --dev
+
+      - name: Backend Ruff
+        working-directory: apps/backend
+        run: uv run ruff check .
+
+      - name: D3a targeted tests
+        working-directory: apps/backend
+        run: >-
+          uv run pytest
+          tests/domain/test_prospect_job.py
+          tests/domain/test_prospect_batch_recovery.py
+          tests/workflows/test_prospect_batch.py
+          tests/database/integration/test_prospect_batch_api.py
+
+      - name: Migration consistency
+        working-directory: apps/backend
+        run: uv run alembic upgrade head && uv run alembic check
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/frontend
+        run: npm ci
+
+      - name: Frontend TypeScript
+        working-directory: apps/frontend
+        run: npx tsc --noEmit
+
+      - name: Frontend production build
+        working-directory: apps/frontend
+        run: npm run build

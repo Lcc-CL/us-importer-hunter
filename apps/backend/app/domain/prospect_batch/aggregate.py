@@ -270,6 +270,18 @@ class ProspectBatchCompany:
             completed_at=None,
         )
 
+    def requeue_after_worker_loss(self) -> "ProspectBatchCompany":
+        if self.status is not ProspectBatchCompanyStatus.RUNNING:
+            return self
+        return dataclasses.replace(
+            self,
+            current_stage=ProspectBatchStage.QUEUED,
+            status=ProspectBatchCompanyStatus.QUEUED,
+            error_code=None,
+            error_summary=None,
+            completed_at=None,
+        )
+
     def resume_after_evidence_review(self) -> "ProspectBatchCompany":
         if (
             self.status is not ProspectBatchCompanyStatus.NEEDS_REVIEW
@@ -283,7 +295,7 @@ class ProspectBatchCompany:
         return dataclasses.replace(
             self,
             current_stage=ProspectBatchStage.SCORING,
-            status=ProspectBatchCompanyStatus.RUNNING,
+            status=ProspectBatchCompanyStatus.QUEUED,
             error_code=None,
             error_summary=None,
             completed_at=None,
@@ -358,6 +370,13 @@ class ProspectBatch:
         self._completed_at = None
         self._error_summary = None
 
+    def queue_for_execution(self) -> None:
+        if not self.has_active_companies:
+            raise InvalidStateTransition("cannot queue a batch without active companies")
+        self._status = ProspectBatchStatus.PENDING
+        self._completed_at = None
+        self._error_summary = None
+
     def replace_company(self, company: ProspectBatchCompany) -> None:
         for index, existing in enumerate(self._companies):
             if existing.company_id == company.company_id:
@@ -387,6 +406,29 @@ class ProspectBatch:
         ]
         self._error_summary = "; ".join(errors) or None
         self._completed_at = utcnow()
+
+    def recover_stale_execution(self) -> None:
+        """Requeue only technical running work; human-review states stay terminal."""
+        self._companies = [company.requeue_after_worker_loss() for company in self._companies]
+        if any(company.status not in TERMINAL_COMPANY_STATUSES for company in self._companies):
+            self._status = ProspectBatchStatus.PENDING
+            self._completed_at = None
+            self._error_summary = None
+            return
+        self.finalize()
+
+    def fail_active_execution(self, *, error_code: str, error_summary: str) -> None:
+        _require_error(error_code, error_summary)
+        self._companies = [
+            (
+                company.fail(error_code=error_code, error_summary=error_summary)
+                if company.status
+                in {ProspectBatchCompanyStatus.QUEUED, ProspectBatchCompanyStatus.RUNNING}
+                else company
+            )
+            for company in self._companies
+        ]
+        self.finalize()
 
     @property
     def id(self) -> UUID:
@@ -431,6 +473,10 @@ class ProspectBatch:
     @property
     def failed_count(self) -> int:
         return sum(c.status is ProspectBatchCompanyStatus.FAILED for c in self._companies)
+
+    @property
+    def has_active_companies(self) -> bool:
+        return any(company.status not in TERMINAL_COMPANY_STATUSES for company in self._companies)
 
     @property
     def created_at(self) -> datetime:

@@ -34,6 +34,33 @@ services:
     networks:
       - app-network
 
+  worker:
+    build:
+      context: ./apps/backend
+      target: dev
+    command: ["uv", "run", "python", "-m", "app.worker"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    volumes:
+      - ./apps/backend/app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - app-network
+
   frontend:
     build:
       context: ./apps/frontend

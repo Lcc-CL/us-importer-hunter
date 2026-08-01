@@ -51,7 +51,12 @@ from app.workflows.mvp_prospect_analysis import (
     UowFactory,
 )
 from app.workflows.opportunity import OpportunityApplicationWorkflow
-from app.workflows.prospect_batch import ProspectBatchQueryWorkflow, ProspectBatchWorkflow
+from app.workflows.prospect_batch import (
+    ProspectBatchQueryWorkflow,
+    ProspectBatchSubmissionWorkflow,
+    ProspectBatchWorkflow,
+    ProspectJobQueryWorkflow,
+)
 from app.workflows.research import (
     ClaimPromotionWorkflow,
     ResearchLimits,
@@ -415,6 +420,22 @@ def get_prospect_batch_workflow(
 ProspectBatchWorkflowDep = Annotated[ProspectBatchWorkflow, Depends(get_prospect_batch_workflow)]
 
 
+def get_prospect_batch_submission_workflow(
+    uow_factory: UowFactoryDep,
+    settings: SettingsDep,
+) -> ProspectBatchSubmissionWorkflow:
+    return ProspectBatchSubmissionWorkflow(
+        cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
+        max_attempts=settings.prospect_job_max_attempts,
+    )
+
+
+ProspectBatchSubmissionDep = Annotated[
+    ProspectBatchSubmissionWorkflow,
+    Depends(get_prospect_batch_submission_workflow),
+]
+
+
 def get_prospect_batch_query_workflow(
     uow_factory: UowFactoryDep,
 ) -> ProspectBatchQueryWorkflow:
@@ -424,3 +445,12 @@ def get_prospect_batch_query_workflow(
 ProspectBatchQueryDep = Annotated[
     ProspectBatchQueryWorkflow, Depends(get_prospect_batch_query_workflow)
 ]
+
+
+def get_prospect_job_query_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectJobQueryWorkflow:
+    return ProspectJobQueryWorkflow(cast(Callable[[], ProspectBatchUnitOfWork], uow_factory))
+
+
+ProspectJobQueryDep = Annotated[ProspectJobQueryWorkflow, Depends(get_prospect_job_query_workflow)]

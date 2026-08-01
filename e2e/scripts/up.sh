@@ -50,8 +50,8 @@ echo "==> recreating throwaway database: $E2E_DB"
 echo "==> applying migrations to $E2E_DB"
 "${COMPOSE[@]}" run --rm --no-deps backend-e2e uv run alembic upgrade head >/dev/null
 
-echo "==> starting backend-e2e (:8001) and frontend-e2e (:3001) · provider=$E2E_PROVIDER"
-"${COMPOSE[@]}" up -d --build backend-e2e frontend-e2e
+echo "==> starting backend-e2e (:8001), worker-e2e, and frontend-e2e (:3001) · provider=$E2E_PROVIDER"
+"${COMPOSE[@]}" up -d --build backend-e2e worker-e2e frontend-e2e
 
 echo "==> waiting for backend"
 for _ in $(seq 1 60); do

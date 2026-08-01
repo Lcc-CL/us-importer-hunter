@@ -6,6 +6,7 @@ const TASK_ID = "11111111-1111-4111-8111-111111111111";
 const BATCH_ID = "22222222-2222-4222-8222-222222222222";
 const COMPLETED_COMPANY_ID = "33333333-3333-4333-8333-333333333333";
 const REVIEW_COMPANY_ID = "44444444-4444-4444-8444-444444444444";
+const JOB_ID = "55555555-5555-4555-8555-555555555550";
 
 const task = {
   task_id: TASK_ID,
@@ -155,8 +156,27 @@ const batchCompanies = {
   ],
 };
 
+const completedExecution = {
+  job_id: JOB_ID,
+  batch_id: BATCH_ID,
+  status: "completed",
+  available_at: "2026-07-31T12:01:00Z",
+  attempt_count: 1,
+  max_attempts: 3,
+  heartbeat_at: "2026-07-31T12:01:12Z",
+  last_error_code: null,
+  last_error_summary: null,
+  recovery_count: 0,
+  last_recovered_at: null,
+  created_at: "2026-07-31T12:01:00Z",
+  started_at: "2026-07-31T12:01:01Z",
+  completed_at: "2026-07-31T12:01:12Z",
+  updated_at: "2026-07-31T12:01:12Z",
+};
+
 async function stubBatchApi(page: Page) {
   let postedBody: unknown = null;
+  let executionReads = 0;
   await page.addInitScript(() => {
     window.localStorage.setItem(
       "sender_profile_v1",
@@ -193,9 +213,14 @@ async function stubBatchApi(page: Page) {
   await page.route(`**/api/v1/discovery-tasks/${TASK_ID}/batch-process`, async (route) => {
     postedBody = route.request().postDataJSON();
     await route.fulfill({
-      status: 201,
+      status: 202,
       contentType: "application/json",
-      body: JSON.stringify(batch),
+      body: JSON.stringify({
+        batch_id: BATCH_ID,
+        job_id: JOB_ID,
+        status: "pending",
+        reused: false,
+      }),
     });
   });
   await page.route(`**/api/v1/prospect-batches/${BATCH_ID}`, (route) =>
@@ -208,6 +233,25 @@ async function stubBatchApi(page: Page) {
       body: JSON.stringify(batchCompanies),
     }),
   );
+  await page.route(`**/api/v1/prospect-batches/${BATCH_ID}/execution`, (route) => {
+    const execution =
+      executionReads++ === 0
+        ? {
+            ...completedExecution,
+            status: "pending",
+            attempt_count: 0,
+            heartbeat_at: null,
+            started_at: null,
+            completed_at: null,
+            updated_at: completedExecution.created_at,
+          }
+        : completedExecution;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(execution),
+    });
+  });
   await page.route(
     `**/api/v1/prospect-batches/${BATCH_ID}/companies/${REVIEW_COMPANY_ID}/blockers`,
     (route) =>
@@ -257,6 +301,8 @@ test("D2 selection, results, filters, and refresh recovery", async ({ page }) =>
 
   await panel.getByTestId("start-prospect-batch").click();
   await expect(panel.getByTestId("prospect-batch-result")).toBeVisible();
+  await expect(panel.getByTestId("batch-execution-status")).toContainText("等待执行");
+  await expect(panel.getByTestId("batch-execution-status")).toContainText("执行完成");
   await expect(panel.getByTestId("batch-progress")).toHaveAttribute("style", /100%/);
   expect(captured.postedBody()).toMatchObject({
     company_ids: [COMPLETED_COMPANY_ID, REVIEW_COMPANY_ID],
@@ -302,6 +348,27 @@ test("D2 selection, results, filters, and refresh recovery", async ({ page }) =>
   expect(guard.problems()).toEqual([]);
 });
 
+test("historical D2 batch without a job record still restores", async ({ page }) => {
+  const guard = attachConsoleGuard(page);
+  await stubBatchApi(page);
+  const executionPath = `**/api/v1/prospect-batches/${BATCH_ID}/execution`;
+  await page.unroute(executionPath);
+  await page.route(executionPath, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(null),
+    }),
+  );
+
+  await page.goto(`/?task_id=${TASK_ID}&batch_id=${BATCH_ID}`);
+  const panel = page.getByTestId("prospect-batch-panel");
+  await expect(panel.getByTestId("prospect-batch-result")).toBeVisible();
+  await expect(panel.getByTestId("batch-execution-status")).toContainText("历史批次");
+  await expect(panel.getByText("Atlas Hardware").first()).toBeVisible();
+  expect(guard.problems()).toEqual([]);
+});
+
 test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ page }) => {
   const guard = attachConsoleGuard(page);
   const researchId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -335,6 +402,12 @@ test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ 
       resume_count: number;
       [key: string]: unknown;
     }>;
+    [key: string]: unknown;
+  };
+  const currentExecution = structuredClone(completedExecution) as {
+    status: string;
+    updated_at: string;
+    completed_at: string | null;
     [key: string]: unknown;
   };
 
@@ -383,6 +456,13 @@ test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(currentCompanies),
+    }),
+  );
+  await page.route(`**/api/v1/prospect-batches/${BATCH_ID}/execution`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(currentExecution),
     }),
   );
   await page.route(
@@ -451,10 +531,18 @@ test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ 
       company.resumed_at = "2026-07-31T12:05:00Z";
       company.resumed_from_stage = "awaiting_evidence_review";
       company.resume_count = 1;
+      currentExecution.status = "completed";
+      currentExecution.updated_at = "2026-07-31T12:05:01Z";
+      currentExecution.completed_at = "2026-07-31T12:05:01Z";
       return route.fulfill({
-        status: 200,
+        status: 202,
         contentType: "application/json",
-        body: JSON.stringify(currentBatch),
+        body: JSON.stringify({
+          batch_id: BATCH_ID,
+          job_id: JOB_ID,
+          status: "pending",
+          reused: false,
+        }),
       });
     },
   );
