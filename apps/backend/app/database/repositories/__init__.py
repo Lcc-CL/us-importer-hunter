@@ -19,6 +19,7 @@ from app.database.repositories.import_evidence_promotion import (
 )
 from app.database.repositories.opportunity import SqlAlchemyOpportunityRepository
 from app.database.repositories.outreach import SqlAlchemyOutreachRepository
+from app.database.repositories.prospect_batch import SqlAlchemyProspectBatchRepository
 from app.database.repositories.research import SqlAlchemyResearchRunRepository
 from app.database.repositories.task import SqlAlchemyTaskRepository
 
@@ -31,6 +32,7 @@ __all__ = [
     "SqlAlchemyDiscoveryTaskRepository",
     "SqlAlchemyOpportunityRepository",
     "SqlAlchemyOutreachRepository",
+    "SqlAlchemyProspectBatchRepository",
     "SqlAlchemyResearchRunRepository",
     "SqlAlchemyTaskRepository",
 ]

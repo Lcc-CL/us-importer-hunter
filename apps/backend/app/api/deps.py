@@ -15,7 +15,11 @@ from app.core.config import Settings
 from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.uow import SqlAlchemyUnitOfWork
 from app.domain.discovery import CompanyDiscoveryProvider
-from app.domain.repositories import DiscoveryTaskUnitOfWork, UnitOfWork
+from app.domain.repositories import (
+    DiscoveryTaskUnitOfWork,
+    ProspectBatchUnitOfWork,
+    UnitOfWork,
+)
 from app.domain.services import (
     DecisionMakerSelectionService,
     EmailDraftGenerator,
@@ -23,6 +27,7 @@ from app.domain.services import (
     OpportunityScoringService,
 )
 from app.services.contact import DeterministicDecisionMakerSelectionService
+from app.services.contact_discovery_runner import WebsiteContactDiscoveryService
 from app.services.email import FakeEmailDraftGenerator, OpenAIEmailDraftGenerator
 from app.services.research import (
     FakeResearchExtractor,
@@ -46,6 +51,7 @@ from app.workflows.mvp_prospect_analysis import (
     UowFactory,
 )
 from app.workflows.opportunity import OpportunityApplicationWorkflow
+from app.workflows.prospect_batch import ProspectBatchQueryWorkflow, ProspectBatchWorkflow
 from app.workflows.research import (
     ClaimPromotionWorkflow,
     ResearchLimits,
@@ -142,9 +148,7 @@ def get_discovery_task_workflow(
     provider: CompanyDiscoveryProviderDep,
     company_ingestion: CompanyIngestionDep,
 ) -> DiscoveryTaskWorkflow:
-    discovery_uow_factory = cast(
-        Callable[[], DiscoveryTaskUnitOfWork], uow_factory
-    )
+    discovery_uow_factory = cast(Callable[[], DiscoveryTaskUnitOfWork], uow_factory)
     return DiscoveryTaskWorkflow(
         uow_factory=discovery_uow_factory,
         provider=provider,
@@ -152,17 +156,13 @@ def get_discovery_task_workflow(
     )
 
 
-DiscoveryTaskWorkflowDep = Annotated[
-    DiscoveryTaskWorkflow, Depends(get_discovery_task_workflow)
-]
+DiscoveryTaskWorkflowDep = Annotated[DiscoveryTaskWorkflow, Depends(get_discovery_task_workflow)]
 
 
 def get_discovery_task_query_workflow(
     uow_factory: UowFactoryDep,
 ) -> DiscoveryTaskQueryWorkflow:
-    return DiscoveryTaskQueryWorkflow(
-        cast(Callable[[], DiscoveryTaskUnitOfWork], uow_factory)
-    )
+    return DiscoveryTaskQueryWorkflow(cast(Callable[[], DiscoveryTaskUnitOfWork], uow_factory))
 
 
 DiscoveryTaskQueryDep = Annotated[
@@ -379,3 +379,48 @@ def get_claim_promotion_workflow(uow_factory: UowFactoryDep) -> ClaimPromotionWo
 
 
 ClaimPromotionDep = Annotated[ClaimPromotionWorkflow, Depends(get_claim_promotion_workflow)]
+
+
+def get_prospect_batch_workflow(
+    uow_factory: UowFactoryDep,
+    research: ResearchWorkflowDep,
+    opportunity: OpportunityWorkflowDep,
+    contact_ingestion: ContactIngestionDep,
+    decision_maker: DecisionMakerWorkflowDep,
+    email: EmailDraftWorkflowDep,
+    settings: SettingsDep,
+) -> ProspectBatchWorkflow:
+    contact_discovery = WebsiteContactDiscoveryService(
+        fetch_limits=FetchLimits(
+            max_page_bytes=settings.research_max_page_bytes,
+            max_decompressed_bytes=settings.research_max_decompressed_bytes,
+            request_timeout_seconds=settings.research_request_timeout_seconds,
+            max_redirects=settings.research_max_redirects,
+            user_agent=settings.research_user_agent,
+        ),
+        max_pages=settings.research_max_pages,
+        max_page_chars=settings.research_max_page_chars,
+    )
+    return ProspectBatchWorkflow(
+        uow_factory=cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
+        research=research,
+        opportunity=opportunity,
+        contact_discovery=contact_discovery,
+        contact_ingestion=contact_ingestion,
+        decision_maker=decision_maker,
+        email_draft=email,
+    )
+
+
+ProspectBatchWorkflowDep = Annotated[ProspectBatchWorkflow, Depends(get_prospect_batch_workflow)]
+
+
+def get_prospect_batch_query_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectBatchQueryWorkflow:
+    return ProspectBatchQueryWorkflow(cast(Callable[[], ProspectBatchUnitOfWork], uow_factory))
+
+
+ProspectBatchQueryDep = Annotated[
+    ProspectBatchQueryWorkflow, Depends(get_prospect_batch_query_workflow)
+]

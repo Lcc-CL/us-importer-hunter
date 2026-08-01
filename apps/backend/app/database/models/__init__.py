@@ -34,6 +34,7 @@ from app.database.models.opportunity import (
     OpportunityModel,
 )
 from app.database.models.outreach import EmailDraftModel, OutcomeModel, OutreachModel
+from app.database.models.prospect_batch import ProspectBatchCompanyModel, ProspectBatchModel
 from app.database.models.research import (
     ResearchClaimModel,
     ResearchPageModel,
@@ -69,6 +70,8 @@ __all__ = [
     "OpportunityModel",
     "OutcomeModel",
     "OutreachModel",
+    "ProspectBatchCompanyModel",
+    "ProspectBatchModel",
     "ResearchClaimModel",
     "ResearchPageModel",
     "ResearchPromotionModel",

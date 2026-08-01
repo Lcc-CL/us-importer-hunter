@@ -28,6 +28,7 @@ from app.domain.import_evidence.values import (
 )
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
+from app.domain.prospect_batch import ProspectBatch
 from app.domain.research import ResearchRun
 from app.domain.task import Task
 from app.domain.values import CompanyName, IdempotencyKey
@@ -121,6 +122,23 @@ class DiscoveryTaskRepository(Protocol):
     async def add(self, task: DiscoveryTask) -> None: ...
 
     async def save(self, task: DiscoveryTask) -> None: ...
+
+
+class ProspectBatchRepository(Protocol):
+    async def get_by_id(self, batch_id: UUID) -> ProspectBatch | None: ...
+
+    async def add(self, batch: ProspectBatch) -> None: ...
+
+    async def save(self, batch: ProspectBatch) -> None: ...
+
+    async def has_completed_pipeline(
+        self,
+        *,
+        discovery_task_id: UUID,
+        company_id: UUID,
+        pipeline_version: str,
+        exclude_batch_id: UUID | None = None,
+    ) -> bool: ...
 
 
 class ResearchRunRepository(Protocol):
@@ -265,6 +283,26 @@ class DiscoveryTaskUnitOfWork(Protocol):
     async def commit(self) -> None: ...
 
     async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class ProspectBatchUnitOfWork(Protocol):
+    companies: CompanyRepository
+    discovery_tasks: DiscoveryTaskRepository
+    prospect_batches: ProspectBatchRepository
+    research_runs: ResearchRunRepository
+
+    async def __aenter__(self) -> "ProspectBatchUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
 
     async def rollback(self) -> None: ...
 

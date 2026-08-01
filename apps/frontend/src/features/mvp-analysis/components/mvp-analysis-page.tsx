@@ -57,6 +57,7 @@ import type { ApplicationPayload } from "@/lib/research-api";
 interface MvpAnalysisPageProps {
   initialCompanyId?: string;
   initialTaskId?: string;
+  initialBatchId?: string;
 }
 
 function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
@@ -69,6 +70,7 @@ function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
 export function MvpAnalysisPage({
   initialCompanyId,
   initialTaskId,
+  initialBatchId,
 }: MvpAnalysisPageProps) {
   const { t, lang, setLang } = useI18n();
   const [analysis, setAnalysis] = useState<ProspectAnalysisResponse | null>(null);
@@ -407,7 +409,10 @@ export function MvpAnalysisPage({
           <ProviderBadge />
         </div>
 
-        <DiscoveryTaskPanel initialTaskId={initialTaskId} />
+        <DiscoveryTaskPanel
+          initialBatchId={initialBatchId}
+          initialTaskId={initialTaskId}
+        />
 
         <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div>

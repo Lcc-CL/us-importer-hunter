@@ -1,0 +1,429 @@
+"use client";
+
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { ExternalLink, Play, RefreshCw } from "lucide-react";
+
+import {
+  senderProfileServerSnapshot,
+  senderProfileSnapshot,
+  subscribeSenderProfile,
+} from "@/features/mvp-analysis/sender-profile";
+import type { ProspectSender } from "@/features/mvp-analysis/prospect-state";
+import {
+  createProspectBatch,
+  getClientErrorDetails,
+  getProspectBatch,
+  getProspectBatchCompanies,
+  retryProspectBatchCompany,
+  type DiscoveryCompanyResponse,
+  type DiscoveryTaskResponse,
+  type ProspectBatchCompanyResponse,
+  type ProspectBatchCompanyStatus,
+  type ProspectBatchResponse,
+  type ProspectBatchSender,
+} from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+
+interface ProspectBatchPanelProps {
+  task: DiscoveryTaskResponse;
+  companies: DiscoveryCompanyResponse[];
+  initialBatchId?: string;
+}
+
+type BatchFilter = "all" | "completed" | "needs_review" | "failed";
+
+const RETRYABLE_BATCH_ERRORS = new Set([
+  "WEBSITE_MISSING",
+  "WEBSITE_INVALID",
+  "RESEARCH_FAILED",
+  "RESEARCH_INCOMPLETE",
+  "SCORING_FAILED",
+  "SCORING_UNAVAILABLE",
+  "CONTACT_DISCOVERY_FAILED",
+  "CONTACT_NOT_FOUND",
+  "CONTACT_UNUSABLE",
+  "DECISION_MAKER_NOT_SELECTED",
+  "SENDER_PROFILE_MISSING",
+  "DRAFT_GENERATION_FAILED",
+  "DRAFT_NOT_GENERATED",
+  "PIPELINE_UNEXPECTED_ERROR",
+]);
+
+function toBatchSender(stored: ProspectSender | null): ProspectBatchSender | undefined {
+  if (
+    !stored ||
+    !stored.name.trim() ||
+    !stored.company.trim() ||
+    !stored.valueProposition.trim()
+  ) {
+    return undefined;
+  }
+  return {
+    name: stored.name,
+    company: stored.company,
+    value_proposition: stored.valueProposition,
+  };
+}
+
+function statusTone(status: ProspectBatchCompanyStatus): string {
+  if (status === "completed") return "bg-emerald-100 text-emerald-800";
+  if (status === "needs_review") return "bg-amber-100 text-amber-800";
+  if (status === "failed") return "bg-rose-100 text-rose-800";
+  return "bg-sky-100 text-sky-800";
+}
+
+export function ProspectBatchPanel({
+  task,
+  companies,
+  initialBatchId,
+}: ProspectBatchPanelProps) {
+  const { t } = useI18n();
+  const eligible = useMemo(
+    () => companies.filter((company) => company.company_id !== null),
+    [companies],
+  );
+  const [selected, setSelected] = useState<string[]>([]);
+  const [batch, setBatch] = useState<ProspectBatchResponse | null>(null);
+  const [results, setResults] = useState<ProspectBatchCompanyResponse[]>([]);
+  const [filter, setFilter] = useState<BatchFilter>("all");
+  const [busy, setBusy] = useState(Boolean(initialBatchId));
+  const [error, setError] = useState<string | null>(null);
+  const storedSender = useSyncExternalStore(
+    subscribeSenderProfile,
+    senderProfileSnapshot,
+    senderProfileServerSnapshot,
+  );
+
+  useEffect(() => {
+    if (!initialBatchId) return;
+    let active = true;
+    async function restore() {
+      try {
+        const [savedBatch, savedResults] = await Promise.all([
+          getProspectBatch(initialBatchId as string),
+          getProspectBatchCompanies(initialBatchId as string),
+        ]);
+        if (!active) return;
+        setBatch(savedBatch);
+        setResults(savedResults.companies);
+      } catch (caught: unknown) {
+        if (active) setError(getClientErrorDetails(caught).message);
+      } finally {
+        if (active) setBusy(false);
+      }
+    }
+    void restore();
+    return () => {
+      active = false;
+    };
+  }, [initialBatchId]);
+
+  function persistBatchId(batchId: string) {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("batch_id", batchId);
+    window.history.replaceState(null, "", currentUrl);
+  }
+
+  function toggleCompany(companyId: string) {
+    setSelected((current) => {
+      if (current.includes(companyId)) {
+        return current.filter((value) => value !== companyId);
+      }
+      if (current.length >= 5) return current;
+      return [...current, companyId];
+    });
+  }
+
+  async function loadResults(batchId: string) {
+    const [savedBatch, savedResults] = await Promise.all([
+      getProspectBatch(batchId),
+      getProspectBatchCompanies(batchId),
+    ]);
+    setBatch(savedBatch);
+    setResults(savedResults.companies);
+  }
+
+  async function startBatch() {
+    if (busy || selected.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createProspectBatch(
+        task.task_id,
+        selected,
+        toBatchSender(storedSender),
+      );
+      persistBatchId(created.batch_id);
+      await loadResults(created.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryCompany(companyId: string) {
+    if (!batch || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await retryProspectBatchCompany(
+        batch.batch_id,
+        companyId,
+        toBatchSender(storedSender),
+      );
+      await loadResults(batch.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const terminalCount = batch
+    ? batch.completed_count + batch.needs_review_count + batch.failed_count
+    : 0;
+  const progress = batch
+    ? Math.round((terminalCount / Math.max(1, batch.effective_count)) * 100)
+    : 0;
+  const visibleResults = results.filter(
+    (company) => filter === "all" || company.status === filter,
+  );
+  const canStart =
+    task.provider === "manual_csv" &&
+    (task.status === "completed" || task.status === "partial_failed");
+
+  if (!canStart) return null;
+
+  return (
+    <div
+      className="mt-6 rounded-3xl border border-indigo-200 bg-indigo-50/40 p-4 sm:p-5"
+      data-testid="prospect-batch-panel"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-700">
+            {t("batch.kicker")}
+          </p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-950">
+            {t("batch.title")}
+          </h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+            {t("batch.intro")}
+          </p>
+        </div>
+        <button
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="start-prospect-batch"
+          disabled={busy || selected.length === 0}
+          onClick={startBatch}
+          type="button"
+        >
+          <Play className="size-4" />
+          {busy ? t("batch.running") : t("batch.start")}
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+        <button
+          className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 font-medium text-indigo-800"
+          data-testid="batch-select-all"
+          onClick={() =>
+            setSelected(
+              eligible
+                .map((company) => company.company_id)
+                .filter((value): value is string => value !== null)
+                .slice(0, 5),
+            )
+          }
+          type="button"
+        >
+          {t("batch.selectAll")}
+        </button>
+        <span className="text-slate-600">
+          {t("batch.selected", { count: selected.length })}
+        </span>
+        <span className="font-medium text-amber-700">{t("batch.limit")}</span>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {eligible.map((company) => {
+          const companyId = company.company_id as string;
+          const checked = selected.includes(companyId);
+          return (
+            <label
+              className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3"
+              key={company.candidate_id}
+            >
+              <input
+                checked={checked}
+                className="mt-1 size-4 accent-indigo-700"
+                data-testid="batch-company-checkbox"
+                disabled={!checked && selected.length >= 5}
+                onChange={() => toggleCompany(companyId)}
+                type="checkbox"
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-slate-900">
+                  {company.company_name}
+                </span>
+                <span className="block truncate text-xs text-slate-500">
+                  {company.website ?? t("common.notAvailable")}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      {!toBatchSender(storedSender) ? (
+        <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {t("batch.senderMissing")}
+        </p>
+      ) : null}
+
+      {error ? (
+        <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          {error}
+        </p>
+      ) : null}
+
+      {batch ? (
+        <div className="mt-6" data-testid="prospect-batch-result">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                {t(`batch.status.${batch.status}`)} · {progress}%
+              </p>
+              <p className="mt-1 font-mono text-xs text-slate-500">
+                {batch.batch_id}
+              </p>
+            </div>
+            <div className="text-xs text-slate-600">
+              {t("batch.counts", {
+                completed: batch.completed_count,
+                review: batch.needs_review_count,
+                failed: batch.failed_count,
+              })}
+            </div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full bg-indigo-600 transition-[width]"
+              data-testid="batch-progress"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          {batch.requested_count > batch.effective_count ? (
+            <p className="mt-2 text-xs text-amber-700">
+              {t("batch.capped", {
+                requested: batch.requested_count,
+                effective: batch.effective_count,
+              })}
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(["all", "completed", "needs_review", "failed"] as const).map(
+              (value) => (
+                <button
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    filter === value
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-600"
+                  }`}
+                  key={value}
+                  onClick={() => setFilter(value)}
+                  type="button"
+                >
+                  {t(`batch.filter.${value}`)}
+                </button>
+              ),
+            )}
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {visibleResults.map((company) => (
+              <article
+                className="rounded-2xl border border-slate-200 bg-white p-4"
+                data-testid={`batch-company-${company.status}`}
+                key={company.company_id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-semibold text-slate-950">
+                      {company.company_name}
+                    </h4>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {t(`batch.stage.${company.current_stage}`)}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(company.status)}`}
+                  >
+                    {t(`batch.companyStatus.${company.status}`)}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+                  <p>
+                    <span className="font-medium text-slate-800">Research：</span>
+                    {company.research_id ? t("batch.saved") : t("common.notAvailable")}
+                  </p>
+                  <p>
+                    <span className="font-medium text-slate-800">Score：</span>
+                    {company.score ?? t("common.notAvailable")}
+                  </p>
+                  <p>
+                    <span className="font-medium text-slate-800">Contact：</span>
+                    {company.contact_name ?? company.contact_email ?? t("common.notAvailable")}
+                  </p>
+                  <p>
+                    <span className="font-medium text-slate-800">Draft：</span>
+                    {company.draft_subject ?? t("common.notAvailable")}
+                  </p>
+                </div>
+                {company.error_code ? (
+                  <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+                    <p className="font-mono text-xs">{company.error_code}</p>
+                    <p className="mt-1">{company.error_summary}</p>
+                  </div>
+                ) : null}
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <a
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-700"
+                    href={`/?company_id=${encodeURIComponent(company.company_id)}`}
+                  >
+                    {t("batch.openWorkspace")} <ExternalLink className="size-3.5" />
+                  </a>
+                  {company.contact_source_url ? (
+                    <a
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700"
+                      href={company.contact_source_url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {t("batch.contactSource")} <ExternalLink className="size-3.5" />
+                    </a>
+                  ) : null}
+                  {(company.status === "failed" ||
+                    company.status === "needs_review") &&
+                  company.error_code !== null &&
+                  RETRYABLE_BATCH_ERRORS.has(company.error_code) ? (
+                    <button
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 disabled:opacity-50"
+                      disabled={busy}
+                      onClick={() => retryCompany(company.company_id)}
+                      type="button"
+                    >
+                      <RefreshCw className="size-3.5" /> {t("batch.retry")}
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
