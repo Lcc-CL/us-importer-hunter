@@ -168,6 +168,7 @@ export interface ProspectBatchCompanyResponse {
   contact_name: string | null;
   contact_email: string | null;
   contact_source_url: string | null;
+  contact_type: "personal" | "department" | "generic" | null;
   draft_subject: string | null;
   draft_status: string | null;
   error_code: string | null;
@@ -178,6 +179,12 @@ export interface ProspectBatchCompanyResponse {
   resumed_at: string | null;
   resumed_from_stage: string | null;
   resume_count: number;
+  stage_timings: Array<{
+    stage: string;
+    started_at: string;
+    completed_at: string | null;
+    duration_ms: number | null;
+  }>;
 }
 
 export interface ProspectBatchCompanyListResponse {
@@ -210,6 +217,166 @@ export interface ProspectBatchSender {
   name: string;
   company: string;
   value_proposition: string;
+}
+
+export interface CalibrationCreateResponse {
+  calibration_id: string;
+  batch_id: string;
+  job_id: string;
+  status: ProspectJobStatus;
+  reused: boolean;
+}
+
+export interface CalibrationEvaluation {
+  research_accuracy: number;
+  opportunity_reasonableness: number;
+  contact_usability: number;
+  draft_personalization: number;
+  draft_professionalism: number;
+  ready_for_real_outreach: boolean;
+  reviewer_name: string;
+  notes: string | null;
+  reviewed_at: string;
+}
+
+export interface CalibrationEvaluationRequest {
+  research_accuracy: number;
+  opportunity_reasonableness: number;
+  contact_usability: number;
+  draft_personalization: number;
+  draft_professionalism: number;
+  ready_for_real_outreach: boolean;
+  reviewer_name: string;
+  notes?: string | null;
+}
+
+export interface CalibrationCompanyReport {
+  company_id: string;
+  company_name: string;
+  final_status: string;
+  error_code: string | null;
+  error_summary: string | null;
+  research: {
+    request_succeeded: boolean;
+    pages_fetched: number;
+    duration_ms: number | null;
+    new_claim_count: number;
+    accepted_count: number;
+    edited_count: number;
+    rejected_count: number;
+    pending_count: number;
+    claims_without_source_count: number;
+    failure_reason: string | null;
+  };
+  opportunity: {
+    generated: boolean;
+    score: number | null;
+    qualification_decision: string | null;
+    major_positive_reasons: string[];
+    major_deduction_reasons: string[];
+    limiting_reasons: string[];
+    trusted_evidence_count: number;
+    stopped_for_insufficient_evidence: boolean;
+  };
+  contact: {
+    personal_contact_found: boolean;
+    department_contact_found: boolean;
+    contact_type: "personal" | "department" | "generic" | null;
+    name: string | null;
+    title_or_department: string | null;
+    email: string | null;
+    phone: string | null;
+    source_url: string | null;
+    manually_confirmed: boolean;
+    contact_not_found_reason: string | null;
+  };
+  draft: {
+    generated: boolean;
+    not_generated_reason: string | null;
+    contact_type: string | null;
+    fact_count: number;
+    facts: Array<{
+      claim: string;
+      source_urls: string[];
+      traceable_to_company_evidence: boolean;
+    }>;
+    all_facts_traceable: boolean;
+    contains_unreviewed_claim: boolean;
+    contains_rejected_claim: boolean;
+    awaiting_human_review: boolean;
+    explicitly_not_sent: boolean;
+  };
+  worker: {
+    queue_wait_ms: number | null;
+    total_duration_ms: number | null;
+    stage_durations_ms: Record<string, number>;
+    attempt_count: number;
+    recovery_count: number;
+    lease_expired: boolean;
+    duplicate_entity_count: number;
+  };
+  evaluation: CalibrationEvaluation | null;
+}
+
+export interface CalibrationReportResponse {
+  calibration_id: string;
+  discovery_task_id: string;
+  prospect_batch_id: string;
+  status: string;
+  sample_source: string;
+  sample_reality_status: string;
+  created_at: string;
+  updated_at: string;
+  generated_at: string;
+  providers: {
+    website_fetch_mode: "real_http" | "fixture";
+    research_provider_mode: "real" | "deterministic_fake";
+    draft_provider_mode: "real" | "deterministic_fake";
+    contact_source_mode: "official_website";
+    paid_request_count: number;
+    research_provider_call_count: number;
+    draft_provider_call_count: number;
+    provider_duration_ms: number;
+    token_usage_total: number | null;
+  };
+  summary: {
+    sample_count: number;
+    website_research_success_count: number;
+    website_research_success_rate: number;
+    evidence_review_company_count: number;
+    evidence_accepted_count: number;
+    evidence_rejected_count: number;
+    opportunity_generated_count: number;
+    opportunity_generation_rate: number;
+    qualified_count: number;
+    personal_contact_count: number;
+    personal_contact_coverage_rate: number;
+    department_contact_count: number;
+    department_contact_coverage_rate: number;
+    draft_generated_count: number;
+    draft_generation_rate: number;
+    ready_for_real_outreach_count: number;
+    evaluated_company_count: number;
+    worker_recovery_count: number;
+    average_processing_duration_ms: number | null;
+    average_research_accuracy: number | null;
+    average_opportunity_reasonableness: number | null;
+    average_contact_usability: number | null;
+    average_draft_personalization: number | null;
+    average_draft_professionalism: number | null;
+  };
+  truth_checks: {
+    fabricated_contact_count: number;
+    unreviewed_fact_in_draft_count: number;
+    rejected_claim_in_score_or_draft_count: number;
+    pending_claim_bypassed_count: number;
+    draft_marked_sent_count: number;
+    duplicate_entity_count: number;
+    invalid_email_contact_count: number;
+    website_failure_mislabeled_company_missing_count: number;
+    opportunity_score_is_probability: boolean;
+  };
+  companies: CalibrationCompanyReport[];
 }
 
 export interface ProspectSourceRequest {
@@ -684,6 +851,53 @@ export function createProspectBatch(
       body: JSON.stringify({ company_ids: companyIds, limit: 5, sender }),
     },
   );
+}
+
+export function createCalibrationRun(
+  taskId: string,
+  companyIds: string[],
+  sender?: ProspectBatchSender,
+  idempotencyKey?: string,
+): Promise<CalibrationCreateResponse> {
+  return requestJson<CalibrationCreateResponse>(
+    `/discovery-tasks/${encodeURIComponent(taskId)}/calibrations`,
+    {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify({ company_ids: companyIds, sender }),
+    },
+  );
+}
+
+export function getCalibrationReport(
+  calibrationId: string,
+): Promise<CalibrationReportResponse> {
+  return requestJson<CalibrationReportResponse>(
+    `/calibrations/${encodeURIComponent(calibrationId)}`,
+  );
+}
+
+export function saveCalibrationEvaluation(
+  calibrationId: string,
+  companyId: string,
+  evaluation: CalibrationEvaluationRequest,
+): Promise<CalibrationEvaluation> {
+  return requestJson<CalibrationEvaluation>(
+    `/calibrations/${encodeURIComponent(calibrationId)}/companies/${encodeURIComponent(companyId)}/evaluation`,
+    {
+      method: "PUT",
+      body: JSON.stringify(evaluation),
+    },
+  );
+}
+
+export function calibrationExportUrl(
+  calibrationId: string,
+  format: "csv" | "json",
+): string {
+  const filename =
+    format === "csv" ? "calibration-summary.csv" : "calibration-report.json";
+  return `${API_V1_URL}/calibrations/${encodeURIComponent(calibrationId)}/${filename}`;
 }
 
 export function getProspectBatchExecution(

@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from app.domain.clock import utcnow
+from app.domain.clock import ensure_utc, utcnow
 from app.domain.exceptions import DomainError, InvalidStateTransition
 
 PIPELINE_VERSION = "d2a-prospect-pipeline-v1"
@@ -44,6 +44,39 @@ class ProspectBatchStage(StrEnum):
     COMPLETED = "completed"
     NEEDS_REVIEW = "needs_review"
     FAILED = "failed"
+
+
+class ProspectContactType(StrEnum):
+    PERSONAL = "personal"
+    DEPARTMENT = "department"
+    GENERIC = "generic"
+
+
+@dataclass(frozen=True)
+class ProspectStageTiming:
+    stage: ProspectBatchStage
+    started_at: datetime
+    completed_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "started_at",
+            ensure_utc(self.started_at, field="stage_timing.started_at"),
+        )
+        if self.completed_at is not None:
+            completed_at = ensure_utc(
+                self.completed_at, field="stage_timing.completed_at"
+            )
+            if completed_at < self.started_at:
+                raise DomainError("stage timing cannot complete before it starts")
+            object.__setattr__(self, "completed_at", completed_at)
+
+    @property
+    def duration_ms(self) -> int | None:
+        if self.completed_at is None:
+            return None
+        return max(0, round((self.completed_at - self.started_at).total_seconds() * 1000))
 
 
 TERMINAL_COMPANY_STATUSES = frozenset(
@@ -84,6 +117,8 @@ class ProspectBatchCompany:
     resumed_at: datetime | None = None
     resumed_from_stage: ProspectBatchStage | None = None
     resume_count: int = 0
+    contact_type: ProspectContactType | None = None
+    stage_timings: tuple[ProspectStageTiming, ...] = ()
 
     def __post_init__(self) -> None:
         if self.position < 0:
@@ -101,6 +136,7 @@ class ProspectBatchCompany:
     def queued(
         cls, *, company_id: UUID, company_name: str, position: int
     ) -> "ProspectBatchCompany":
+        now = utcnow()
         return cls(
             company_id=company_id,
             company_name=company_name.strip(),
@@ -129,6 +165,8 @@ class ProspectBatchCompany:
             resumed_at=None,
             resumed_from_stage=None,
             resume_count=0,
+            contact_type=None,
+            stage_timings=(ProspectStageTiming(ProspectBatchStage.QUEUED, now),),
         )
 
     def move_to(self, stage: ProspectBatchStage) -> "ProspectBatchCompany":
@@ -136,14 +174,17 @@ class ProspectBatchCompany:
             raise InvalidStateTransition(
                 f"cannot move a {self.status.value} company to {stage.value}"
             )
+        now = utcnow()
+        timings = _start_stage(self.stage_timings, stage, now)
         return dataclasses.replace(
             self,
             current_stage=stage,
             status=ProspectBatchCompanyStatus.RUNNING,
-            started_at=self.started_at or utcnow(),
+            started_at=self.started_at or now,
             error_code=None,
             error_summary=None,
             completed_at=None,
+            stage_timings=timings,
         )
 
     def with_research(self, research_id: UUID) -> "ProspectBatchCompany":
@@ -172,6 +213,7 @@ class ProspectBatchCompany:
         name: str,
         email: str | None,
         source_url: str,
+        contact_type: ProspectContactType,
     ) -> "ProspectBatchCompany":
         return dataclasses.replace(
             self,
@@ -179,6 +221,7 @@ class ProspectBatchCompany:
             contact_name=name,
             contact_email=email,
             contact_source_url=source_url,
+            contact_type=contact_type,
         )
 
     def with_draft(
@@ -200,27 +243,35 @@ class ProspectBatchCompany:
     def complete(self) -> "ProspectBatchCompany":
         if self.status is ProspectBatchCompanyStatus.COMPLETED:
             return self
+        now = utcnow()
         return dataclasses.replace(
             self,
             current_stage=ProspectBatchStage.COMPLETED,
             status=ProspectBatchCompanyStatus.COMPLETED,
             error_code=None,
             error_summary=None,
-            completed_at=utcnow(),
+            completed_at=now,
+            stage_timings=_close_open_stage(self.stage_timings, now),
         )
 
     def await_evidence_review(self, *, blocking_claim_count: int) -> "ProspectBatchCompany":
         if blocking_claim_count < 1:
             raise DomainError("evidence review requires at least one blocking claim")
+        now = utcnow()
         return dataclasses.replace(
             self,
             current_stage=ProspectBatchStage.AWAITING_EVIDENCE_REVIEW,
             status=ProspectBatchCompanyStatus.NEEDS_REVIEW,
             error_code="EVIDENCE_REVIEW_REQUIRED",
             error_summary="research claims were saved and require human confirmation",
-            started_at=self.started_at or utcnow(),
-            completed_at=utcnow(),
+            started_at=self.started_at or now,
+            completed_at=now,
             blocking_claim_count=blocking_claim_count,
+            stage_timings=_start_stage(
+                self.stage_timings,
+                ProspectBatchStage.AWAITING_EVIDENCE_REVIEW,
+                now,
+            ),
         )
 
     def needs_review(
@@ -231,26 +282,30 @@ class ProspectBatchCompany:
         stage: ProspectBatchStage = ProspectBatchStage.NEEDS_REVIEW,
     ) -> "ProspectBatchCompany":
         _require_error(error_code, error_summary)
+        now = utcnow()
         return dataclasses.replace(
             self,
             current_stage=stage,
             status=ProspectBatchCompanyStatus.NEEDS_REVIEW,
             error_code=error_code.strip(),
             error_summary=error_summary.strip(),
-            started_at=self.started_at or utcnow(),
-            completed_at=utcnow(),
+            started_at=self.started_at or now,
+            completed_at=now,
+            stage_timings=_close_open_stage(self.stage_timings, now),
         )
 
     def fail(self, *, error_code: str, error_summary: str) -> "ProspectBatchCompany":
         _require_error(error_code, error_summary)
+        now = utcnow()
         return dataclasses.replace(
             self,
             current_stage=ProspectBatchStage.FAILED,
             status=ProspectBatchCompanyStatus.FAILED,
             error_code=error_code.strip(),
             error_summary=error_summary.strip(),
-            started_at=self.started_at or utcnow(),
-            completed_at=utcnow(),
+            started_at=self.started_at or now,
+            completed_at=now,
+            stage_timings=_close_open_stage(self.stage_timings, now),
         )
 
     def retry(self) -> "ProspectBatchCompany":
@@ -261,6 +316,7 @@ class ProspectBatchCompany:
             raise InvalidStateTransition(
                 f"only failed or needs_review companies can be retried, got {self.status.value}"
             )
+        now = utcnow()
         return dataclasses.replace(
             self,
             current_stage=ProspectBatchStage.QUEUED,
@@ -268,11 +324,13 @@ class ProspectBatchCompany:
             error_code=None,
             error_summary=None,
             completed_at=None,
+            stage_timings=_start_stage(self.stage_timings, ProspectBatchStage.QUEUED, now),
         )
 
     def requeue_after_worker_loss(self) -> "ProspectBatchCompany":
         if self.status is not ProspectBatchCompanyStatus.RUNNING:
             return self
+        now = utcnow()
         return dataclasses.replace(
             self,
             current_stage=ProspectBatchStage.QUEUED,
@@ -280,6 +338,7 @@ class ProspectBatchCompany:
             error_code=None,
             error_summary=None,
             completed_at=None,
+            stage_timings=_start_stage(self.stage_timings, ProspectBatchStage.QUEUED, now),
         )
 
     def resume_after_evidence_review(self) -> "ProspectBatchCompany":
@@ -302,6 +361,11 @@ class ProspectBatchCompany:
             resumed_at=now,
             resumed_from_stage=self.current_stage,
             resume_count=self.resume_count + 1,
+            stage_timings=_start_stage(
+                self.stage_timings,
+                ProspectBatchStage.SCORING,
+                now,
+            ),
         )
 
 
@@ -498,3 +562,21 @@ class ProspectBatch:
 def _require_error(error_code: str, error_summary: str) -> None:
     if not error_code.strip() or not error_summary.strip():
         raise DomainError("terminal batch company state requires an error code and summary")
+
+
+def _close_open_stage(
+    timings: tuple[ProspectStageTiming, ...], now: datetime
+) -> tuple[ProspectStageTiming, ...]:
+    if not timings or timings[-1].completed_at is not None:
+        return timings
+    return (*timings[:-1], dataclasses.replace(timings[-1], completed_at=now))
+
+
+def _start_stage(
+    timings: tuple[ProspectStageTiming, ...],
+    stage: ProspectBatchStage,
+    now: datetime,
+) -> tuple[ProspectStageTiming, ...]:
+    if timings and timings[-1].stage is stage and timings[-1].completed_at is None:
+        return timings
+    return (*_close_open_stage(timings, now), ProspectStageTiming(stage, now))

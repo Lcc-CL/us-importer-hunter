@@ -21,6 +21,7 @@ const EXAMPLE_PROMPT = "帮我找 20 家北美五金进口商";
 interface DiscoveryTaskPanelProps {
   initialTaskId?: string;
   initialBatchId?: string;
+  initialCalibrationId?: string;
 }
 
 function safeEvidenceUrl(value: string | null): string | null {
@@ -52,6 +53,7 @@ const CSV_ERROR_KEYS = {
 export function DiscoveryTaskPanel({
   initialTaskId,
   initialBatchId,
+  initialCalibrationId,
 }: DiscoveryTaskPanelProps) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState(EXAMPLE_PROMPT);
@@ -348,6 +350,7 @@ export function DiscoveryTaskPanel({
           <ProspectBatchPanel
             companies={companies}
             initialBatchId={initialBatchId}
+            initialCalibrationId={initialCalibrationId}
             task={task}
           />
         </div>

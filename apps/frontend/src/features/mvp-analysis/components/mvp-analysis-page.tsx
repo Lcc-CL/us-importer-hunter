@@ -58,6 +58,7 @@ interface MvpAnalysisPageProps {
   initialCompanyId?: string;
   initialTaskId?: string;
   initialBatchId?: string;
+  initialCalibrationId?: string;
   initialResearchId?: string;
 }
 
@@ -72,6 +73,7 @@ export function MvpAnalysisPage({
   initialCompanyId,
   initialTaskId,
   initialBatchId,
+  initialCalibrationId,
   initialResearchId,
 }: MvpAnalysisPageProps) {
   const { t, lang, setLang } = useI18n();
@@ -123,6 +125,7 @@ export function MvpAnalysisPage({
     ? `/?${new URLSearchParams({
         ...(initialTaskId ? { task_id: initialTaskId } : {}),
         batch_id: initialBatchId,
+        ...(initialCalibrationId ? { calibration_id: initialCalibrationId } : {}),
       }).toString()}#prospect-batch-panel`
     : undefined;
 
@@ -419,6 +422,7 @@ export function MvpAnalysisPage({
 
         <DiscoveryTaskPanel
           initialBatchId={initialBatchId}
+          initialCalibrationId={initialCalibrationId}
           initialTaskId={initialTaskId}
         />
 

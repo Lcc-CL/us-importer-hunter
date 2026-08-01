@@ -11,6 +11,7 @@ from types import TracebackType
 from typing import Protocol
 from uuid import UUID
 
+from app.domain.calibration import CalibrationRun
 from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
 from app.domain.discovery import DiscoveryTask
@@ -52,6 +53,16 @@ class CompanyRepository(Protocol):
     async def find_by_website_host(self, host: str) -> Company | None:
         """Dedup lookup: the canonical company already using this web host, if any."""
         ...
+
+
+class CalibrationRunRepository(Protocol):
+    async def get_by_id(self, calibration_id: UUID) -> CalibrationRun | None: ...
+
+    async def get_by_batch_id(self, batch_id: UUID) -> CalibrationRun | None: ...
+
+    async def add(self, run: CalibrationRun) -> None: ...
+
+    async def save(self, run: CalibrationRun) -> None: ...
 
 
 class OpportunityRepository(Protocol):
@@ -151,6 +162,8 @@ class ProspectJobRepository(Protocol):
     async def get_by_id_for_update(self, job_id: UUID) -> ProspectJob | None: ...
 
     async def get_latest_for_batch(self, batch_id: UUID) -> ProspectJob | None: ...
+
+    async def list_for_batch(self, batch_id: UUID) -> list[ProspectJob]: ...
 
     async def find_by_request_key_hash(self, request_key_hash: str) -> ProspectJob | None: ...
 
@@ -327,6 +340,33 @@ class ProspectBatchUnitOfWork(Protocol):
     research_runs: ResearchRunRepository
 
     async def __aenter__(self) -> "ProspectBatchUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class CalibrationUnitOfWork(Protocol):
+    calibrations: CalibrationRunRepository
+    companies: CompanyRepository
+    contacts: ContactRepository
+    discovery_tasks: DiscoveryTaskRepository
+    opportunities: OpportunityRepository
+    outreaches: OutreachRepository
+    prospect_batches: ProspectBatchRepository
+    prospect_jobs: ProspectJobRepository
+    research_runs: ResearchRunRepository
+
+    async def __aenter__(self) -> "CalibrationUnitOfWork": ...
 
     async def __aexit__(
         self,

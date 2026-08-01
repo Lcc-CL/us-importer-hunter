@@ -20,6 +20,7 @@ from app.domain.prospect_batch import (
     ProspectBatchCompanyStatus,
     ProspectBatchStage,
     ProspectBatchStatus,
+    ProspectContactType,
 )
 from app.domain.prospect_job import ProspectJob, ProspectJobStatus
 from app.domain.repositories import ProspectBatchUnitOfWork, UnitOfWork
@@ -509,6 +510,9 @@ async def test_deduplicates_ids_and_caps_effective_count_at_five() -> None:
     assert batch.requested_count == 7
     assert batch.effective_count == 5
     assert [item.company_id for item in batch.companies] == list(ids[:5])
+    assert all(item.contact_type is ProspectContactType.PERSONAL for item in batch.companies)
+    assert all(item.stage_timings[0].stage is ProspectBatchStage.QUEUED for item in batch.companies)
+    assert all(item.stage_timings[-1].completed_at is not None for item in batch.companies)
 
 
 async def test_rejects_company_outside_discovery_task() -> None:

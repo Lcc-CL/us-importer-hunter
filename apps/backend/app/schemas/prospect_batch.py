@@ -122,6 +122,13 @@ class ProspectBatchResponse(BaseModel):
         )
 
 
+class ProspectStageTimingResponse(BaseModel):
+    stage: str
+    started_at: datetime
+    completed_at: datetime | None
+    duration_ms: int | None
+
+
 class ProspectBatchCompanyResponse(BaseModel):
     company_id: UUID
     company_name: str
@@ -141,6 +148,7 @@ class ProspectBatchCompanyResponse(BaseModel):
     contact_name: str | None
     contact_email: str | None
     contact_source_url: str | None
+    contact_type: str | None
     draft_subject: str | None
     draft_status: str | None
     error_code: str | None
@@ -151,6 +159,7 @@ class ProspectBatchCompanyResponse(BaseModel):
     resumed_at: datetime | None
     resumed_from_stage: str | None
     resume_count: int
+    stage_timings: list[ProspectStageTimingResponse]
 
     @classmethod
     def from_domain(cls, company: ProspectBatchCompany) -> Self:
@@ -178,6 +187,7 @@ class ProspectBatchCompanyResponse(BaseModel):
             contact_name=company.contact_name,
             contact_email=company.contact_email,
             contact_source_url=company.contact_source_url,
+            contact_type=company.contact_type.value if company.contact_type else None,
             draft_subject=company.draft_subject,
             draft_status=company.draft_status,
             error_code=company.error_code,
@@ -190,6 +200,15 @@ class ProspectBatchCompanyResponse(BaseModel):
                 company.resumed_from_stage.value if company.resumed_from_stage else None
             ),
             resume_count=company.resume_count,
+            stage_timings=[
+                ProspectStageTimingResponse(
+                    stage=timing.stage.value,
+                    started_at=timing.started_at,
+                    completed_at=timing.completed_at,
+                    duration_ms=timing.duration_ms,
+                )
+                for timing in company.stage_timings
+            ],
         )
 
 

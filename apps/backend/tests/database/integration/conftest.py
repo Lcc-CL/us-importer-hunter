@@ -60,7 +60,7 @@ async def _run_sql_autocommit(url: str, statements: list[str]) -> None:
 
 def run_alembic(command: list[str], db_name: str) -> None:
     subprocess.run(
-        [sys.executable, "-m", "alembic", *command],
+        [sys.executable, "-m", "alembic", "-x", "dotenv=disabled", *command],
         cwd=BACKEND_ROOT,
         env={**os.environ, "POSTGRES_DB": db_name},
         check=True,

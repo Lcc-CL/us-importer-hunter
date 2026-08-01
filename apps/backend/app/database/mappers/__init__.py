@@ -7,6 +7,7 @@ leaves the pending-event buffer empty: loading an aggregate must never
 replay history as new events.
 """
 
+from app.database.mappers.calibration import CalibrationRunMapper
 from app.database.mappers.company import CompanyMapper
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
 from app.database.mappers.discovery_task import DiscoveryTaskMapper
@@ -24,6 +25,7 @@ from app.database.mappers.task import TaskMapper
 
 __all__ = [
     "CompanyMapper",
+    "CalibrationRunMapper",
     "ImportEvidenceQualityMapper",
     "ImportEvidencePromotionMapper",
     "ImporterEvidenceAggregateMapper",

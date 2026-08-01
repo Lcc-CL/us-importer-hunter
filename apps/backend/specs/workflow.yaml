@@ -55,6 +55,25 @@ workflows:
     limits: { companies: 5, concurrency: 1 }
     status: implemented
 
+  prospect_calibration:
+    package: app.workflows.calibration
+    description: >
+      D4a measurement layer for three to five user-supplied manual_csv
+      companies. It submits the existing Prospect Batch/PostgreSQL Job, records
+      the actual website/research/draft/contact provider modes, derives auditable
+      quality metrics from persisted Research, Opportunity, Contact, Draft and
+      Worker results, stores an internal reviewer's 1-5 evaluation, and exports
+      whitelisted CSV/JSON reports. It contains no second research, scoring,
+      contact or drafting pipeline and never sends email.
+    steps:
+      - { id: select_sample, source: manual_csv, limits: "3..5" }
+      - { id: submit_existing_batch, workflow: prospect_batch }
+      - { id: collect_metrics, reads: [research, opportunity, contact, email, prospect_batch] }
+      - { id: record_human_evaluation, aggregate: calibration }
+      - { id: export_report, formats: [csv, json] }
+    execution: existing_postgresql_worker
+    status: implemented
+
   import_evidence_closure:
     package: app.workflows.import_evidence
     description: >

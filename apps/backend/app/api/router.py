@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    calibrations,
     discovery_tasks,
     health,
     import_evidence,
@@ -18,3 +19,4 @@ api_router.include_router(research.router)
 api_router.include_router(import_evidence.router)
 api_router.include_router(discovery_tasks.router)
 api_router.include_router(prospect_batches.router)
+api_router.include_router(calibrations.router)

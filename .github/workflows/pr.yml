@@ -4,7 +4,7 @@ on:
   pull_request:
 
 jobs:
-  d3a:
+  d4a:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -49,18 +49,33 @@ jobs:
         working-directory: apps/backend
         run: uv run ruff check .
 
-      - name: D3a targeted tests
+      - name: Backend strict mypy
+        working-directory: apps/backend
+        run: uv run mypy app tests --strict
+
+      - name: D4a targeted tests and historical prospect regressions
         working-directory: apps/backend
         run: >-
           uv run pytest
+          tests/domain/test_calibration.py
+          tests/services/test_calibration_exports.py
+          tests/workflows/test_calibration.py
+          tests/database/integration/test_calibration_api.py
+          tests/database/integration/test_migrations.py
           tests/domain/test_prospect_job.py
           tests/domain/test_prospect_batch_recovery.py
           tests/workflows/test_prospect_batch.py
           tests/database/integration/test_prospect_batch_api.py
+          tests/database/integration/test_discovery_task_api.py
+          tests/database/integration/test_evidence_to_draft_api.py
 
       - name: Migration consistency
         working-directory: apps/backend
-        run: uv run alembic upgrade head && uv run alembic check
+        run: >-
+          uv run alembic -x dotenv=disabled upgrade head &&
+          uv run alembic -x dotenv=disabled downgrade d3a3b4c5d6e7 &&
+          uv run alembic -x dotenv=disabled upgrade head &&
+          uv run alembic -x dotenv=disabled check
 
       - uses: actions/setup-node@v4
         with:
@@ -75,6 +90,10 @@ jobs:
       - name: Frontend TypeScript
         working-directory: apps/frontend
         run: npx tsc --noEmit
+
+      - name: Frontend ESLint
+        working-directory: apps/frontend
+        run: npm run lint
 
       - name: Frontend production build
         working-directory: apps/frontend

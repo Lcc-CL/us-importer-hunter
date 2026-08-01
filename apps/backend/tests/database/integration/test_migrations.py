@@ -82,6 +82,8 @@ EXPECTED_TABLES = {
     "import_evidence_promotion_quality_assessments",
     "importer_evidence_aggregates",
     "importer_evidence_aggregate_shipments",
+    "calibration_runs",
+    "calibration_evaluations",
 }
 
 
@@ -92,6 +94,8 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     draft_columns = asyncio.run(_column_names(migration_db_url, "email_drafts"))
     assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns
     assert "status" not in draft_columns
+    prospect_columns = asyncio.run(_column_names(migration_db_url, "prospect_batch_companies"))
+    assert {"contact_type", "stage_timings_json"} <= prospect_columns
 
     run_alembic(["downgrade", "base"], MIGRATION_DB)
     tables_after_downgrade = asyncio.run(_table_names(migration_db_url))
