@@ -17,6 +17,15 @@ class ApplicationConflictError(ApplicationError):
     """The requested operation conflicts with current domain state."""
 
 
+class EvidenceReviewIncompleteError(ApplicationConflictError):
+    """A batch company still has research claims without a human decision."""
+
+    def __init__(self, *, pending_claim_count: int) -> None:
+        super().__init__("Evidence review is incomplete")
+        self.code = "EVIDENCE_REVIEW_INCOMPLETE"
+        self.pending_claim_count = pending_claim_count
+
+
 class ProviderUnavailableError(ApplicationError):
     """An explicitly selected external provider cannot serve the request."""
 
@@ -32,6 +41,7 @@ class InvalidInputError(ApplicationError):
 __all__ = [
     "ApplicationConflictError",
     "ApplicationError",
+    "EvidenceReviewIncompleteError",
     "InvalidInputError",
     "ProviderUnavailableError",
     "ResourceNotFoundError",

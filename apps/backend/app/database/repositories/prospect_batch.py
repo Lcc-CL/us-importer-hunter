@@ -18,6 +18,14 @@ class SqlAlchemyProspectBatchRepository:
         model = await self._session.get(ProspectBatchModel, batch_id)
         return ProspectBatchMapper.to_domain(model) if model else None
 
+    async def get_by_id_for_update(self, batch_id: UUID) -> ProspectBatch | None:
+        model = await self._session.scalar(
+            select(ProspectBatchModel)
+            .where(ProspectBatchModel.id == batch_id)
+            .with_for_update()
+        )
+        return ProspectBatchMapper.to_domain(model) if model else None
+
     async def add(self, batch: ProspectBatch) -> None:
         self._session.add(ProspectBatchMapper.to_model(batch))
 

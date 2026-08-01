@@ -1,4 +1,4 @@
-"""HTTP contracts for the D2a batch prospect pipeline."""
+"""HTTP contracts for the D2 batch prospect pipeline."""
 
 from datetime import datetime
 from typing import Annotated, Self
@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.domain.prospect_batch import ProspectBatch, ProspectBatchCompany
 from app.domain.services import SenderProfile
+from app.workflows.prospect_batch import ProspectCompanyBlockers
 
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -32,6 +33,10 @@ class ProspectBatchCreateRequest(BaseModel):
 
 
 class ProspectBatchRetryRequest(BaseModel):
+    sender: BatchSenderRequest | None = None
+
+
+class ProspectBatchResumeRequest(BaseModel):
     sender: BatchSenderRequest | None = None
 
 
@@ -96,6 +101,10 @@ class ProspectBatchCompanyResponse(BaseModel):
     error_summary: str | None
     started_at: datetime | None
     completed_at: datetime | None
+    blocking_claim_count: int
+    resumed_at: datetime | None
+    resumed_from_stage: str | None
+    resume_count: int
 
     @classmethod
     def from_domain(cls, company: ProspectBatchCompany) -> Self:
@@ -129,9 +138,60 @@ class ProspectBatchCompanyResponse(BaseModel):
             error_summary=company.error_summary,
             started_at=company.started_at,
             completed_at=company.completed_at,
+            blocking_claim_count=company.blocking_claim_count,
+            resumed_at=company.resumed_at,
+            resumed_from_stage=(
+                company.resumed_from_stage.value if company.resumed_from_stage else None
+            ),
+            resume_count=company.resume_count,
         )
 
 
 class ProspectBatchCompanyListResponse(BaseModel):
     batch_id: UUID
     companies: list[ProspectBatchCompanyResponse] = Field(default_factory=list)
+
+
+class EvidenceBlockerResponse(BaseModel):
+    claim_position: int
+    status: str
+    decision: str | None
+    kind: str
+    detail: str
+    evidence_snippet: str
+    source_url: str
+    fetched_at: datetime
+    confidence: float
+
+
+class ProspectCompanyBlockersResponse(BaseModel):
+    batch_id: UUID
+    company_id: UUID
+    research_id: UUID
+    blocking_claim_count: int
+    pending_claim_count: int
+    claims: list[EvidenceBlockerResponse]
+
+    @classmethod
+    def from_workflow(cls, blockers: ProspectCompanyBlockers) -> Self:
+        return cls(
+            batch_id=blockers.batch_id,
+            company_id=blockers.company_id,
+            research_id=blockers.research_id,
+            blocking_claim_count=blockers.blocking_claim_count,
+            pending_claim_count=blockers.pending_claim_count,
+            claims=[
+                EvidenceBlockerResponse(
+                    claim_position=claim.claim_position,
+                    status=claim.status,
+                    decision=claim.decision,
+                    kind=claim.kind,
+                    detail=claim.detail,
+                    evidence_snippet=claim.evidence_snippet,
+                    source_url=claim.source_url,
+                    fetched_at=claim.fetched_at,
+                    confidence=claim.confidence,
+                )
+                for claim in blockers.claims
+            ],
+        )

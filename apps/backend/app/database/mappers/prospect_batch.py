@@ -49,6 +49,12 @@ class ProspectBatchMapper:
                     error_summary=item.error_summary,
                     started_at=item.started_at,
                     completed_at=item.completed_at,
+                    blocking_claim_count=item.blocking_claim_count,
+                    resumed_at=item.resumed_at,
+                    resumed_from_stage=(
+                        item.resumed_from_stage.value if item.resumed_from_stage else None
+                    ),
+                    resume_count=item.resume_count,
                 )
                 for item in batch.companies
             ],
@@ -87,6 +93,14 @@ class ProspectBatchMapper:
                     error_summary=item.error_summary,
                     started_at=item.started_at,
                     completed_at=item.completed_at,
+                    blocking_claim_count=item.blocking_claim_count,
+                    resumed_at=item.resumed_at,
+                    resumed_from_stage=(
+                        ProspectBatchStage(item.resumed_from_stage)
+                        if item.resumed_from_stage
+                        else None
+                    ),
+                    resume_count=item.resume_count,
                 )
                 for item in model.companies
             ],

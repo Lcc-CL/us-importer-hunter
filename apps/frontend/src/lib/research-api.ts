@@ -61,6 +61,16 @@ export interface RejectedClaim {
   warning: string;
 }
 
+export interface ResearchPromotion {
+  claim_position: number;
+  decision: ReviewDecision;
+  reviewed_at: string;
+  reviewer_name: string | null;
+  edited_detail: string | null;
+  edited_kind: ClaimKind | null;
+  applied_to_company: boolean;
+}
+
 export interface ResearchProfile {
   summary: string | null;
   industry: string | null;
@@ -94,6 +104,7 @@ export interface ResearchRun {
   profile: ResearchProfile;
   pages: ResearchPage[];
   claims: ResearchClaim[];
+  promotions: ResearchPromotion[];
   rejected_claims: RejectedClaim[];
   warnings: string[];
   /** Dimensions with no reliable evidence. Never a negative signal. */

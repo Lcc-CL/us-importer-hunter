@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { ExternalLink, Play, RefreshCw } from "lucide-react";
+import { CheckCircle2, ExternalLink, Play, RefreshCw, ShieldCheck } from "lucide-react";
 
 import {
   senderProfileServerSnapshot,
@@ -13,7 +13,9 @@ import {
   createProspectBatch,
   getClientErrorDetails,
   getProspectBatch,
+  getProspectBatchCompanyBlockers,
   getProspectBatchCompanies,
+  resumeProspectBatchCompany,
   retryProspectBatchCompany,
   type DiscoveryCompanyResponse,
   type DiscoveryTaskResponse,
@@ -21,6 +23,7 @@ import {
   type ProspectBatchCompanyStatus,
   type ProspectBatchResponse,
   type ProspectBatchSender,
+  type ProspectCompanyBlockersResponse,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -72,6 +75,29 @@ function statusTone(status: ProspectBatchCompanyStatus): string {
   return "bg-sky-100 text-sky-800";
 }
 
+async function fetchBlockers(
+  batchId: string,
+  companies: ProspectBatchCompanyResponse[],
+): Promise<Record<string, ProspectCompanyBlockersResponse>> {
+  const awaiting = companies.filter(
+    (company) =>
+      company.current_stage === "awaiting_evidence_review" && company.research_id !== null,
+  );
+  const loaded = await Promise.all(
+    awaiting.map(async (company) => {
+      try {
+        return [
+          company.company_id,
+          await getProspectBatchCompanyBlockers(batchId, company.company_id),
+        ] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return Object.fromEntries(loaded.filter((item) => item !== null));
+}
+
 export function ProspectBatchPanel({
   task,
   companies,
@@ -86,6 +112,9 @@ export function ProspectBatchPanel({
   const [batch, setBatch] = useState<ProspectBatchResponse | null>(null);
   const [results, setResults] = useState<ProspectBatchCompanyResponse[]>([]);
   const [filter, setFilter] = useState<BatchFilter>("all");
+  const [blockers, setBlockers] = useState<
+    Record<string, ProspectCompanyBlockersResponse>
+  >({});
   const [busy, setBusy] = useState(Boolean(initialBatchId));
   const [error, setError] = useState<string | null>(null);
   const storedSender = useSyncExternalStore(
@@ -106,6 +135,7 @@ export function ProspectBatchPanel({
         if (!active) return;
         setBatch(savedBatch);
         setResults(savedResults.companies);
+        setBlockers(await fetchBlockers(initialBatchId as string, savedResults.companies));
       } catch (caught: unknown) {
         if (active) setError(getClientErrorDetails(caught).message);
       } finally {
@@ -141,6 +171,7 @@ export function ProspectBatchPanel({
     ]);
     setBatch(savedBatch);
     setResults(savedResults.companies);
+    setBlockers(await fetchBlockers(batchId, savedResults.companies));
   }
 
   async function startBatch() {
@@ -180,6 +211,34 @@ export function ProspectBatchPanel({
     }
   }
 
+  async function resumeCompany(companyId: string) {
+    if (!batch || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await resumeProspectBatchCompany(
+        batch.batch_id,
+        companyId,
+        toBatchSender(storedSender),
+      );
+      await loadResults(batch.batch_id);
+    } catch (caught: unknown) {
+      const details = getClientErrorDetails(caught);
+      setError(
+        details.code === "EVIDENCE_REVIEW_INCOMPLETE"
+          ? t("batch.reviewIncomplete", {
+              count:
+                details.pending_claim_count ??
+                blockers[companyId]?.pending_claim_count ??
+                1,
+            })
+          : details.message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const terminalCount = batch
     ? batch.completed_count + batch.needs_review_count + batch.failed_count
     : 0;
@@ -199,6 +258,7 @@ export function ProspectBatchPanel({
     <div
       className="mt-6 rounded-3xl border border-indigo-200 bg-indigo-50/40 p-4 sm:p-5"
       data-testid="prospect-batch-panel"
+      id="prospect-batch-panel"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -385,7 +445,33 @@ export function ProspectBatchPanel({
                 {company.error_code ? (
                   <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
                     <p className="font-mono text-xs">{company.error_code}</p>
-                    <p className="mt-1">{company.error_summary}</p>
+                    <p className="mt-1">
+                      {company.error_code === "EVIDENCE_REVIEW_REQUIRED"
+                        ? t("batch.evidenceRequired")
+                        : company.error_summary}
+                    </p>
+                  </div>
+                ) : null}
+                {company.current_stage === "awaiting_evidence_review" ? (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                    <p className="font-semibold">{t("batch.evidenceRequired")}</p>
+                    <p className="mt-1 text-xs">
+                      {t("batch.blockingClaims", {
+                        count:
+                          blockers[company.company_id]?.pending_claim_count ??
+                          company.blocking_claim_count,
+                      })}
+                    </p>
+                  </div>
+                ) : null}
+                {company.status === "completed" ? (
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-900">
+                      {t("batch.draftAwaitingReview")}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">
+                      {t("batch.emailNotSent")}
+                    </span>
                   </div>
                 ) : null}
                 <div className="mt-3 flex flex-wrap gap-3">
@@ -404,6 +490,32 @@ export function ProspectBatchPanel({
                     >
                       {t("batch.contactSource")} <ExternalLink className="size-3.5" />
                     </a>
+                  ) : null}
+                  {company.current_stage === "awaiting_evidence_review" &&
+                  company.research_id ? (
+                    <>
+                      <a
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-800"
+                        data-testid="review-batch-evidence"
+                        href={`/?${new URLSearchParams({
+                          task_id: task.task_id,
+                          batch_id: batch.batch_id,
+                          company_id: company.company_id,
+                          research_id: company.research_id,
+                        }).toString()}#research-panel`}
+                      >
+                        <ShieldCheck className="size-3.5" /> {t("batch.reviewEvidence")}
+                      </a>
+                      <button
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-800 disabled:opacity-50"
+                        data-testid="resume-batch-company"
+                        disabled={busy}
+                        onClick={() => resumeCompany(company.company_id)}
+                        type="button"
+                      >
+                        <CheckCircle2 className="size-3.5" /> {t("batch.resume")}
+                      </button>
+                    </>
                   ) : null}
                   {(company.status === "failed" ||
                     company.status === "needs_review") &&

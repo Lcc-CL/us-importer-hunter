@@ -1,4 +1,4 @@
-"""Persistence models for D2a batch orchestration state."""
+"""Persistence models for D2 batch orchestration state."""
 
 from datetime import datetime
 from uuid import UUID
@@ -62,6 +62,14 @@ class ProspectBatchCompanyModel(Base):
     __table_args__ = (
         CheckConstraint("position >= 0", name="ck_prospect_batch_companies_position"),
         CheckConstraint(
+            "blocking_claim_count >= 0",
+            name="ck_prospect_batch_companies_blocking_claim_count",
+        ),
+        CheckConstraint(
+            "resume_count >= 0",
+            name="ck_prospect_batch_companies_resume_count",
+        ),
+        CheckConstraint(
             "current_stage IN ('queued','validating','researching','awaiting_evidence_review',"
             "'scoring','discovering_contact','generating_draft','completed','needs_review','failed')",
             name="ck_prospect_batch_companies_stage",
@@ -115,3 +123,7 @@ class ProspectBatchCompanyModel(Base):
     error_summary: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocking_claim_count: Mapped[int] = mapped_column(Integer, default=0)
+    resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resumed_from_stage: Mapped[str | None] = mapped_column(String(40))
+    resume_count: Mapped[int] = mapped_column(Integer, default=0)

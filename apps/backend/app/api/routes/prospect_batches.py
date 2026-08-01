@@ -1,4 +1,4 @@
-"""Thin HTTP adapter for D2a prospect batches."""
+"""Thin HTTP adapter for D2 prospect batches."""
 
 from typing import Any
 from uuid import UUID
@@ -12,11 +12,14 @@ from app.schemas.prospect_batch import (
     ProspectBatchCompanyResponse,
     ProspectBatchCreateRequest,
     ProspectBatchResponse,
+    ProspectBatchResumeRequest,
     ProspectBatchRetryRequest,
+    ProspectCompanyBlockersResponse,
 )
 from app.shared.exceptions import ResourceNotFoundError
 from app.workflows.prospect_batch import (
     CreateProspectBatchCommand,
+    ResumeProspectCompanyCommand,
     RetryProspectCompanyCommand,
 )
 
@@ -84,6 +87,21 @@ async def get_prospect_batch_companies(
     )
 
 
+@router.get(
+    "/prospect-batches/{batch_id}/companies/{company_id}/blockers",
+    response_model=ProspectCompanyBlockersResponse,
+    responses=ERRORS,
+)
+async def get_prospect_batch_company_blockers(
+    batch_id: UUID,
+    company_id: UUID,
+    workflow: ProspectBatchQueryDep,
+) -> ProspectCompanyBlockersResponse:
+    return ProspectCompanyBlockersResponse.from_workflow(
+        await workflow.blockers(batch_id, company_id)
+    )
+
+
 @router.post(
     "/prospect-batches/{batch_id}/companies/{company_id}/retry",
     response_model=ProspectBatchResponse,
@@ -99,5 +117,26 @@ async def retry_prospect_batch_company(
         batch_id,
         company_id,
         RetryProspectCompanyCommand(sender=payload.sender.to_domain() if payload.sender else None),
+    )
+    return ProspectBatchResponse.from_domain(batch)
+
+
+@router.post(
+    "/prospect-batches/{batch_id}/companies/{company_id}/resume",
+    response_model=ProspectBatchResponse,
+    responses=ERRORS,
+)
+async def resume_prospect_batch_company(
+    batch_id: UUID,
+    company_id: UUID,
+    payload: ProspectBatchResumeRequest,
+    workflow: ProspectBatchWorkflowDep,
+) -> ProspectBatchResponse:
+    batch = await workflow.resume(
+        batch_id,
+        company_id,
+        ResumeProspectCompanyCommand(
+            sender=payload.sender.to_domain() if payload.sender else None
+        ),
     )
     return ProspectBatchResponse.from_domain(batch)

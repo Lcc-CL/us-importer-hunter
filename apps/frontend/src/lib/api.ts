@@ -141,11 +141,36 @@ export interface ProspectBatchCompanyResponse {
   error_summary: string | null;
   started_at: string | null;
   completed_at: string | null;
+  blocking_claim_count: number;
+  resumed_at: string | null;
+  resumed_from_stage: string | null;
+  resume_count: number;
 }
 
 export interface ProspectBatchCompanyListResponse {
   batch_id: string;
   companies: ProspectBatchCompanyResponse[];
+}
+
+export interface EvidenceBlockerResponse {
+  claim_position: number;
+  status: "pending" | "accepted" | "rejected";
+  decision: "accepted" | "edited" | "rejected" | null;
+  kind: string;
+  detail: string;
+  evidence_snippet: string;
+  source_url: string;
+  fetched_at: string;
+  confidence: number;
+}
+
+export interface ProspectCompanyBlockersResponse {
+  batch_id: string;
+  company_id: string;
+  research_id: string;
+  blocking_claim_count: number;
+  pending_claim_count: number;
+  claims: EvidenceBlockerResponse[];
 }
 
 export interface ProspectBatchSender {
@@ -445,12 +470,14 @@ export interface ApiErrorPayload {
   code: string;
   message: string;
   request_id: string;
+  pending_claim_count?: number;
 }
 
 export interface ClientErrorDetails {
   code: string;
   message: string;
   request_id: string | null;
+  pending_claim_count?: number;
 }
 
 export class ApiError extends Error {
@@ -645,6 +672,29 @@ export function retryProspectBatchCompany(
 ): Promise<ProspectBatchResponse> {
   return requestJson<ProspectBatchResponse>(
     `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/retry`,
+    {
+      method: "POST",
+      body: JSON.stringify({ sender }),
+    },
+  );
+}
+
+export function getProspectBatchCompanyBlockers(
+  batchId: string,
+  companyId: string,
+): Promise<ProspectCompanyBlockersResponse> {
+  return requestJson<ProspectCompanyBlockersResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/blockers`,
+  );
+}
+
+export function resumeProspectBatchCompany(
+  batchId: string,
+  companyId: string,
+  sender?: ProspectBatchSender,
+): Promise<ProspectBatchResponse> {
+  return requestJson<ProspectBatchResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/companies/${encodeURIComponent(companyId)}/resume`,
     {
       method: "POST",
       body: JSON.stringify({ sender }),

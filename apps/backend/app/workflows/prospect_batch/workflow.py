@@ -1,8 +1,9 @@
-"""Synchronous, persistent D2a orchestration for at most five companies."""
+"""Synchronous, persistent D2 orchestration for at most five companies."""
 
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -17,7 +18,7 @@ from app.domain.prospect_batch import (
     ProspectBatchStage,
 )
 from app.domain.repositories import ProspectBatchUnitOfWork
-from app.domain.research import OutputLanguage, ResearchRun
+from app.domain.research import OutputLanguage, PromotionDecision, ResearchRun
 from app.domain.services import SenderProfile
 from app.domain.values import QualificationDecision, SourceReference
 from app.services.contact_discovery import DiscoverySourceType, department_display_name
@@ -25,6 +26,7 @@ from app.services.contact_discovery_runner import ContactDiscoveryRunOutcome
 from app.services.email import EmailGenerationError
 from app.shared.exceptions import (
     ApplicationConflictError,
+    EvidenceReviewIncompleteError,
     InvalidInputError,
     ResourceNotFoundError,
 )
@@ -71,6 +73,34 @@ class CreateProspectBatchCommand:
 @dataclass(frozen=True)
 class RetryProspectCompanyCommand:
     sender: SenderProfile | None = None
+
+
+@dataclass(frozen=True)
+class ResumeProspectCompanyCommand:
+    sender: SenderProfile | None = None
+
+
+@dataclass(frozen=True)
+class EvidenceBlocker:
+    claim_position: int
+    status: str
+    decision: str | None
+    kind: str
+    detail: str
+    evidence_snippet: str
+    source_url: str
+    fetched_at: datetime
+    confidence: float
+
+
+@dataclass(frozen=True)
+class ProspectCompanyBlockers:
+    batch_id: UUID
+    company_id: UUID
+    research_id: UUID
+    blocking_claim_count: int
+    pending_claim_count: int
+    claims: tuple[EvidenceBlocker, ...]
 
 
 class ResearchPort(Protocol):
@@ -220,8 +250,9 @@ class ProspectBatchWorkflow:
         company_id: UUID,
         command: RetryProspectCompanyCommand,
     ) -> ProspectBatch:
+        reuse_research_id: UUID | None = None
         async with self._uow_factory() as uow:
-            batch = await uow.prospect_batches.get_by_id(batch_id)
+            batch = await uow.prospect_batches.get_by_id_for_update(batch_id)
             if batch is None:
                 raise ResourceNotFoundError(f"prospect batch not found: {batch_id}")
             try:
@@ -237,19 +268,114 @@ class ProspectBatchWorkflow:
                 raise ApplicationConflictError(
                     f"company in {company.status.value} cannot be retried"
                 )
+            run = (
+                await uow.research_runs.get_by_id(company.research_id)
+                if company.research_id is not None
+                else None
+            )
+            pending_claim_count = _pending_claim_count(run) if run is not None else 0
+            if pending_claim_count:
+                raise EvidenceReviewIncompleteError(
+                    pending_claim_count=pending_claim_count
+                )
             if company.error_code not in RETRYABLE_ERROR_CODES:
                 raise ApplicationConflictError(
                     f"company error {company.error_code or 'unknown'} requires review, not retry"
                 )
+            if company.error_code not in {
+                "WEBSITE_MISSING",
+                "WEBSITE_INVALID",
+                "RESEARCH_FAILED",
+                "RESEARCH_INCOMPLETE",
+            }:
+                reuse_research_id = company.research_id
             batch.replace_company(company.retry())
             batch.start()
             await uow.prospect_batches.save(batch)
             await uow.commit()
 
         try:
-            await self._process_company(batch_id, company_id, command.sender)
+            if reuse_research_id is None:
+                await self._process_company(batch_id, company_id, command.sender)
+            else:
+                run = await self._get_research(reuse_research_id)
+                if run is None:
+                    raise ResourceNotFoundError(
+                        f"research run not found: {reuse_research_id}"
+                    )
+                await self._process_after_research(
+                    batch_id,
+                    company_id,
+                    run,
+                    command.sender,
+                    resumed_after_review=False,
+                )
         except Exception as exc:
             logger.exception("prospect batch retry failed unexpectedly")
+            await self._terminal(
+                batch_id,
+                company_id,
+                failed=True,
+                code="PIPELINE_UNEXPECTED_ERROR",
+                summary=str(exc) or type(exc).__name__,
+            )
+        await self._finalize(batch_id)
+        return await self._require_batch(batch_id)
+
+    async def resume(
+        self,
+        batch_id: UUID,
+        company_id: UUID,
+        command: ResumeProspectCompanyCommand,
+    ) -> ProspectBatch:
+        async with self._uow_factory() as uow:
+            batch = await uow.prospect_batches.get_by_id_for_update(batch_id)
+            if batch is None:
+                raise ResourceNotFoundError(f"prospect batch not found: {batch_id}")
+            try:
+                company = batch.company(company_id)
+            except Exception as exc:
+                raise ResourceNotFoundError(
+                    f"company {company_id} is not in prospect batch {batch_id}"
+                ) from exc
+            if (
+                company.status is not ProspectBatchCompanyStatus.NEEDS_REVIEW
+                or company.current_stage is not ProspectBatchStage.AWAITING_EVIDENCE_REVIEW
+                or company.error_code != "EVIDENCE_REVIEW_REQUIRED"
+            ):
+                raise ApplicationConflictError(
+                    f"company in {company.current_stage.value} cannot be resumed"
+                )
+            if company.research_id is None:
+                raise ApplicationConflictError(
+                    "awaiting evidence review company has no saved research run"
+                )
+            run = await uow.research_runs.get_by_id(company.research_id)
+            if run is None:
+                raise ResourceNotFoundError(
+                    f"research run not found: {company.research_id}"
+                )
+            pending_claim_count = _pending_claim_count(run)
+            if pending_claim_count:
+                raise EvidenceReviewIncompleteError(
+                    pending_claim_count=pending_claim_count
+                )
+
+            batch.replace_company(company.resume_after_evidence_review())
+            batch.start()
+            await uow.prospect_batches.save(batch)
+            await uow.commit()
+
+        try:
+            await self._process_after_research(
+                batch_id,
+                company_id,
+                run,
+                command.sender,
+                resumed_after_review=True,
+            )
+        except Exception as exc:
+            logger.exception("prospect batch resume failed unexpectedly")
             await self._terminal(
                 batch_id,
                 company_id,
@@ -316,14 +442,12 @@ class ProspectBatchWorkflow:
                 ),
             )
             return
-        if run.claims_validated > 0 and not run.promotions:
-            await self._terminal(
+        pending_claim_count = _pending_claim_count(run)
+        if pending_claim_count:
+            await self._await_evidence_review(
                 batch_id,
                 company_id,
-                failed=False,
-                code="EVIDENCE_REVIEW_REQUIRED",
-                summary="research claims were saved and require human confirmation",
-                stage=ProspectBatchStage.AWAITING_EVIDENCE_REVIEW,
+                blocking_claim_count=pending_claim_count,
             )
             return
         if research.action is ResearchAction.PARTIAL and run.claims_validated == 0:
@@ -338,6 +462,23 @@ class ProspectBatchWorkflow:
             )
             return
 
+        await self._process_after_research(
+            batch_id,
+            company_id,
+            run,
+            sender,
+            resumed_after_review=False,
+        )
+
+    async def _process_after_research(
+        self,
+        batch_id: UUID,
+        company_id: UUID,
+        run: ResearchRun,
+        sender: SenderProfile | None,
+        *,
+        resumed_after_review: bool,
+    ) -> None:
         await self._stage(batch_id, company_id, ProspectBatchStage.SCORING)
         try:
             opportunity = await self._opportunity.handle(
@@ -391,8 +532,16 @@ class ProspectBatchWorkflow:
                 batch_id,
                 company_id,
                 failed=False,
-                code="OPPORTUNITY_NOT_QUALIFIED",
-                summary="opportunity requires more evidence or human review before outreach",
+                code=(
+                    "INSUFFICIENT_TRUSTED_EVIDENCE"
+                    if resumed_after_review
+                    else "OPPORTUNITY_NOT_QUALIFIED"
+                ),
+                summary=(
+                    "reviewed evidence is still insufficient for qualified outreach"
+                    if resumed_after_review
+                    else "opportunity requires more evidence or human review before outreach"
+                ),
             )
             return
 
@@ -622,6 +771,21 @@ class ProspectBatchWorkflow:
             lambda _batch, item: item.move_to(stage),
         )
 
+    async def _await_evidence_review(
+        self,
+        batch_id: UUID,
+        company_id: UUID,
+        *,
+        blocking_claim_count: int,
+    ) -> None:
+        await self._mutate(
+            batch_id,
+            company_id,
+            lambda _batch, item: item.await_evidence_review(
+                blocking_claim_count=blocking_claim_count
+            ),
+        )
+
     async def _terminal(
         self,
         batch_id: UUID,
@@ -681,3 +845,69 @@ class ProspectBatchQueryWorkflow:
     async def get(self, batch_id: UUID) -> ProspectBatch | None:
         async with self._uow_factory() as uow:
             return await uow.prospect_batches.get_by_id(batch_id)
+
+    async def blockers(
+        self, batch_id: UUID, company_id: UUID
+    ) -> ProspectCompanyBlockers:
+        async with self._uow_factory() as uow:
+            batch = await uow.prospect_batches.get_by_id(batch_id)
+            if batch is None:
+                raise ResourceNotFoundError(f"prospect batch not found: {batch_id}")
+            try:
+                company = batch.company(company_id)
+            except Exception as exc:
+                raise ResourceNotFoundError(
+                    f"company {company_id} is not in prospect batch {batch_id}"
+                ) from exc
+            if company.research_id is None:
+                raise ResourceNotFoundError(
+                    f"company {company_id} has no saved research run"
+                )
+            run = await uow.research_runs.get_by_id(company.research_id)
+        if run is None:
+            raise ResourceNotFoundError(
+                f"research run not found: {company.research_id}"
+            )
+
+        promotions = {item.claim_position: item for item in run.promotions}
+        pages = {item.position: item for item in run.pages}
+        claims: list[EvidenceBlocker] = []
+        for claim in run.claims:
+            promotion = promotions.get(claim.position)
+            page = pages[claim.source_page_position]
+            if promotion is None:
+                review_status = "pending"
+                decision = None
+            elif promotion.decision is PromotionDecision.REJECTED:
+                review_status = "rejected"
+                decision = promotion.decision.value
+            else:
+                review_status = "accepted"
+                decision = promotion.decision.value
+            claims.append(
+                EvidenceBlocker(
+                    claim_position=claim.position,
+                    status=review_status,
+                    decision=decision,
+                    kind=claim.kind,
+                    detail=claim.detail,
+                    evidence_snippet=claim.evidence_snippet,
+                    source_url=page.final_url,
+                    fetched_at=page.fetched_at,
+                    confidence=claim.confidence,
+                )
+            )
+        pending_claim_count = sum(item.status == "pending" for item in claims)
+        return ProspectCompanyBlockers(
+            batch_id=batch.id,
+            company_id=company.company_id,
+            research_id=run.id,
+            blocking_claim_count=company.blocking_claim_count,
+            pending_claim_count=pending_claim_count,
+            claims=tuple(claims),
+        )
+
+
+def _pending_claim_count(run: ResearchRun) -> int:
+    reviewed_positions = {promotion.claim_position for promotion in run.promotions}
+    return sum(claim.position not in reviewed_positions for claim in run.claims)

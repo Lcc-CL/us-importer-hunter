@@ -1,4 +1,4 @@
-"""Batch state for the D2a five-company prospect pipeline.
+"""Batch state for the D2 five-company prospect pipeline.
 
 The aggregate stores orchestration progress and references existing Company,
 Research, Opportunity, Contact and Outreach aggregates by id. It does not
@@ -80,6 +80,10 @@ class ProspectBatchCompany:
     error_summary: str | None
     started_at: datetime | None
     completed_at: datetime | None
+    blocking_claim_count: int = 0
+    resumed_at: datetime | None = None
+    resumed_from_stage: ProspectBatchStage | None = None
+    resume_count: int = 0
 
     def __post_init__(self) -> None:
         if self.position < 0:
@@ -88,6 +92,10 @@ class ProspectBatchCompany:
             raise DomainError("batch company requires a name snapshot")
         if not self.pipeline_version.strip():
             raise DomainError("batch company requires a pipeline version")
+        if self.blocking_claim_count < 0:
+            raise DomainError("blocking_claim_count must be nonnegative")
+        if self.resume_count < 0:
+            raise DomainError("resume_count must be nonnegative")
 
     @classmethod
     def queued(
@@ -117,6 +125,10 @@ class ProspectBatchCompany:
             error_summary=None,
             started_at=None,
             completed_at=None,
+            blocking_claim_count=0,
+            resumed_at=None,
+            resumed_from_stage=None,
+            resume_count=0,
         )
 
     def move_to(self, stage: ProspectBatchStage) -> "ProspectBatchCompany":
@@ -131,6 +143,7 @@ class ProspectBatchCompany:
             started_at=self.started_at or utcnow(),
             error_code=None,
             error_summary=None,
+            completed_at=None,
         )
 
     def with_research(self, research_id: UUID) -> "ProspectBatchCompany":
@@ -196,6 +209,20 @@ class ProspectBatchCompany:
             completed_at=utcnow(),
         )
 
+    def await_evidence_review(self, *, blocking_claim_count: int) -> "ProspectBatchCompany":
+        if blocking_claim_count < 1:
+            raise DomainError("evidence review requires at least one blocking claim")
+        return dataclasses.replace(
+            self,
+            current_stage=ProspectBatchStage.AWAITING_EVIDENCE_REVIEW,
+            status=ProspectBatchCompanyStatus.NEEDS_REVIEW,
+            error_code="EVIDENCE_REVIEW_REQUIRED",
+            error_summary="research claims were saved and require human confirmation",
+            started_at=self.started_at or utcnow(),
+            completed_at=utcnow(),
+            blocking_claim_count=blocking_claim_count,
+        )
+
     def needs_review(
         self,
         *,
@@ -241,6 +268,28 @@ class ProspectBatchCompany:
             error_code=None,
             error_summary=None,
             completed_at=None,
+        )
+
+    def resume_after_evidence_review(self) -> "ProspectBatchCompany":
+        if (
+            self.status is not ProspectBatchCompanyStatus.NEEDS_REVIEW
+            or self.current_stage is not ProspectBatchStage.AWAITING_EVIDENCE_REVIEW
+            or self.error_code != "EVIDENCE_REVIEW_REQUIRED"
+        ):
+            raise InvalidStateTransition(
+                "only an awaiting_evidence_review company can be resumed"
+            )
+        now = utcnow()
+        return dataclasses.replace(
+            self,
+            current_stage=ProspectBatchStage.SCORING,
+            status=ProspectBatchCompanyStatus.RUNNING,
+            error_code=None,
+            error_summary=None,
+            completed_at=None,
+            resumed_at=now,
+            resumed_from_stage=self.current_stage,
+            resume_count=self.resume_count + 1,
         )
 
 

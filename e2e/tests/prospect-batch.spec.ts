@@ -117,6 +117,10 @@ const batchCompanies = {
       error_summary: null,
       started_at: "2026-07-31T12:01:01Z",
       completed_at: "2026-07-31T12:01:08Z",
+      blocking_claim_count: 0,
+      resumed_at: null,
+      resumed_from_stage: null,
+      resume_count: 0,
     },
     {
       company_id: REVIEW_COMPANY_ID,
@@ -143,6 +147,10 @@ const batchCompanies = {
       error_summary: "research claims were saved and require human confirmation",
       started_at: "2026-07-31T12:01:08Z",
       completed_at: "2026-07-31T12:01:12Z",
+      blocking_claim_count: 1,
+      resumed_at: null,
+      resumed_from_stage: null,
+      resume_count: 0,
     },
   ],
 };
@@ -200,10 +208,38 @@ async function stubBatchApi(page: Page) {
       body: JSON.stringify(batchCompanies),
     }),
   );
+  await page.route(
+    `**/api/v1/prospect-batches/${BATCH_ID}/companies/${REVIEW_COMPANY_ID}/blockers`,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          batch_id: BATCH_ID,
+          company_id: REVIEW_COMPANY_ID,
+          research_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          blocking_claim_count: 1,
+          pending_claim_count: 1,
+          claims: [
+            {
+              claim_position: 0,
+              status: "pending",
+              decision: null,
+              kind: "shipping_fit",
+              detail: "Website mentions ocean freight",
+              evidence_snippet: "ocean freight",
+              source_url: "https://harbor.example",
+              fetched_at: "2026-07-31T12:01:10Z",
+              confidence: 0.8,
+            },
+          ],
+        }),
+      }),
+  );
   return { postedBody: () => postedBody };
 }
 
-test("D2a selection, results, filters, and refresh recovery", async ({ page }) => {
+test("D2 selection, results, filters, and refresh recovery", async ({ page }) => {
   const guard = attachConsoleGuard(page);
   const captured = await stubBatchApi(page);
   await page.goto(`/?task_id=${TASK_ID}`);
@@ -264,4 +300,296 @@ test("D2a selection, results, filters, and refresh recovery", async ({ page }) =
 
   expect(guard.duplicateKeyWarnings()).toEqual([]);
   expect(guard.problems()).toEqual([]);
+});
+
+test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ page }) => {
+  const guard = attachConsoleGuard(page);
+  const researchId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  let reviewed = false;
+  const currentBatch = structuredClone(batch) as {
+    status: string;
+    completed_count: number;
+    needs_review_count: number;
+    error_summary: string | null;
+    [key: string]: unknown;
+  };
+  const currentCompanies = structuredClone(batchCompanies) as {
+    companies: Array<{
+      current_stage: string;
+      status: string;
+      opportunity_id: string | null;
+      selected_contact_id: string | null;
+      outreach_id: string | null;
+      draft_version: number | null;
+      draft_id: string | null;
+      score: number | null;
+      qualification_decision: string | null;
+      contact_name: string | null;
+      contact_email: string | null;
+      draft_subject: string | null;
+      draft_status: string | null;
+      error_code: string | null;
+      error_summary: string | null;
+      resumed_at: string | null;
+      resumed_from_stage: string | null;
+      resume_count: number;
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "sender_profile_v1",
+      JSON.stringify({
+        sender_name: "Alex Morgan",
+        sender_company: "Harbor Bridge Logistics",
+        value_proposition: "We simplify Asia-to-US freight.",
+      }),
+    );
+  });
+  await page.route("**/api/v1/health/runtime", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: "fake",
+        model: "fake-static-v1",
+        research_provider: "fake",
+        research_model: "fake-research-v1",
+        environment: "test",
+      }),
+    }),
+  );
+  await page.route(`**/api/v1/discovery-tasks/${TASK_ID}`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(task) }),
+  );
+  await page.route(`**/api/v1/discovery-tasks/${TASK_ID}/companies`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(companies),
+    }),
+  );
+  await page.route(`**/api/v1/prospect-batches/${BATCH_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(currentBatch),
+    }),
+  );
+  await page.route(`**/api/v1/prospect-batches/${BATCH_ID}/companies`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(currentCompanies),
+    }),
+  );
+  await page.route(
+    `**/api/v1/prospect-batches/${BATCH_ID}/companies/${REVIEW_COMPANY_ID}/blockers`,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          batch_id: BATCH_ID,
+          company_id: REVIEW_COMPANY_ID,
+          research_id: researchId,
+          blocking_claim_count: 1,
+          pending_claim_count: reviewed ? 0 : 1,
+          claims: [
+            {
+              claim_position: 0,
+              status: reviewed ? "accepted" : "pending",
+              decision: reviewed ? "accepted" : null,
+              kind: "shipping_fit",
+              detail: "Website mentions ocean freight",
+              evidence_snippet: "ocean freight",
+              source_url: "https://harbor.example",
+              fetched_at: "2026-07-31T12:01:10Z",
+              confidence: 0.8,
+            },
+          ],
+        }),
+      }),
+  );
+  await page.route(
+    `**/api/v1/prospect-batches/${BATCH_ID}/companies/${REVIEW_COMPANY_ID}/resume`,
+    (route) => {
+      if (!reviewed) {
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "EVIDENCE_REVIEW_INCOMPLETE",
+            message: "Evidence review is incomplete",
+            pending_claim_count: 1,
+            request_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          }),
+        });
+      }
+      currentBatch.status = "completed";
+      currentBatch.completed_count = 2;
+      currentBatch.needs_review_count = 0;
+      currentBatch.error_summary = null;
+      const company = currentCompanies.companies[1];
+      company.current_stage = "completed";
+      company.status = "completed";
+      company.opportunity_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+      company.selected_contact_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+      company.outreach_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+      company.draft_version = 1;
+      company.draft_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee:1";
+      company.score = 74;
+      company.qualification_decision = "qualified";
+      company.contact_name = "Purchasing Team";
+      company.contact_email = "purchasing@harbor.example";
+      company.draft_subject = "Freight support for Harbor Supply";
+      company.draft_status = "generated";
+      company.error_code = null;
+      company.error_summary = null;
+      company.resumed_at = "2026-07-31T12:05:00Z";
+      company.resumed_from_stage = "awaiting_evidence_review";
+      company.resume_count = 1;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentBatch),
+      });
+    },
+  );
+  await page.route(`**/api/v1/research/runs/${researchId}/confirm`, (route) => {
+    reviewed = true;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        research_id: researchId,
+        action: "applied",
+        company_id: REVIEW_COMPANY_ID,
+        summary: { accepted: 1, edited: 0, rejected: 0, total: 1 },
+        promotions: [
+          {
+            claim_position: 0,
+            decision: "accepted",
+            kind: "shipping_fit",
+            detail: "Website mentions ocean freight",
+            company_source_position: 1,
+            company_signal_position: 1,
+            source_reused: false,
+            idempotent: false,
+          },
+        ],
+        application_payload: null,
+        warnings: [],
+      }),
+    });
+  });
+  await page.route(`**/api/v1/research/runs/${researchId}`, (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        research_id: researchId,
+        company_id: REVIEW_COMPANY_ID,
+        company_name: "Harbor Supply",
+        website: "https://harbor.example",
+        status: "completed",
+        failure_code: null,
+        started_at: "2026-07-31T12:01:08Z",
+        completed_at: "2026-07-31T12:01:12Z",
+        pages_fetched: 1,
+        pages_failed: 0,
+        claims_extracted: 1,
+        claims_validated: 1,
+        extractor: {
+          provider: "fake",
+          model: "fake-research-v1",
+          prompt_version: "test-v1",
+        },
+        profile: {
+          summary: "Industrial supply importer",
+          industry: "industrial supply",
+          products: ["hardware"],
+          locations: ["US"],
+          size_hint: null,
+          year_founded: null,
+          mentions_importing: true,
+        },
+        pages: [
+          {
+            position: 0,
+            url: "https://harbor.example",
+            final_url: "https://harbor.example",
+            http_status: 200,
+            content_type: "text/html",
+            fetched_at: "2026-07-31T12:01:10Z",
+            content_chars: 120,
+            truncated: false,
+            discovery_reason: "homepage",
+          },
+        ],
+        claims: [
+          {
+            position: 0,
+            kind: "shipping_fit",
+            detail: "Website mentions ocean freight",
+            evidence_snippet: "ocean freight",
+            source_url: "https://harbor.example",
+            confidence: 0.8,
+          },
+        ],
+        promotions: reviewed
+          ? [
+              {
+                claim_position: 0,
+                decision: "accepted",
+                reviewed_at: "2026-07-31T12:04:00Z",
+                reviewer_name: "reviewer",
+                edited_detail: null,
+                edited_kind: null,
+                applied_to_company: true,
+              },
+            ]
+          : [],
+        rejected_claims: [],
+        warnings: [],
+        unknown_dimensions: [],
+        output_language: "zh-CN",
+      }),
+    });
+  });
+
+  await page.goto(`/?task_id=${TASK_ID}&batch_id=${BATCH_ID}`);
+  const panel = page.getByTestId("prospect-batch-panel");
+  await expect(panel.getByTestId("batch-company-needs_review")).toBeVisible();
+  await panel.getByTestId("resume-batch-company").click();
+  await expect(page.getByText("仍有 1 条证据未审核，请先完成接受或拒绝。")).toBeVisible();
+
+  await panel.getByTestId("review-batch-evidence").click();
+  await expect(page).toHaveURL(new RegExp(`research_id=${researchId}`));
+  await expect(page.getByTestId("research-claim-0")).toBeVisible();
+  await page.getByTestId("accept-0").click();
+  await page.getByTestId("research-confirm").click();
+  await expect(page.getByTestId("batch-evidence-review-complete")).toBeVisible();
+  await page.getByRole("link", { name: "返回批量结果" }).click();
+
+  await expect(panel.getByTestId("batch-company-needs_review")).toBeVisible();
+  await panel.getByTestId("resume-batch-company").click();
+  await expect(panel.getByTestId("batch-company-completed")).toHaveCount(2);
+  await expect(page.getByText("草稿待审核").last()).toBeVisible();
+  await expect(page.getByText("没有发送邮件").last()).toBeVisible();
+
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByTestId("batch-company-completed")).toHaveCount(2);
+  await expect(page.getByText("Freight support for Harbor Supply")).toBeVisible();
+  expect(guard.duplicateKeyWarnings()).toEqual([]);
+  expect(
+    guard
+      .problems()
+      .filter(
+        (problem) =>
+          !/^\[console\.error\] Failed to load resource:.*409 \(Conflict\)$/i.test(problem),
+      ),
+  ).toEqual([]);
 });

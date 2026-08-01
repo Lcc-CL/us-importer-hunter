@@ -1,4 +1,4 @@
-"""D2a batch orchestration tests with deterministic, zero-network fakes."""
+"""D2 batch orchestration tests with deterministic, zero-network fakes."""
 
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -15,9 +15,10 @@ from app.domain.discovery import (
 )
 from app.domain.events import CompanyFactsChanged, ContactCandidateDiscovered
 from app.domain.prospect_batch import ProspectBatch, ProspectBatchCompanyStatus
-from app.domain.repositories import ProspectBatchUnitOfWork
+from app.domain.repositories import ProspectBatchUnitOfWork, UnitOfWork
 from app.domain.research import (
     ExtractorIdentity,
+    PromotionDecision,
     ResearchClaim,
     ResearchPage,
     ResearchProfile,
@@ -32,7 +33,11 @@ from app.services.contact_discovery import (
     RankedContact,
 )
 from app.services.contact_discovery_runner import ContactDiscoveryRunOutcome
-from app.shared.exceptions import ApplicationConflictError, InvalidInputError
+from app.shared.exceptions import (
+    ApplicationConflictError,
+    EvidenceReviewIncompleteError,
+    InvalidInputError,
+)
 from app.workflows.contact_ingestion import ContactIngestionAction, ContactIngestionOutcome
 from app.workflows.decision_maker import (
     DecisionMakerSelectionAction,
@@ -45,13 +50,18 @@ from app.workflows.opportunity import (
 )
 from app.workflows.prospect_batch import (
     CreateProspectBatchCommand,
+    ProspectBatchQueryWorkflow,
     ProspectBatchWorkflow,
+    ResumeProspectCompanyCommand,
     RetryProspectCompanyCommand,
 )
 from app.workflows.research import (
+    ClaimDecision,
+    ClaimPromotionWorkflow,
     ResearchAction,
     ResearchOutcome,
     ResearchRequest,
+    ReviewRequest,
 )
 
 NOW = datetime(2026, 7, 31, tzinfo=UTC)
@@ -69,6 +79,9 @@ class FakeCompanyRepository:
     async def get_by_id(self, company_id: UUID) -> Company | None:
         return self.items.get(company_id)
 
+    async def save(self, company: Company) -> None:
+        self.items[company.id] = company
+
 
 class FakeDiscoveryTaskRepository:
     def __init__(self, tasks: dict[UUID, DiscoveryTask]) -> None:
@@ -84,6 +97,9 @@ class FakeProspectBatchRepository:
         self.completed: set[tuple[UUID, UUID, str]] = set()
 
     async def get_by_id(self, batch_id: UUID) -> ProspectBatch | None:
+        return self.items.get(batch_id)
+
+    async def get_by_id_for_update(self, batch_id: UUID) -> ProspectBatch | None:
         return self.items.get(batch_id)
 
     async def add(self, batch: ProspectBatch) -> None:
@@ -110,6 +126,9 @@ class FakeResearchRepository:
 
     async def get_by_id(self, research_id: UUID) -> ResearchRun | None:
         return self.items.get(research_id)
+
+    async def save(self, run: ResearchRun) -> None:
+        self.items[run.id] = run
 
 
 class FakeUnitOfWork:
@@ -149,6 +168,7 @@ class FakeResearchWorkflow:
         self.repository = repository
         self.calls: list[UUID] = []
         self.claim_companies: set[UUID] = set()
+        self.claim_counts: dict[UUID, int] = {}
         self.fail_companies: set[UUID] = set()
 
     async def handle(self, request: ResearchRequest) -> ResearchOutcome:
@@ -156,10 +176,11 @@ class FakeResearchWorkflow:
         self.calls.append(request.company_id)
         if request.company_id in self.fail_companies:
             raise RuntimeError("research fixture failure")
-        run = _research_run(
+        claim_count = self.claim_counts.get(
             request.company_id,
-            with_claim=request.company_id in self.claim_companies,
+            1 if request.company_id in self.claim_companies else 0,
         )
+        run = _research_run(request.company_id, claim_count=claim_count)
         self.repository.items[run.id] = run
         return ResearchOutcome(
             action=ResearchAction.COMPLETED,
@@ -172,9 +193,12 @@ class FakeResearchWorkflow:
 
 
 class FakeOpportunityWorkflow:
-    def __init__(self) -> None:
+    def __init__(self, companies: dict[UUID, Company]) -> None:
+        self._companies = companies
         self.calls: list[UUID] = []
         self.decisions: dict[UUID, str] = {}
+        self.opportunity_ids: dict[UUID, UUID] = {}
+        self.signals_at_call: list[tuple[str, ...]] = []
 
     async def handle(
         self,
@@ -186,11 +210,12 @@ class FakeOpportunityWorkflow:
         del user_id, user_lens_version
         company_id = event.company_id
         self.calls.append(company_id)
+        self.signals_at_call.append(self._companies[company_id].signals)
         decision = self.decisions.get(company_id, "qualified")
         return OpportunityProcessingOutcome(
             action=OpportunityProcessingAction.CREATED,
             company_id=company_id,
-            opportunity_id=uuid4(),
+            opportunity_id=self.opportunity_ids.setdefault(company_id, uuid4()),
             score=72.5,
             confidence=0.8,
             qualification_decision=decision,
@@ -233,16 +258,24 @@ class FakeContactDiscovery:
 
 
 class FakeContactIngestion:
+    def __init__(self) -> None:
+        self.contact_ids: dict[UUID, UUID] = {}
+        self.calls = 0
+
     async def handle(self, event: ContactCandidateDiscovered) -> ContactIngestionOutcome:
+        self.calls += 1
         candidate = event.candidate
         return ContactIngestionOutcome(
             action=ContactIngestionAction.CREATED,
             company_id=candidate.company_id,
-            contact_id=uuid4(),
+            contact_id=self.contact_ids.setdefault(candidate.company_id, uuid4()),
         )
 
 
 class FakeDecisionMaker:
+    def __init__(self) -> None:
+        self.contact_ids: dict[UUID, UUID] = {}
+
     async def handle(
         self, *, company_id: UUID, opportunity_id: UUID
     ) -> DecisionMakerSelectionOutcome:
@@ -250,23 +283,27 @@ class FakeDecisionMaker:
             action=DecisionMakerSelectionAction.SELECTED,
             company_id=company_id,
             opportunity_id=opportunity_id,
-            selected_contact_id=uuid4(),
+            selected_contact_id=self.contact_ids.setdefault(company_id, uuid4()),
         )
 
 
 class FakeEmailDraft:
     def __init__(self) -> None:
         self.calls = 0
+        self.fail = False
+        self.outreach_ids: dict[UUID, UUID] = {}
 
     async def handle(
         self, *, opportunity_id: UUID, contact_id: UUID, sender: SenderProfile
     ) -> EmailDraftOutcome:
         del contact_id, sender
         self.calls += 1
+        if self.fail:
+            raise RuntimeError("draft fixture failure")
         return EmailDraftOutcome(
             action=EmailDraftAction.GENERATED,
             opportunity_id=opportunity_id,
-            outreach_id=uuid4(),
+            outreach_id=self.outreach_ids.setdefault(opportunity_id, uuid4()),
             draft_version=1,
             subject="A real review-only draft",
             body="Hello Maria,",
@@ -342,8 +379,10 @@ class Fixture:
             research_runs=self.research_repository,
         )
         self.research = FakeResearchWorkflow(self.research_repository)
-        self.opportunity = FakeOpportunityWorkflow()
+        self.opportunity = FakeOpportunityWorkflow(self.companies)
         self.contacts = FakeContactDiscovery()
+        self.contact_ingestion = FakeContactIngestion()
+        self.decision_maker = FakeDecisionMaker()
         self.email = FakeEmailDraft()
         self.workflow = ProspectBatchWorkflow(
             uow_factory=cast(
@@ -353,8 +392,8 @@ class Fixture:
             research=self.research,
             opportunity=self.opportunity,
             contact_discovery=self.contacts,
-            contact_ingestion=FakeContactIngestion(),
-            decision_maker=FakeDecisionMaker(),
+            contact_ingestion=self.contact_ingestion,
+            decision_maker=self.decision_maker,
             email_draft=self.email,
         )
 
@@ -363,7 +402,7 @@ class Fixture:
         return tuple(self.companies)
 
 
-def _research_run(company_id: UUID, *, with_claim: bool) -> ResearchRun:
+def _research_run(company_id: UUID, *, claim_count: int) -> ResearchRun:
     run = ResearchRun.start(
         "Fixture Company",
         "https://fixture.example",
@@ -388,21 +427,42 @@ def _research_run(company_id: UUID, *, with_claim: bool) -> ResearchRun:
             model="fake-research-v1",
             prompt_version="test-v1",
         ),
-        proposed_count=1 if with_claim else 0,
+        proposed_count=claim_count,
     )
-    if with_claim:
+    claim_specs = (
+        ("shipping_fit", "Website mentions ocean freight", "ocean freight"),
+        ("growth_signal", "Website mentions expanding capacity", "expanding capacity"),
+    )
+    for position, (kind, detail, snippet) in enumerate(claim_specs[:claim_count]):
         run.record_claim(
             ResearchClaim(
-                position=0,
-                kind="shipping_fit",
-                detail="Website mentions ocean freight",
-                evidence_snippet="ocean freight",
+                position=position,
+                kind=kind,
+                detail=detail,
+                evidence_snippet=snippet,
                 source_page_position=0,
                 confidence=0.8,
             )
         )
     run.complete()
     return run
+
+
+async def _review_claims(
+    fixture: Fixture,
+    research_id: UUID,
+    decisions: tuple[ClaimDecision, ...],
+) -> None:
+    workflow = ClaimPromotionWorkflow(
+        uow_factory=cast(Callable[[], UnitOfWork], lambda: fixture.uow)
+    )
+    await workflow.handle(
+        ReviewRequest(
+            research_run_id=research_id,
+            reviewer_name="Batch Reviewer",
+            decisions=decisions,
+        )
+    )
 
 
 async def test_deduplicates_ids_and_caps_effective_count_at_five() -> None:
@@ -499,7 +559,7 @@ async def test_no_contact_and_missing_sender_do_not_create_fake_drafts() -> None
     assert fixture.email.calls == 0
 
 
-async def test_completed_company_cannot_retry_and_review_gate_is_not_retryable() -> None:
+async def test_completed_company_cannot_retry_and_pending_review_cannot_retry() -> None:
     completed = Fixture([("Complete", "https://complete.example")])
     complete_batch = await completed.workflow.create(
         completed.task.id,
@@ -518,12 +578,13 @@ async def test_completed_company_cannot_retry_and_review_gate_is_not_retryable()
         review.task.id,
         CreateProspectBatchCommand(company_ids=review.company_ids, sender=SENDER),
     )
-    with pytest.raises(ApplicationConflictError, match="requires review, not retry"):
+    with pytest.raises(EvidenceReviewIncompleteError) as error:
         await review.workflow.retry(
             review_batch.id,
             review.company_ids[0],
             RetryProspectCompanyCommand(sender=SENDER),
         )
+    assert error.value.pending_claim_count == 1
 
 
 async def test_retryable_failure_can_resume_and_complete() -> None:
@@ -544,3 +605,185 @@ async def test_retryable_failure_can_resume_and_complete() -> None:
     )
     assert retried.status.value == "completed"
     assert retried.companies[0].status is ProspectBatchCompanyStatus.COMPLETED
+
+
+async def test_resume_rejects_pending_claims_and_reports_blockers() -> None:
+    fixture = Fixture([("Pending", "https://pending.example")])
+    company_id = fixture.company_ids[0]
+    fixture.research.claim_companies.add(company_id)
+    batch = await fixture.workflow.create(
+        fixture.task.id,
+        CreateProspectBatchCommand(company_ids=(company_id,), sender=SENDER),
+    )
+    item = batch.companies[0]
+    query = ProspectBatchQueryWorkflow(
+        cast(Callable[[], ProspectBatchUnitOfWork], lambda: fixture.uow)
+    )
+    blockers = await query.blockers(batch.id, company_id)
+
+    assert item.blocking_claim_count == 1
+    assert blockers.pending_claim_count == 1
+    assert blockers.claims[0].status == "pending"
+    assert blockers.claims[0].evidence_snippet == "ocean freight"
+    assert blockers.claims[0].source_url == "https://fixture.example"
+    assert blockers.claims[0].fetched_at == NOW
+
+    with pytest.raises(EvidenceReviewIncompleteError) as error:
+        await fixture.workflow.resume(
+            batch.id,
+            company_id,
+            ResumeProspectCompanyCommand(sender=SENDER),
+        )
+    assert error.value.pending_claim_count == 1
+    assert fixture.opportunity.calls == []
+
+
+async def test_all_accepted_claims_resume_without_rerunning_research_and_are_idempotent() -> None:
+    fixture = Fixture([("Accepted", "https://accepted.example")])
+    company_id = fixture.company_ids[0]
+    fixture.research.claim_companies.add(company_id)
+    batch = await fixture.workflow.create(
+        fixture.task.id,
+        CreateProspectBatchCommand(company_ids=(company_id,), sender=SENDER),
+    )
+    research_id = cast(UUID, batch.companies[0].research_id)
+    await _review_claims(
+        fixture,
+        research_id,
+        (
+            ClaimDecision(
+                claim_position=0,
+                decision=PromotionDecision.ACCEPTED,
+            ),
+        ),
+    )
+
+    resumed = await fixture.workflow.resume(
+        batch.id,
+        company_id,
+        ResumeProspectCompanyCommand(sender=SENDER),
+    )
+    item = resumed.companies[0]
+    counts_before_replay = (
+        len(fixture.opportunity.calls),
+        fixture.contact_ingestion.calls,
+        fixture.email.calls,
+    )
+
+    assert resumed.status.value == "completed"
+    assert resumed.completed_count == 1
+    assert resumed.needs_review_count == 0
+    assert item.status is ProspectBatchCompanyStatus.COMPLETED
+    assert item.resume_count == 1
+    assert item.resumed_at is not None
+    assert item.resumed_from_stage is not None
+    assert item.resumed_from_stage.value == "awaiting_evidence_review"
+    assert item.blocking_claim_count == 1
+    assert fixture.research.calls == [company_id]
+    assert "shipping_fit: Website mentions ocean freight" in (
+        fixture.opportunity.signals_at_call[-1]
+    )
+
+    with pytest.raises(ApplicationConflictError, match="cannot be resumed"):
+        await fixture.workflow.resume(
+            batch.id,
+            company_id,
+            ResumeProspectCompanyCommand(sender=SENDER),
+        )
+    assert (
+        len(fixture.opportunity.calls),
+        fixture.contact_ingestion.calls,
+        fixture.email.calls,
+    ) == counts_before_replay
+
+
+async def test_partial_rejection_uses_only_accepted_claims_after_resume() -> None:
+    fixture = Fixture([("Mixed", "https://mixed.example")])
+    company_id = fixture.company_ids[0]
+    fixture.research.claim_counts[company_id] = 2
+    batch = await fixture.workflow.create(
+        fixture.task.id,
+        CreateProspectBatchCommand(company_ids=(company_id,), sender=SENDER),
+    )
+    research_id = cast(UUID, batch.companies[0].research_id)
+    await _review_claims(
+        fixture,
+        research_id,
+        (
+            ClaimDecision(0, PromotionDecision.ACCEPTED),
+            ClaimDecision(1, PromotionDecision.REJECTED),
+        ),
+    )
+    query = ProspectBatchQueryWorkflow(
+        cast(Callable[[], ProspectBatchUnitOfWork], lambda: fixture.uow)
+    )
+    blockers = await query.blockers(batch.id, company_id)
+
+    resumed = await fixture.workflow.resume(
+        batch.id,
+        company_id,
+        ResumeProspectCompanyCommand(sender=SENDER),
+    )
+    scored_signals = fixture.opportunity.signals_at_call[-1]
+
+    assert [claim.status for claim in blockers.claims] == ["accepted", "rejected"]
+    assert blockers.pending_claim_count == 0
+    assert resumed.companies[0].status is ProspectBatchCompanyStatus.COMPLETED
+    assert "shipping_fit: Website mentions ocean freight" in scored_signals
+    assert "growth_signal: Website mentions expanding capacity" not in scored_signals
+
+
+async def test_all_rejected_claims_with_thin_evidence_need_review_without_draft() -> None:
+    fixture = Fixture([("Rejected", "https://rejected.example")])
+    company_id = fixture.company_ids[0]
+    fixture.research.claim_companies.add(company_id)
+    fixture.opportunity.decisions[company_id] = "research_more"
+    batch = await fixture.workflow.create(
+        fixture.task.id,
+        CreateProspectBatchCommand(company_ids=(company_id,), sender=SENDER),
+    )
+    await _review_claims(
+        fixture,
+        cast(UUID, batch.companies[0].research_id),
+        (ClaimDecision(0, PromotionDecision.REJECTED),),
+    )
+
+    resumed = await fixture.workflow.resume(
+        batch.id,
+        company_id,
+        ResumeProspectCompanyCommand(sender=SENDER),
+    )
+    item = resumed.companies[0]
+
+    assert item.status is ProspectBatchCompanyStatus.NEEDS_REVIEW
+    assert item.error_code == "INSUFFICIENT_TRUSTED_EVIDENCE"
+    assert item.draft_version is None
+    assert fixture.contact_ingestion.calls == 0
+    assert fixture.email.calls == 0
+
+
+async def test_technical_draft_failure_uses_retry_and_reuses_reviewed_research() -> None:
+    fixture = Fixture([("Draft Retry", "https://draft-retry.example")])
+    company_id = fixture.company_ids[0]
+    fixture.email.fail = True
+    failed = await fixture.workflow.create(
+        fixture.task.id,
+        CreateProspectBatchCommand(company_ids=(company_id,), sender=SENDER),
+    )
+    failed_item = failed.companies[0]
+
+    assert failed_item.error_code == "DRAFT_GENERATION_FAILED"
+    assert fixture.research.calls == [company_id]
+
+    fixture.email.fail = False
+    retried = await fixture.workflow.retry(
+        failed.id,
+        company_id,
+        RetryProspectCompanyCommand(sender=SENDER),
+    )
+    retried_item = retried.companies[0]
+
+    assert retried_item.status is ProspectBatchCompanyStatus.COMPLETED
+    assert fixture.research.calls == [company_id]
+    assert retried_item.opportunity_id == failed_item.opportunity_id
+    assert retried_item.selected_contact_id == failed_item.selected_contact_id
