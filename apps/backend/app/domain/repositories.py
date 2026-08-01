@@ -12,6 +12,7 @@ from uuid import UUID
 
 from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
+from app.domain.discovery import DiscoveryTask
 from app.domain.import_evidence.models import (
     ImporterEvidenceAggregate,
     ImportEvidenceCompanySignal,
@@ -112,6 +113,14 @@ class TaskRepository(Protocol):
         """Idempotency keys of currently active (created/running) tasks —
         feeds Task.create's duplicate protection."""
         ...
+
+
+class DiscoveryTaskRepository(Protocol):
+    async def get_by_id(self, task_id: UUID) -> DiscoveryTask | None: ...
+
+    async def add(self, task: DiscoveryTask) -> None: ...
+
+    async def save(self, task: DiscoveryTask) -> None: ...
 
 
 class ResearchRunRepository(Protocol):
@@ -234,6 +243,28 @@ class ImportEvidenceUnitOfWork(Protocol):
     ) -> None: ...
 
     async def commit(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class DiscoveryTaskUnitOfWork(Protocol):
+    """Persistence ports used by the D1 discovery-task supervisor."""
+
+    tasks: TaskRepository
+    discovery_tasks: DiscoveryTaskRepository
+
+    async def __aenter__(self) -> "DiscoveryTaskUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
 
     async def rollback(self) -> None: ...
 

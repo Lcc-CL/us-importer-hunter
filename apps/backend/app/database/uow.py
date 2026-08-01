@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.database.repositories import (
     SqlAlchemyCompanyRepository,
     SqlAlchemyContactRepository,
+    SqlAlchemyDiscoveryTaskRepository,
     SqlAlchemyImportEvidencePromotionRepository,
     SqlAlchemyImportEvidenceRepository,
     SqlAlchemyOpportunityRepository,
@@ -33,6 +34,7 @@ from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
     CompanyRepository,
     ContactRepository,
+    DiscoveryTaskRepository,
     ImportEvidencePromotionRepository,
     ImportEvidenceRepository,
     ImportEvidenceUnitOfWork,
@@ -52,6 +54,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     outreaches: OutreachRepository
     research_runs: ResearchRunRepository
     tasks: TaskRepository
+    discovery_tasks: DiscoveryTaskRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -63,6 +66,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self._committed = False
         self.companies = SqlAlchemyCompanyRepository(self._session)
         self.contacts = SqlAlchemyContactRepository(self._session)
+        self.discovery_tasks = SqlAlchemyDiscoveryTaskRepository(self._session)
         self.import_evidence = SqlAlchemyImportEvidenceRepository(self._session)
         self.import_evidence_promotions = SqlAlchemyImportEvidencePromotionRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)
@@ -96,6 +100,10 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
             await self._session.rollback()
             raise DuplicateOperation("database rejected a duplicate record") from exc
         self._committed = True
+
+    async def flush(self) -> None:
+        assert self._session is not None, "flush outside the unit-of-work context"
+        await self._session.flush()
 
     async def rollback(self) -> None:
         assert self._session is not None, "rollback outside the unit-of-work context"

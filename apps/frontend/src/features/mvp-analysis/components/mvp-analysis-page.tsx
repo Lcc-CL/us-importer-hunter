@@ -25,6 +25,7 @@ import { AnalysisResult } from "./analysis-result";
 import { ImportEvidencePanel } from "./import-evidence-panel";
 import { ProspectForm } from "./prospect-form";
 import { ProviderBadge } from "./provider-badge";
+import { DiscoveryTaskPanel } from "@/features/discovery";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
 import type { FlowStep, StepState } from "@/features/research/step-nav";
 import { ContactDiscoveryCard } from "./contact-discovery-card";
@@ -55,6 +56,7 @@ import type { ApplicationPayload } from "@/lib/research-api";
 
 interface MvpAnalysisPageProps {
   initialCompanyId?: string;
+  initialTaskId?: string;
 }
 
 function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
@@ -64,7 +66,10 @@ function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
   return "error";
 }
 
-export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
+export function MvpAnalysisPage({
+  initialCompanyId,
+  initialTaskId,
+}: MvpAnalysisPageProps) {
   const { t, lang, setLang } = useI18n();
   const [analysis, setAnalysis] = useState<ProspectAnalysisResponse | null>(null);
   const [detail, setDetail] = useState<ProspectDetailResponse | null>(null);
@@ -401,6 +406,8 @@ export function MvpAnalysisPage({ initialCompanyId }: MvpAnalysisPageProps) {
           </div>
           <ProviderBadge />
         </div>
+
+        <DiscoveryTaskPanel initialTaskId={initialTaskId} />
 
         <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div>

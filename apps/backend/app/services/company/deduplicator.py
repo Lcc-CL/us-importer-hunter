@@ -2,8 +2,8 @@
 
 Implements the domain protocol CompanyDeduplicationService. MVP rules,
 in priority order:
-1. exact normalized-name match;
-2. same website host.
+1. same website host when one is available;
+2. exact normalized-name match.
 Fuzzy matching is a later, evidence-driven upgrade.
 """
 
@@ -18,11 +18,11 @@ class RepositoryCompanyDeduplicator:
         self._companies = companies
 
     async def find_canonical(self, name: CompanyName, website: WebsiteUrl | None) -> UUID | None:
-        by_name = await self._companies.find_by_normalized_name(name)
-        if by_name is not None:
-            return by_name.id
         if website is not None:
             by_host = await self._companies.find_by_website_host(website.host)
             if by_host is not None:
                 return by_host.id
+        by_name = await self._companies.find_by_normalized_name(name)
+        if by_name is not None:
+            return by_name.id
         return None

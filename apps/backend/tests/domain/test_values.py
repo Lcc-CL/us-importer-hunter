@@ -57,6 +57,9 @@ class TestWebsiteUrl:
         assert url.host == "example.com"
         assert url.value.startswith("https://example.com")
 
+    def test_www_is_not_part_of_the_identity_host(self) -> None:
+        assert WebsiteUrl("https://www.example.com/about").host == "example.com"
+
     @pytest.mark.parametrize("raw", ["ftp://example.com", "example.com", "https://", "https://nohost"])
     def test_invalid(self, raw: str) -> None:
         with pytest.raises(InvalidWebsiteUrl):

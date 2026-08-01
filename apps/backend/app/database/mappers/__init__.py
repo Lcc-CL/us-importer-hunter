@@ -9,6 +9,7 @@ replay history as new events.
 
 from app.database.mappers.company import CompanyMapper
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
+from app.database.mappers.discovery_task import DiscoveryTaskMapper
 from app.database.mappers.import_evidence import (
     ImporterEvidenceAggregateMapper,
     ImportEvidencePromotionMapper,
@@ -26,6 +27,7 @@ __all__ = [
     "ImporterEvidenceAggregateMapper",
     "ContactMapper",
     "FitAssessmentMapper",
+    "DiscoveryTaskMapper",
     "OpportunityMapper",
     "OutreachMapper",
     "ResearchRunMapper",

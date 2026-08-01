@@ -1,1 +1,28 @@
-"""ImportYeti tool: US customs / bill-of-lading data for importer discovery."""
+"""ImportYeti company-discovery adapter boundary.
+
+ImportYeti's public site currently documents its searchable customs dataset but
+does not publish an official Data API base URL, authentication contract, or
+response schema. D1 therefore fails closed instead of scraping the website or
+inventing an API contract.
+"""
+
+from app.domain.discovery import (
+    CompanyDiscoveryQuery,
+    CompanyDiscoverySearchResult,
+    DiscoveryProviderUnavailable,
+)
+
+
+class ImportYetiCompanyDiscoveryProvider:
+    provider_name = "importyeti"
+
+    async def search(self, query: CompanyDiscoveryQuery) -> CompanyDiscoverySearchResult:
+        del query
+        raise DiscoveryProviderUnavailable(
+            "ImportYeti official Data API capability is not publicly documented or configured; "
+            "website scraping is disabled",
+            error_code="REAL_PROVIDER_BLOCKED_BY_API_CAPABILITY",
+        )
+
+
+__all__ = ["ImportYetiCompanyDiscoveryProvider"]
