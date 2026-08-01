@@ -6,6 +6,7 @@
 浏览器 → Frontend（公网域名，Next.js standalone）
            └─ 服务端 rewrites 代理（仅白名单 /api/v1/* 路径）
                 → Backend（仅私有网络，不绑定公网域名）
+                → Worker（独立私有服务，无公网端口）
                      → PostgreSQL / Redis（私有网络）
 ```
 
@@ -17,7 +18,8 @@
 - 浏览器只请求同源 `/api/...`；`BACKEND_INTERNAL_URL` 是**服务端**变量，
   绝不能带 `NEXT_PUBLIC_` 前缀。
 - 白名单路径见 `apps/frontend/next.config.ts`：`health/runtime`、
-  `research/*`、`mvp/*`、`companies/*`，无任意 URL 代理。
+  `research/*`、`mvp/*`、`companies/*`、`discovery-tasks/*`、
+  `prospect-batches/*`，无任意 URL 代理。
 
 ## Zeabur 控制台步骤
 
@@ -34,15 +36,22 @@
    - `DEEPSEEK_BASE_URL=https://api.deepseek.com`
    - `EMAIL_GENERATOR_PROVIDER=fake`
    - `BACKEND_CORS_ORIGINS=["https://<你的前端域名>"]`
-3. 添加 **Frontend** 服务：Root Directory `apps/frontend`，Dockerfile
+3. 添加 **Worker** 服务：同样使用 Root Directory `apps/backend` 与
+   Dockerfile target `prod`，启动命令为
+   `uv run --no-dev python -m app.worker`。复制 Backend 的数据库、Redis、
+   Research 与 Email Provider 变量；**不要绑定公网域名或端口**。D3a 使用
+   PostgreSQL Job/Lease，不把 Redis 当任务队列。
+4. 添加 **Frontend** 服务：Root Directory `apps/frontend`，Dockerfile
    target `prod`，绑定公网域名。
    构建变量：`NEXT_PUBLIC_API_BASE_URL=`（留空 → 同源）、
    `NEXT_PUBLIC_ENABLE_RESEARCH=true`。
    运行变量：`BACKEND_INTERNAL_URL=http://<backend 服务名>.zeabur.internal:8000`。
-4. Backend 首次启动后在其终端执行一次迁移：
+5. Backend 首次启动后在其终端执行一次迁移：
    `uv run --no-dev alembic upgrade head`。
-5. 线上 smoke：打开前端域名 → Provider 徽章显示 deepseek →
+6. 线上 smoke：打开前端域名 → Provider 徽章显示 deepseek →
    对一家公司跑通 研究 → 确认 → 分析 → 草稿 → 刷新恢复。
+   另验证创建批次后 API 返回 202，Worker 服务领取 Job，停止并重启 Worker
+   后过期 lease 能恢复，且 Backend 的查询接口在 Worker 停止时仍可读取。
    浏览器直接访问 `https://<前端域名>/api/v1/health/runtime` 应返回 JSON
    且**不含**任何密钥；backend 无公网地址可访问。
 

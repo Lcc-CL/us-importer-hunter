@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { CheckCircle2, ExternalLink, Play, RefreshCw, ShieldCheck } from "lucide-react";
 
 import {
@@ -15,12 +21,14 @@ import {
   getProspectBatch,
   getProspectBatchCompanyBlockers,
   getProspectBatchCompanies,
+  getProspectBatchExecution,
   resumeProspectBatchCompany,
   retryProspectBatchCompany,
   type DiscoveryCompanyResponse,
   type DiscoveryTaskResponse,
   type ProspectBatchCompanyResponse,
   type ProspectBatchCompanyStatus,
+  type ProspectBatchExecutionResponse,
   type ProspectBatchResponse,
   type ProspectBatchSender,
   type ProspectCompanyBlockersResponse,
@@ -110,6 +118,7 @@ export function ProspectBatchPanel({
   );
   const [selected, setSelected] = useState<string[]>([]);
   const [batch, setBatch] = useState<ProspectBatchResponse | null>(null);
+  const [execution, setExecution] = useState<ProspectBatchExecutionResponse | null>(null);
   const [results, setResults] = useState<ProspectBatchCompanyResponse[]>([]);
   const [filter, setFilter] = useState<BatchFilter>("all");
   const [blockers, setBlockers] = useState<
@@ -117,6 +126,7 @@ export function ProspectBatchPanel({
   >({});
   const [busy, setBusy] = useState(Boolean(initialBatchId));
   const [error, setError] = useState<string | null>(null);
+  const [creationMessage, setCreationMessage] = useState<string | null>(null);
   const storedSender = useSyncExternalStore(
     subscribeSenderProfile,
     senderProfileSnapshot,
@@ -128,13 +138,15 @@ export function ProspectBatchPanel({
     let active = true;
     async function restore() {
       try {
-        const [savedBatch, savedResults] = await Promise.all([
+        const [savedBatch, savedResults, savedExecution] = await Promise.all([
           getProspectBatch(initialBatchId as string),
           getProspectBatchCompanies(initialBatchId as string),
+          getProspectBatchExecution(initialBatchId as string),
         ]);
         if (!active) return;
         setBatch(savedBatch);
         setResults(savedResults.companies);
+        setExecution(savedExecution);
         setBlockers(await fetchBlockers(initialBatchId as string, savedResults.companies));
       } catch (caught: unknown) {
         if (active) setError(getClientErrorDetails(caught).message);
@@ -164,27 +176,51 @@ export function ProspectBatchPanel({
     });
   }
 
-  async function loadResults(batchId: string) {
-    const [savedBatch, savedResults] = await Promise.all([
+  const loadResults = useCallback(async (batchId: string) => {
+    const [savedBatch, savedResults, savedExecution] = await Promise.all([
       getProspectBatch(batchId),
       getProspectBatchCompanies(batchId),
+      getProspectBatchExecution(batchId),
     ]);
     setBatch(savedBatch);
     setResults(savedResults.companies);
+    setExecution(savedExecution);
     setBlockers(await fetchBlockers(batchId, savedResults.companies));
-  }
+  }, []);
+
+  useEffect(() => {
+    if (
+      !batch ||
+      !execution ||
+      !["pending", "leased", "running"].includes(execution.status)
+    ) {
+      return;
+    }
+    const batchId = batch.batch_id;
+    const timer = window.setInterval(() => {
+      void loadResults(batchId).catch((caught: unknown) => {
+        setError(getClientErrorDetails(caught).message);
+      });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [batch, execution, loadResults]);
 
   async function startBatch() {
     if (busy || selected.length === 0) return;
     setBusy(true);
     setError(null);
+    setCreationMessage(null);
     try {
       const created = await createProspectBatch(
         task.task_id,
         selected,
         toBatchSender(storedSender),
+        crypto.randomUUID(),
       );
       persistBatchId(created.batch_id);
+      setCreationMessage(
+        created.reused ? t("batch.reused") : t("batch.createdBackground"),
+      );
       await loadResults(created.batch_id);
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
@@ -203,6 +239,7 @@ export function ProspectBatchPanel({
         companyId,
         toBatchSender(storedSender),
       );
+      setCreationMessage(t("batch.createdBackground"));
       await loadResults(batch.batch_id);
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
@@ -221,6 +258,7 @@ export function ProspectBatchPanel({
         companyId,
         toBatchSender(storedSender),
       );
+      setCreationMessage(t("batch.createdBackground"));
       await loadResults(batch.batch_id);
     } catch (caught: unknown) {
       const details = getClientErrorDetails(caught);
@@ -248,6 +286,14 @@ export function ProspectBatchPanel({
   const visibleResults = results.filter(
     (company) => filter === "all" || company.status === filter,
   );
+  const executionActive =
+    execution !== null && ["pending", "leased", "running"].includes(execution.status);
+  const executionLabel = execution
+    ? t(`batch.execution.${execution.status}`)
+    : batch
+      ? t("batch.execution.legacy")
+      : t("batch.execution.pending");
+  const lastUpdated = execution?.updated_at ?? batch?.completed_at ?? batch?.started_at;
   const canStart =
     task.provider === "manual_csv" &&
     (task.status === "completed" || task.status === "partial_failed");
@@ -275,12 +321,12 @@ export function ProspectBatchPanel({
         <button
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           data-testid="start-prospect-batch"
-          disabled={busy || selected.length === 0}
+          disabled={busy || executionActive || selected.length === 0}
           onClick={startBatch}
           type="button"
         >
           <Play className="size-4" />
-          {busy ? t("batch.running") : t("batch.start")}
+          {busy || executionActive ? t("batch.running") : t("batch.start")}
         </button>
       </div>
 
@@ -348,12 +394,21 @@ export function ProspectBatchPanel({
         </p>
       ) : null}
 
+      {creationMessage ? (
+        <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+          {creationMessage}
+        </p>
+      ) : null}
+
       {batch ? (
         <div className="mt-6" data-testid="prospect-batch-result">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-slate-900">
                 {t(`batch.status.${batch.status}`)} · {progress}%
+              </p>
+              <p className="mt-1 text-xs font-medium text-indigo-700" data-testid="batch-execution-status">
+                {executionLabel}
               </p>
               <p className="mt-1 font-mono text-xs text-slate-500">
                 {batch.batch_id}
@@ -365,8 +420,25 @@ export function ProspectBatchPanel({
                 review: batch.needs_review_count,
                 failed: batch.failed_count,
               })}
+              {lastUpdated ? (
+                <p className="mt-1 text-right">
+                  {t("batch.lastUpdated", {
+                    time: new Date(lastUpdated).toLocaleString(),
+                  })}
+                </p>
+              ) : null}
             </div>
           </div>
+          {execution?.recovery_count ? (
+            <p className="mt-3 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-800">
+              {t("batch.recovered")}
+            </p>
+          ) : null}
+          {execution?.status === "failed" ? (
+            <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              {t("batch.executionFailed")}
+            </p>
+          ) : null}
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
             <div
               className="h-full rounded-full bg-indigo-600 transition-[width]"
@@ -509,7 +581,7 @@ export function ProspectBatchPanel({
                       <button
                         className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-800 disabled:opacity-50"
                         data-testid="resume-batch-company"
-                        disabled={busy}
+                        disabled={busy || executionActive}
                         onClick={() => resumeCompany(company.company_id)}
                         type="button"
                       >
@@ -523,7 +595,7 @@ export function ProspectBatchPanel({
                   RETRYABLE_BATCH_ERRORS.has(company.error_code) ? (
                     <button
                       className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 disabled:opacity-50"
-                      disabled={busy}
+                      disabled={busy || executionActive}
                       onClick={() => retryCompany(company.company_id)}
                       type="button"
                     >

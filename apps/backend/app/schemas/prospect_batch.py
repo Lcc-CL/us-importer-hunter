@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, StringConstraints
 
 from app.domain.prospect_batch import ProspectBatch, ProspectBatchCompany
+from app.domain.prospect_job import ProspectJob
 from app.domain.services import SenderProfile
 from app.workflows.prospect_batch import ProspectCompanyBlockers
 
@@ -30,6 +31,51 @@ class ProspectBatchCreateRequest(BaseModel):
     company_ids: list[UUID]
     limit: int = 5
     sender: BatchSenderRequest | None = None
+
+
+class ProspectBatchCreateResponse(BaseModel):
+    batch_id: UUID
+    job_id: UUID
+    status: str
+    reused: bool
+
+
+class ProspectBatchExecutionResponse(BaseModel):
+    job_id: UUID
+    batch_id: UUID
+    status: str
+    available_at: datetime
+    attempt_count: int
+    max_attempts: int
+    heartbeat_at: datetime | None
+    last_error_code: str | None
+    last_error_summary: str | None
+    recovery_count: int
+    last_recovered_at: datetime | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    updated_at: datetime
+
+    @classmethod
+    def from_domain(cls, job: ProspectJob) -> Self:
+        return cls(
+            job_id=job.id,
+            batch_id=job.batch_id,
+            status=job.status.value,
+            available_at=job.available_at,
+            attempt_count=job.attempt_count,
+            max_attempts=job.max_attempts,
+            heartbeat_at=job.heartbeat_at,
+            last_error_code=job.last_error_code,
+            last_error_summary=job.last_error_summary,
+            recovery_count=job.recovery_count,
+            last_recovered_at=job.last_recovered_at,
+            created_at=job.created_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            updated_at=job.updated_at,
+        )
 
 
 class ProspectBatchRetryRequest(BaseModel):

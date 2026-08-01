@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -127,3 +128,57 @@ class ProspectBatchCompanyModel(Base):
     resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resumed_from_stage: Mapped[str | None] = mapped_column(String(40))
     resume_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ProspectBatchJobModel(Base):
+    __tablename__ = "prospect_batch_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','leased','running','completed','failed','cancelled')",
+            name="ck_prospect_batch_jobs_status",
+        ),
+        CheckConstraint("attempt_count >= 0", name="ck_prospect_batch_jobs_attempt_count"),
+        CheckConstraint("max_attempts > 0", name="ck_prospect_batch_jobs_max_attempts"),
+        CheckConstraint("recovery_count >= 0", name="ck_prospect_batch_jobs_recovery_count"),
+        Index(
+            "uq_prospect_batch_jobs_active_business",
+            "business_key",
+            unique=True,
+            postgresql_where=text("status IN ('pending','leased','running')"),
+        ),
+        Index(
+            "uq_prospect_batch_jobs_request_key",
+            "request_key_hash",
+            unique=True,
+            postgresql_where=text("request_key_hash IS NOT NULL"),
+        ),
+        Index("ix_prospect_batch_jobs_claim", "status", "available_at", "created_at"),
+        Index("ix_prospect_batch_jobs_batch", "batch_id", "created_at"),
+        Index("ix_prospect_batch_jobs_lease_expiry", "lease_expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    batch_id: Mapped[UUID] = mapped_column(
+        ForeignKey("prospect_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    business_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_key_hash: Mapped[str | None] = mapped_column(String(64))
+    sender_name: Mapped[str | None] = mapped_column(Text)
+    sender_company: Mapped[str | None] = mapped_column(Text)
+    sender_value_proposition: Mapped[str | None] = mapped_column(Text)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    lease_owner: Mapped[str | None] = mapped_column(String(160))
+    lease_acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    last_error_summary: Mapped[str | None] = mapped_column(Text)
+    recovery_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

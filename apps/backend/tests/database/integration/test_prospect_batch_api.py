@@ -1,17 +1,23 @@
 """D2a API persistence and refresh recovery on PostgreSQL."""
 
-from collections.abc import AsyncIterator, Callable
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import timedelta
 from typing import cast
 from uuid import UUID
 
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.api.deps import (
     get_prospect_batch_workflow,
     get_uow_factory,
 )
 from app.core.config import Settings
+from app.database.session import create_session_factory
+from app.database.uow import SqlAlchemyUnitOfWork
 from app.domain.clock import utcnow
+from app.domain.prospect_batch import ProspectBatch
 from app.domain.repositories import ProspectBatchUnitOfWork
 from app.domain.research import (
     ExtractorIdentity,
@@ -20,6 +26,7 @@ from app.domain.research import (
     ResearchProfile,
     ResearchRun,
 )
+from app.domain.services import SenderProfile
 from app.domain.values import SourceReference
 from app.main import create_app
 from app.services.contact import DeterministicDecisionMakerSelectionService
@@ -36,7 +43,12 @@ from app.workflows.contact_ingestion import ContactIngestionWorkflow
 from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
 from app.workflows.email import EmailDraftGenerationWorkflow
 from app.workflows.opportunity import OpportunityApplicationWorkflow
-from app.workflows.prospect_batch import ProspectBatchWorkflow
+from app.workflows.prospect_batch import (
+    CreateProspectBatchCommand,
+    ProspectBatchWorkflow,
+    ProspectJobCoordinator,
+    ProspectJobRunner,
+)
 from app.workflows.research import ResearchAction, ResearchOutcome, ResearchRequest
 from tests.database.integration.conftest import UowFactory
 
@@ -179,6 +191,22 @@ class StaticNamedContactDiscovery:
         )
 
 
+class ExplodingProspectBatchWorkflow(ProspectBatchWorkflow):
+    def __init__(self) -> None:
+        pass
+
+    async def execute(
+        self,
+        batch_id: UUID,
+        *,
+        sender: SenderProfile | None,
+        heartbeat: Callable[[], Awaitable[None]] | None = None,
+    ) -> ProspectBatch:
+        if heartbeat is not None:
+            await heartbeat()
+        raise RuntimeError("synthetic worker failure")
+
+
 def batch_workflow(uow_factory: UowFactory) -> ProspectBatchWorkflow:
     return ProspectBatchWorkflow(
         uow_factory=cast(
@@ -245,6 +273,40 @@ async def make_client(
         yield client
 
 
+async def run_pending_job(
+    uow_factory: UowFactory,
+    workflow: ProspectBatchWorkflow,
+) -> None:
+    coordinator = ProspectJobCoordinator(
+        cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
+        lease_ttl=timedelta(seconds=120),
+        retry_delay=timedelta(seconds=0),
+    )
+    runner = ProspectJobRunner(coordinator=coordinator, batch_workflow=workflow)
+    assert await runner.run_once(owner="integration-worker") is True
+
+
+async def create_discovery_company(
+    client: AsyncClient,
+    *,
+    name: str,
+    website: str,
+) -> tuple[str, str]:
+    csv_content = (
+        b"company_name,source_url,website,region,import_evidence\n"
+        + f"{name},https://evidence.example/job,{website},US,BOL-JOB\n".encode()
+    )
+    discovery = await client.post(
+        "/api/v1/discovery-tasks/manual-csv",
+        data={"prompt": "帮我找 1 家北美五金进口商"},
+        files={"file": ("job.csv", csv_content, "text/csv")},
+    )
+    assert discovery.status_code == 201, discovery.text
+    task_id = discovery.json()["task_id"]
+    companies = await client.get(f"/api/v1/discovery-tasks/{task_id}/companies")
+    return task_id, companies.json()["companies"][0]["company_id"]
+
+
 async def test_batch_api_persists_completed_results_and_refreshes(
     uow_factory: UowFactory,
 ) -> None:
@@ -309,15 +371,22 @@ async def test_batch_api_persists_completed_results_and_refreshes(
                 },
             },
         )
-        assert created.status_code == 201, created.text
+        assert created.status_code == 202, created.text
         body = created.json()
         batch_id = body["batch_id"]
+        assert body["status"] == "pending"
+        assert body["reused"] is False
+        execution = await client.get(f"/api/v1/prospect-batches/{batch_id}/execution")
+        assert execution.json()["status"] == "pending"
+
+        await run_pending_job(uow_factory, workflow)
+        saved_batch = await client.get(f"/api/v1/prospect-batches/{batch_id}")
         results = await client.get(f"/api/v1/prospect-batches/{batch_id}/companies")
         assert results.status_code == 200, results.text
         item = results.json()["companies"][0]
         assert item["error_code"] is None, f"{item['error_code']}: {item['error_summary']}"
-        assert body["status"] == "completed", item
-        assert body["completed_count"] == 1
+        assert saved_batch.json()["status"] == "completed", item
+        assert saved_batch.json()["completed_count"] == 1
         assert item["company_id"] == company_id
         assert item["current_stage"] == "completed"
         assert item["research_id"] is not None
@@ -335,6 +404,8 @@ async def test_batch_api_persists_completed_results_and_refreshes(
         results = await refreshed.get(f"/api/v1/prospect-batches/{batch_id}/companies")
         assert results.status_code == 200, results.text
         assert results.json()["companies"][0]["company_id"] == company_id
+        execution = await refreshed.get(f"/api/v1/prospect-batches/{batch_id}/execution")
+        assert execution.json()["status"] == "completed"
 
 
 async def test_evidence_review_resume_persists_and_does_not_rerun_research(
@@ -390,8 +461,9 @@ async def test_evidence_review_resume_persists_and_does_not_rerun_research(
                 },
             },
         )
-        assert created.status_code == 201, created.text
+        assert created.status_code == 202, created.text
         batch_id = created.json()["batch_id"]
+        await run_pending_job(uow_factory, workflow)
         before = await client.get(f"/api/v1/prospect-batches/{batch_id}/companies")
         item = before.json()["companies"][0]
         research_id = item["research_id"]
@@ -439,9 +511,12 @@ async def test_evidence_review_resume_persists_and_does_not_rerun_research(
                 }
             },
         )
-        assert resumed.status_code == 200, resumed.text
-        assert resumed.json()["completed_count"] == 1
-        assert resumed.json()["needs_review_count"] == 0
+        assert resumed.status_code == 202, resumed.text
+        assert resumed.json()["status"] == "pending"
+        await run_pending_job(uow_factory, workflow)
+        saved_batch = await client.get(f"/api/v1/prospect-batches/{batch_id}")
+        assert saved_batch.json()["completed_count"] == 1
+        assert saved_batch.json()["needs_review_count"] == 0
         after = await client.get(f"/api/v1/prospect-batches/{batch_id}/companies")
         completed = after.json()["companies"][0]
         assert completed["current_stage"] == "completed"
@@ -457,3 +532,225 @@ async def test_evidence_review_resume_persists_and_does_not_rerun_research(
         )
         assert duplicate.status_code == 409, duplicate.text
         assert research.calls == 1
+
+
+async def test_create_returns_202_is_idempotent_and_does_not_run_research(
+    uow_factory: UowFactory,
+) -> None:
+    workflow, research = batch_workflow_with_claim(uow_factory)
+    async for client in make_client(uow_factory, workflow):
+        task_id, company_id = await create_discovery_company(
+            client,
+            name="Idempotent Hardware",
+            website="https://idempotent.example",
+        )
+        path = f"/api/v1/discovery-tasks/{task_id}/batch-process"
+        payload = {"company_ids": [company_id]}
+        first = await client.post(path, json=payload, headers={"Idempotency-Key": "same-click"})
+        second = await client.post(path, json=payload, headers={"Idempotency-Key": "same-click"})
+        equivalent = await client.post(
+            path,
+            json=payload,
+            headers={"Idempotency-Key": "different-click"},
+        )
+
+        assert first.status_code == 202, first.text
+        assert second.status_code == 202, second.text
+        assert equivalent.status_code == 202, equivalent.text
+        assert first.json()["reused"] is False
+        assert second.json()["reused"] is True
+        assert equivalent.json()["reused"] is True
+        assert first.json()["batch_id"] == second.json()["batch_id"]
+        assert first.json()["job_id"] == equivalent.json()["job_id"]
+        assert research.calls == 0
+        companies = await client.get(
+            f"/api/v1/prospect-batches/{first.json()['batch_id']}/companies"
+        )
+        assert companies.json()["companies"][0]["research_id"] is None
+
+
+async def test_historical_batch_without_job_returns_null_execution(
+    uow_factory: UowFactory,
+) -> None:
+    workflow = batch_workflow(uow_factory)
+    async for client in make_client(uow_factory, workflow):
+        task_id, company_id = await create_discovery_company(
+            client,
+            name="Historical Hardware",
+            website="https://historical.example",
+        )
+        batch = await workflow.create(
+            UUID(task_id),
+            CreateProspectBatchCommand(company_ids=(UUID(company_id),)),
+        )
+
+        execution = await client.get(f"/api/v1/prospect-batches/{batch.id}/execution")
+        assert execution.status_code == 200, execution.text
+        assert execution.json() is None
+
+
+async def test_unhandled_worker_error_retries_then_fails_with_structured_error(
+    uow_factory: UowFactory,
+) -> None:
+    workflow = batch_workflow(uow_factory)
+    async for client in make_client(uow_factory, workflow):
+        task_id, company_id = await create_discovery_company(
+            client,
+            name="Worker Failure Hardware",
+            website="https://worker-failure.example",
+        )
+        created = await client.post(
+            f"/api/v1/discovery-tasks/{task_id}/batch-process",
+            json={"company_ids": [company_id]},
+        )
+        assert created.status_code == 202, created.text
+        batch_id = created.json()["batch_id"]
+
+        coordinator = ProspectJobCoordinator(
+            cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
+            lease_ttl=timedelta(seconds=120),
+            retry_delay=timedelta(0),
+        )
+        runner = ProspectJobRunner(
+            coordinator=coordinator,
+            batch_workflow=ExplodingProspectBatchWorkflow(),
+        )
+
+        assert await runner.run_once(owner="failing-worker-1") is True
+        retrying = await client.get(f"/api/v1/prospect-batches/{batch_id}/execution")
+        assert retrying.json()["status"] == "pending"
+        assert retrying.json()["attempt_count"] == 1
+        assert retrying.json()["last_error_code"] == "UNHANDLED_RUNTIMEERROR"
+        assert retrying.json()["last_error_summary"] == "RuntimeError"
+
+        assert await runner.run_once(owner="failing-worker-2") is True
+        assert await runner.run_once(owner="failing-worker-3") is True
+        failed = await client.get(f"/api/v1/prospect-batches/{batch_id}/execution")
+        assert failed.json()["status"] == "failed"
+        assert failed.json()["attempt_count"] == 3
+        companies = await client.get(f"/api/v1/prospect-batches/{batch_id}/companies")
+        assert companies.json()["companies"][0]["status"] == "failed"
+
+
+async def test_two_workers_claim_once_and_expired_leases_recover_or_fail(
+    uow_factory: UowFactory,
+) -> None:
+    workflow = batch_workflow(uow_factory)
+    async for client in make_client(uow_factory, workflow):
+        task_id, company_id = await create_discovery_company(
+            client,
+            name="Lease Hardware",
+            website="https://lease.example",
+        )
+        created = await client.post(
+            f"/api/v1/discovery-tasks/{task_id}/batch-process",
+            json={"company_ids": [company_id]},
+        )
+        batch_id = created.json()["batch_id"]
+        coordinator = ProspectJobCoordinator(
+            cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
+            lease_ttl=timedelta(milliseconds=1),
+            retry_delay=timedelta(0),
+        )
+
+        first = await coordinator.claim(owner="worker-a")
+        assert first is not None
+        assert await coordinator.claim(owner="worker-b") is None
+        await coordinator.start(first.id, owner="worker-a")
+
+        for attempt in range(1, 4):
+            await asyncio.sleep(0.01)
+            recovered = await coordinator.recover_stale()
+            assert len(recovered) == 1
+            current = recovered[0]
+            assert current.recovery_count == attempt
+            if attempt < 3:
+                assert current.status.value == "pending"
+                leased = await coordinator.claim(owner=f"worker-{attempt + 1}")
+                assert leased is not None
+                await coordinator.start(leased.id, owner=f"worker-{attempt + 1}")
+            else:
+                assert current.status.value == "failed"
+
+        execution = await client.get(f"/api/v1/prospect-batches/{batch_id}/execution")
+        assert execution.json()["status"] == "failed"
+        batch = await client.get(f"/api/v1/prospect-batches/{batch_id}")
+        assert batch.json()["running_count"] == 0
+        companies = await client.get(f"/api/v1/prospect-batches/{batch_id}/companies")
+        assert companies.json()["companies"][0]["status"] == "failed"
+
+
+async def test_stale_job_does_not_restart_awaiting_evidence_review(
+    uow_factory: UowFactory,
+) -> None:
+    workflow, research = batch_workflow_with_claim(uow_factory)
+    async for client in make_client(uow_factory, workflow):
+        task_id, company_id = await create_discovery_company(
+            client,
+            name="Review Lease Hardware",
+            website="https://review-lease.example",
+        )
+        created = await client.post(
+            f"/api/v1/discovery-tasks/{task_id}/batch-process",
+            json={"company_ids": [company_id]},
+        )
+        batch_id = created.json()["batch_id"]
+        coordinator = ProspectJobCoordinator(
+            cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
+            lease_ttl=timedelta(milliseconds=1),
+            retry_delay=timedelta(0),
+        )
+        leased = await coordinator.claim(owner="crashed-worker")
+        assert leased is not None
+        running = await coordinator.start(leased.id, owner="crashed-worker")
+        await workflow.execute(running.batch_id, sender=None)
+        assert research.calls == 1
+
+        await asyncio.sleep(0.01)
+        recovered = await coordinator.recover_stale()
+        assert recovered[0].status.value == "completed"
+        assert recovered[0].recovery_count == 1
+        companies = await client.get(f"/api/v1/prospect-batches/{batch_id}/companies")
+        item = companies.json()["companies"][0]
+        assert item["current_stage"] == "awaiting_evidence_review"
+        assert item["status"] == "needs_review"
+        assert research.calls == 1
+
+
+async def test_postgres_skip_locked_allows_only_one_concurrent_worker_claim(
+    engine: AsyncEngine,
+) -> None:
+    session_factory = create_session_factory(engine)
+
+    def direct_uow_factory() -> SqlAlchemyUnitOfWork:
+        return SqlAlchemyUnitOfWork(session_factory)
+
+    typed_factory = direct_uow_factory
+    workflow = batch_workflow(typed_factory)
+    async for client in make_client(typed_factory, workflow):
+        task_id, company_id = await create_discovery_company(
+            client,
+            name="Concurrent Claim Hardware",
+            website="https://concurrent-claim.example",
+        )
+        created = await client.post(
+            f"/api/v1/discovery-tasks/{task_id}/batch-process",
+            json={"company_ids": [company_id]},
+        )
+        assert created.status_code == 202, created.text
+
+    coordinator_a = ProspectJobCoordinator(
+        cast(Callable[[], ProspectBatchUnitOfWork], typed_factory),
+        lease_ttl=timedelta(seconds=120),
+        retry_delay=timedelta(0),
+    )
+    coordinator_b = ProspectJobCoordinator(
+        cast(Callable[[], ProspectBatchUnitOfWork], typed_factory),
+        lease_ttl=timedelta(seconds=120),
+        retry_delay=timedelta(0),
+    )
+    claims = await asyncio.gather(
+        coordinator_a.claim(owner="concurrent-a"),
+        coordinator_b.claim(owner="concurrent-b"),
+    )
+    assert sum(job is not None for job in claims) == 1

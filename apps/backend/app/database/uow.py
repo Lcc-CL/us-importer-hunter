@@ -28,6 +28,7 @@ from app.database.repositories import (
     SqlAlchemyOpportunityRepository,
     SqlAlchemyOutreachRepository,
     SqlAlchemyProspectBatchRepository,
+    SqlAlchemyProspectJobRepository,
     SqlAlchemyResearchRunRepository,
     SqlAlchemyTaskRepository,
 )
@@ -42,6 +43,7 @@ from app.domain.repositories import (
     OpportunityRepository,
     OutreachRepository,
     ProspectBatchRepository,
+    ProspectJobRepository,
     ResearchRunRepository,
     TaskRepository,
 )
@@ -58,6 +60,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     tasks: TaskRepository
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
+    prospect_jobs: ProspectJobRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -71,6 +74,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self.contacts = SqlAlchemyContactRepository(self._session)
         self.discovery_tasks = SqlAlchemyDiscoveryTaskRepository(self._session)
         self.prospect_batches = SqlAlchemyProspectBatchRepository(self._session)
+        self.prospect_jobs = SqlAlchemyProspectJobRepository(self._session)
         self.import_evidence = SqlAlchemyImportEvidenceRepository(self._session)
         self.import_evidence_promotions = SqlAlchemyImportEvidencePromotionRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)

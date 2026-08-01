@@ -348,11 +348,11 @@ test.describe("research panel", () => {
       "base_url",
       "OPENAI_",
       "system_prompt",
-      "sk-",
       "codeyu.shop",
     ]) {
       expect(html.toLowerCase()).not.toContain(forbidden.toLowerCase());
     }
+    expect(html).not.toMatch(/sk-[A-Za-z0-9_-]{12,}/);
     expect(guard.duplicateKeyWarnings()).toEqual([]);
     expect(guard.problems()).toEqual([]);
   });

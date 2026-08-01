@@ -40,6 +40,36 @@ services:
       retries: 5
     restart: unless-stopped
 
+  worker:
+    build:
+      context: ./apps/backend
+      target: prod
+    command: ["uv", "run", "--no-dev", "python", "-m", "app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: ${REDIS_URL:-}
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      RESEARCH_EXTRACTOR_PROVIDER: ${RESEARCH_EXTRACTOR_PROVIDER:-deepseek}
+      RESEARCH_MODEL: ${RESEARCH_MODEL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-pro}
+      EMAIL_GENERATOR_PROVIDER: ${EMAIL_GENERATOR_PROVIDER:-fake}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./apps/frontend

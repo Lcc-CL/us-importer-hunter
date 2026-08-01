@@ -6,6 +6,7 @@ against an **isolated** stack, so runs never touch the dev database.
 | | dev stack | e2e stack |
 |---|---|---|
 | backend | `:8000` | `:8001` |
+| worker | dev worker | isolated `worker-e2e`, no public port |
 | frontend | `:3000` | `:3001` |
 | database | `importer_hunter` | `importer_hunter_e2e` (created, then dropped) |
 | provider | whatever `.env` says | `fake` unless you ask otherwise |
@@ -21,7 +22,7 @@ make e2e-report   # open the last HTML report
 ```
 
 `make e2e` is self-contained: it installs dependencies, recreates the database,
-applies migrations, starts containers, runs the suite and tears everything down
+applies migrations, starts backend + worker + frontend containers, runs the suite and tears everything down
 — including when the suite fails.
 
 Reports land in `playwright-report/`; failure screenshots and traces in

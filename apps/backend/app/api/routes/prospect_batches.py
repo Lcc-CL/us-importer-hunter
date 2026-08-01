@@ -3,14 +3,20 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Header, status
 
-from app.api.deps import ProspectBatchQueryDep, ProspectBatchWorkflowDep
+from app.api.deps import (
+    ProspectBatchQueryDep,
+    ProspectBatchSubmissionDep,
+    ProspectJobQueryDep,
+)
 from app.schemas.mvp import ApiErrorResponse
 from app.schemas.prospect_batch import (
     ProspectBatchCompanyListResponse,
     ProspectBatchCompanyResponse,
     ProspectBatchCreateRequest,
+    ProspectBatchCreateResponse,
+    ProspectBatchExecutionResponse,
     ProspectBatchResponse,
     ProspectBatchResumeRequest,
     ProspectBatchRetryRequest,
@@ -34,24 +40,31 @@ ERRORS: dict[int | str, dict[str, Any]] = {
 
 @router.post(
     "/discovery-tasks/{discovery_task_id}/batch-process",
-    response_model=ProspectBatchResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=ProspectBatchCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     responses=ERRORS,
 )
 async def create_prospect_batch(
     discovery_task_id: UUID,
     payload: ProspectBatchCreateRequest,
-    workflow: ProspectBatchWorkflowDep,
-) -> ProspectBatchResponse:
-    batch = await workflow.create(
+    workflow: ProspectBatchSubmissionDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> ProspectBatchCreateResponse:
+    submission = await workflow.submit(
         discovery_task_id,
         CreateProspectBatchCommand(
             company_ids=tuple(payload.company_ids),
             limit=payload.limit,
             sender=payload.sender.to_domain() if payload.sender else None,
         ),
+        idempotency_key=idempotency_key,
     )
-    return ProspectBatchResponse.from_domain(batch)
+    return ProspectBatchCreateResponse(
+        batch_id=submission.batch.id,
+        job_id=submission.job.id,
+        status=submission.job.status.value,
+        reused=submission.reused,
+    )
 
 
 @router.get(
@@ -88,6 +101,25 @@ async def get_prospect_batch_companies(
 
 
 @router.get(
+    "/prospect-batches/{batch_id}/execution",
+    response_model=ProspectBatchExecutionResponse | None,
+    responses=ERRORS,
+)
+async def get_prospect_batch_execution(
+    batch_id: UUID,
+    workflow: ProspectJobQueryDep,
+    batch_workflow: ProspectBatchQueryDep,
+) -> ProspectBatchExecutionResponse | None:
+    job = await workflow.latest_for_batch(batch_id)
+    if job is None:
+        batch = await batch_workflow.get(batch_id)
+        if batch is None:
+            raise ResourceNotFoundError(f"prospect batch not found: {batch_id}")
+        return None
+    return ProspectBatchExecutionResponse.from_domain(job)
+
+
+@router.get(
     "/prospect-batches/{batch_id}/companies/{company_id}/blockers",
     response_model=ProspectCompanyBlockersResponse,
     responses=ERRORS,
@@ -104,39 +136,51 @@ async def get_prospect_batch_company_blockers(
 
 @router.post(
     "/prospect-batches/{batch_id}/companies/{company_id}/retry",
-    response_model=ProspectBatchResponse,
+    response_model=ProspectBatchCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     responses=ERRORS,
 )
 async def retry_prospect_batch_company(
     batch_id: UUID,
     company_id: UUID,
     payload: ProspectBatchRetryRequest,
-    workflow: ProspectBatchWorkflowDep,
-) -> ProspectBatchResponse:
-    batch = await workflow.retry(
+    workflow: ProspectBatchSubmissionDep,
+) -> ProspectBatchCreateResponse:
+    submission = await workflow.retry_company(
         batch_id,
         company_id,
         RetryProspectCompanyCommand(sender=payload.sender.to_domain() if payload.sender else None),
     )
-    return ProspectBatchResponse.from_domain(batch)
+    return ProspectBatchCreateResponse(
+        batch_id=submission.batch.id,
+        job_id=submission.job.id,
+        status=submission.job.status.value,
+        reused=submission.reused,
+    )
 
 
 @router.post(
     "/prospect-batches/{batch_id}/companies/{company_id}/resume",
-    response_model=ProspectBatchResponse,
+    response_model=ProspectBatchCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     responses=ERRORS,
 )
 async def resume_prospect_batch_company(
     batch_id: UUID,
     company_id: UUID,
     payload: ProspectBatchResumeRequest,
-    workflow: ProspectBatchWorkflowDep,
-) -> ProspectBatchResponse:
-    batch = await workflow.resume(
+    workflow: ProspectBatchSubmissionDep,
+) -> ProspectBatchCreateResponse:
+    submission = await workflow.resume_company(
         batch_id,
         company_id,
         ResumeProspectCompanyCommand(
             sender=payload.sender.to_domain() if payload.sender else None
         ),
     )
-    return ProspectBatchResponse.from_domain(batch)
+    return ProspectBatchCreateResponse(
+        batch_id=submission.batch.id,
+        job_id=submission.job.id,
+        status=submission.job.status.value,
+        reused=submission.reused,
+    )

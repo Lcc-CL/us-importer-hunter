@@ -1,5 +1,6 @@
 """D2 batch orchestration tests with deterministic, zero-network fakes."""
 
+import dataclasses
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import cast
@@ -14,7 +15,13 @@ from app.domain.discovery import (
     DiscoveryTask,
 )
 from app.domain.events import CompanyFactsChanged, ContactCandidateDiscovered
-from app.domain.prospect_batch import ProspectBatch, ProspectBatchCompanyStatus
+from app.domain.prospect_batch import (
+    ProspectBatch,
+    ProspectBatchCompanyStatus,
+    ProspectBatchStage,
+    ProspectBatchStatus,
+)
+from app.domain.prospect_job import ProspectJob, ProspectJobStatus
 from app.domain.repositories import ProspectBatchUnitOfWork, UnitOfWork
 from app.domain.research import (
     ExtractorIdentity,
@@ -51,6 +58,7 @@ from app.workflows.opportunity import (
 from app.workflows.prospect_batch import (
     CreateProspectBatchCommand,
     ProspectBatchQueryWorkflow,
+    ProspectBatchSubmissionWorkflow,
     ProspectBatchWorkflow,
     ResumeProspectCompanyCommand,
     RetryProspectCompanyCommand,
@@ -131,6 +139,14 @@ class FakeResearchRepository:
         self.items[run.id] = run
 
 
+class FakeProspectJobRepository:
+    def __init__(self) -> None:
+        self.items: dict[UUID, ProspectJob] = {}
+
+    async def add(self, job: ProspectJob) -> None:
+        self.items[job.id] = job
+
+
 class FakeUnitOfWork:
     def __init__(
         self,
@@ -138,11 +154,13 @@ class FakeUnitOfWork:
         companies: FakeCompanyRepository,
         discovery_tasks: FakeDiscoveryTaskRepository,
         prospect_batches: FakeProspectBatchRepository,
+        prospect_jobs: FakeProspectJobRepository,
         research_runs: FakeResearchRepository,
     ) -> None:
         self.companies = companies
         self.discovery_tasks = discovery_tasks
         self.prospect_batches = prospect_batches
+        self.prospect_jobs = prospect_jobs
         self.research_runs = research_runs
 
     async def __aenter__(self) -> "FakeUnitOfWork":
@@ -157,6 +175,9 @@ class FakeUnitOfWork:
         return None
 
     async def commit(self) -> None:
+        return None
+
+    async def flush(self) -> None:
         return None
 
     async def rollback(self) -> None:
@@ -226,8 +247,10 @@ class FakeOpportunityWorkflow:
 class FakeContactDiscovery:
     def __init__(self) -> None:
         self.no_contact_companies: set[UUID] = set()
+        self.calls = 0
 
     async def discover(self, run: ResearchRun) -> ContactDiscoveryRunOutcome:
+        self.calls += 1
         if run.company_id in self.no_contact_companies:
             selection = ContactSelection(
                 primary=None,
@@ -275,10 +298,12 @@ class FakeContactIngestion:
 class FakeDecisionMaker:
     def __init__(self) -> None:
         self.contact_ids: dict[UUID, UUID] = {}
+        self.calls = 0
 
     async def handle(
         self, *, company_id: UUID, opportunity_id: UUID
     ) -> DecisionMakerSelectionOutcome:
+        self.calls += 1
         return DecisionMakerSelectionOutcome(
             action=DecisionMakerSelectionAction.SELECTED,
             company_id=company_id,
@@ -372,10 +397,12 @@ class Fixture:
         self.task = task
         self.batch_repository = FakeProspectBatchRepository()
         self.research_repository = FakeResearchRepository()
+        self.job_repository = FakeProspectJobRepository()
         self.uow = FakeUnitOfWork(
             companies=FakeCompanyRepository(self.companies),
             discovery_tasks=FakeDiscoveryTaskRepository({task.id: task}),
             prospect_batches=self.batch_repository,
+            prospect_jobs=self.job_repository,
             research_runs=self.research_repository,
         )
         self.research = FakeResearchWorkflow(self.research_repository)
@@ -787,3 +814,72 @@ async def test_technical_draft_failure_uses_retry_and_reuses_reviewed_research()
     assert fixture.research.calls == [company_id]
     assert retried_item.opportunity_id == failed_item.opportunity_id
     assert retried_item.selected_contact_id == failed_item.selected_contact_id
+
+
+async def test_recovery_after_persisted_draft_does_not_repeat_downstream_stages() -> None:
+    fixture = Fixture([("Recovered", "https://recovered.example")])
+    batch = await fixture.workflow.create(
+        fixture.task.id,
+        CreateProspectBatchCommand(company_ids=fixture.company_ids, sender=SENDER),
+    )
+    completed = batch.companies[0]
+    before = (
+        len(fixture.research.calls),
+        len(fixture.opportunity.calls),
+        fixture.contacts.calls,
+        fixture.contact_ingestion.calls,
+        fixture.decision_maker.calls,
+        fixture.email.calls,
+    )
+    batch.replace_company(
+        dataclasses.replace(
+            completed,
+            current_stage=ProspectBatchStage.GENERATING_DRAFT,
+            status=ProspectBatchCompanyStatus.RUNNING,
+            completed_at=None,
+        )
+    )
+    batch._status = ProspectBatchStatus.RUNNING
+    batch._completed_at = None
+    batch.recover_stale_execution()
+    await fixture.batch_repository.save(batch)
+
+    recovered = await fixture.workflow.execute(batch.id, sender=SENDER)
+
+    assert recovered.companies[0].status is ProspectBatchCompanyStatus.COMPLETED
+    assert (
+        len(fixture.research.calls),
+        len(fixture.opportunity.calls),
+        fixture.contacts.calls,
+        fixture.contact_ingestion.calls,
+        fixture.decision_maker.calls,
+        fixture.email.calls,
+    ) == before
+
+
+async def test_retry_submission_returns_pending_job_before_worker_execution() -> None:
+    fixture = Fixture([("Async Retry", "https://async-retry.example")])
+    company_id = fixture.company_ids[0]
+    fixture.email.fail = True
+    failed = await fixture.workflow.create(
+        fixture.task.id,
+        CreateProspectBatchCommand(company_ids=(company_id,), sender=SENDER),
+    )
+    calls_before_submit = fixture.email.calls
+    submission_workflow = ProspectBatchSubmissionWorkflow(
+        cast(Callable[[], ProspectBatchUnitOfWork], lambda: fixture.uow)
+    )
+
+    submission = await submission_workflow.retry_company(
+        failed.id,
+        company_id,
+        RetryProspectCompanyCommand(sender=SENDER),
+    )
+
+    assert submission.job.status is ProspectJobStatus.PENDING
+    assert submission.batch.company(company_id).status is ProspectBatchCompanyStatus.QUEUED
+    assert fixture.email.calls == calls_before_submit
+
+    fixture.email.fail = False
+    completed = await fixture.workflow.execute(failed.id, sender=SENDER)
+    assert completed.company(company_id).status is ProspectBatchCompanyStatus.COMPLETED

@@ -101,6 +101,12 @@ class Settings(BaseSettings):
         "USImporterHunterBot/0.2 (+https://github.com/Lcc-CL/us-importer-hunter)"
     )
 
+    # Lightweight PostgreSQL prospect runner (D3a). One worker claims one job.
+    prospect_worker_poll_seconds: float = 1.0
+    prospect_job_lease_ttl_seconds: int = 120
+    prospect_job_retry_delay_seconds: int = 5
+    prospect_job_max_attempts: int = 3
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:

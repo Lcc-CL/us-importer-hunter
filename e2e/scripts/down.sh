@@ -11,7 +11,7 @@ POSTGRES_USER="${POSTGRES_USER:-app}"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.e2e.yml)
 
 echo "==> removing E2E containers"
-"${COMPOSE[@]}" rm -sf backend-e2e frontend-e2e >/dev/null 2>&1 || true
+"${COMPOSE[@]}" rm -sf backend-e2e worker-e2e frontend-e2e >/dev/null 2>&1 || true
 
 echo "==> dropping database $E2E_DB"
 "${COMPOSE[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d postgres \

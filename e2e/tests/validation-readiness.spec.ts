@@ -277,8 +277,9 @@ test.describe("research provider notice", () => {
     await expect(page.getByTestId("research-panel")).toBeVisible();
 
     const html = (await page.content()).toLowerCase();
-    for (const forbidden of ["api_key", "apikey", "base_url", "sk-", "codeyu.shop"]) {
+    for (const forbidden of ["api_key", "apikey", "base_url", "codeyu.shop"]) {
       expect(html).not.toContain(forbidden);
     }
+    expect(html).not.toMatch(/sk-[a-z0-9_-]{12,}/i);
   });
 });
