@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     prospect_job_retry_delay_seconds: int = 5
     prospect_job_max_attempts: int = 3
 
+    # D5b1 uses the same durable lease/retry semantics in an import-specific queue.
+    import_job_lease_ttl_seconds: int = 120
+    import_job_retry_delay_seconds: int = 5
+    import_job_max_attempts: int = 3
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:

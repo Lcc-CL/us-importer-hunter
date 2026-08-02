@@ -135,7 +135,7 @@ async def confirm_decision_maker(
                 f"contact {payload.contact_id} not found or does not belong to company {company_id}"
             )
 
-        candidates = selection_service.score_all(contacts)
+        candidates = selection_service.score_all(contacts, company_id=company_id)
         matched = next((c for c in candidates if c.contact_id == payload.contact_id), None)
         if matched is None:
             raise ResourceNotFoundError("contact was not scored in the current candidate set")

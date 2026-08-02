@@ -37,6 +37,29 @@ class SqlAlchemyBulkImportRepository:
     async def add_rows(self, rows: tuple[RawImportRow, ...]) -> None:
         self._session.add_all([BulkImportMapper.row_to_model(row) for row in rows])
 
+    async def get_row(self, row_id: UUID) -> RawImportRow | None:
+        model = await self._session.get(RawImportRowModel, row_id)
+        return BulkImportMapper.row_to_domain(model) if model else None
+
+    async def list_accepted_rows_after(
+        self,
+        *,
+        session_id: UUID,
+        after_row_number: int,
+        limit: int,
+    ) -> list[RawImportRow]:
+        result = await self._session.scalars(
+            select(RawImportRowModel)
+            .where(
+                RawImportRowModel.import_session_id == session_id,
+                RawImportRowModel.status == RawImportRowStatus.ACCEPTED.value,
+                RawImportRowModel.row_number > after_row_number,
+            )
+            .order_by(RawImportRowModel.row_number)
+            .limit(limit)
+        )
+        return [BulkImportMapper.row_to_domain(model) for model in result]
+
     async def list_rows(
         self,
         *,

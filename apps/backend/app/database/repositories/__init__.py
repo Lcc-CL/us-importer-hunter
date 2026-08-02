@@ -18,6 +18,10 @@ from app.database.repositories.import_evidence_projection import (
 from app.database.repositories.import_evidence_promotion import (
     SqlAlchemyImportEvidencePromotionRepository,
 )
+from app.database.repositories.import_resolution import (
+    SqlAlchemyImportProcessingJobRepository,
+    SqlAlchemyImportResolutionRepository,
+)
 from app.database.repositories.opportunity import SqlAlchemyOpportunityRepository
 from app.database.repositories.outreach import SqlAlchemyOutreachRepository
 from app.database.repositories.prospect_batch import SqlAlchemyProspectBatchRepository
@@ -31,6 +35,8 @@ __all__ = [
     "SqlAlchemyImportEvidenceRepository",
     "SqlAlchemyImportEvidencePromotionRepository",
     "SqlAlchemyImportEvidenceProjectionReader",
+    "SqlAlchemyImportProcessingJobRepository",
+    "SqlAlchemyImportResolutionRepository",
     "SqlAlchemyContactRepository",
     "SqlAlchemyDiscoveryTaskRepository",
     "SqlAlchemyOpportunityRepository",

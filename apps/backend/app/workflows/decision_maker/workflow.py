@@ -114,8 +114,12 @@ class DecisionMakerSelectionWorkflow:
                     policy_version=policy,
                 )
 
-            ranked = await self._selection.rank(contacts, size_provider=size_provider)
-            candidates = self._selection.score_all(contacts)
+            ranked = await self._selection.rank(
+                contacts,
+                size_provider=size_provider,
+                company_id=company_id,
+            )
+            candidates = self._selection.score_all(contacts, company_id=company_id)
             selection_result = select(candidates, thresholds=self._thresholds)
 
             notes: list[str] = []

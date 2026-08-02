@@ -18,6 +18,7 @@ from app.domain.discovery import CompanyDiscoveryProvider
 from app.domain.repositories import (
     BulkImportUnitOfWork,
     DiscoveryTaskUnitOfWork,
+    ImportResolutionUnitOfWork,
     ProspectBatchUnitOfWork,
     UnitOfWork,
 )
@@ -46,6 +47,11 @@ from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
 from app.workflows.discovery_task import DiscoveryTaskQueryWorkflow, DiscoveryTaskWorkflow
 from app.workflows.email import EmailDraftGenerationWorkflow
 from app.workflows.import_evidence import EvidenceFlowUnitOfWork, EvidenceToDraftWorkflow
+from app.workflows.import_resolution import (
+    ImportEntityReviewWorkflow,
+    ImportResolutionQueryWorkflow,
+    ImportResolutionSubmissionWorkflow,
+)
 from app.workflows.mvp_prospect_analysis import (
     ApproveEmailDraftWorkflow,
     MvpProspectAnalysisWorkflow,
@@ -115,6 +121,50 @@ def get_bulk_import_query_workflow(uow_factory: UowFactoryDep) -> BulkImportQuer
 
 BulkImportQueryDep = Annotated[
     BulkImportQueryWorkflow, Depends(get_bulk_import_query_workflow)
+]
+
+
+def get_import_resolution_submission_workflow(
+    uow_factory: UowFactoryDep,
+    settings: SettingsDep,
+) -> ImportResolutionSubmissionWorkflow:
+    return ImportResolutionSubmissionWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory),
+        max_attempts=settings.import_job_max_attempts,
+    )
+
+
+ImportResolutionSubmissionDep = Annotated[
+    ImportResolutionSubmissionWorkflow,
+    Depends(get_import_resolution_submission_workflow),
+]
+
+
+def get_import_resolution_query_workflow(
+    uow_factory: UowFactoryDep,
+) -> ImportResolutionQueryWorkflow:
+    return ImportResolutionQueryWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ImportResolutionQueryDep = Annotated[
+    ImportResolutionQueryWorkflow,
+    Depends(get_import_resolution_query_workflow),
+]
+
+
+def get_import_entity_review_workflow(
+    uow_factory: UowFactoryDep,
+) -> ImportEntityReviewWorkflow:
+    return ImportEntityReviewWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ImportEntityReviewDep = Annotated[
+    ImportEntityReviewWorkflow,
+    Depends(get_import_entity_review_workflow),
 ]
 
 

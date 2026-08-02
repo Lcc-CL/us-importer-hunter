@@ -24,6 +24,7 @@ SENDER = SenderProfile(
 
 async def seed_chain(uow_factory: UowFactory) -> tuple[Opportunity, UUID]:
     contact = await persist_contact(uow_factory)  # persists company + ACTIVE contact
+    assert contact.company_id is not None
     opportunity = Opportunity.create_for_company(contact.company_id, uuid4())
     opportunity.apply_assessment(make_assessment())
     opportunity.drain_events()

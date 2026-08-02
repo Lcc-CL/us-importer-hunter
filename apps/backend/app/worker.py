@@ -1,4 +1,4 @@
-"""Standalone single-job worker for PostgreSQL-backed prospect execution."""
+"""Standalone PostgreSQL worker for prospect and import-resolution jobs."""
 
 import asyncio
 import os
@@ -24,8 +24,17 @@ from app.core.config import get_settings
 from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.session import create_engine, create_session_factory
 from app.database.uow import SqlAlchemyUnitOfWork
-from app.domain.repositories import ProspectBatchUnitOfWork, UnitOfWork
+from app.domain.repositories import (
+    ImportResolutionUnitOfWork,
+    ProspectBatchUnitOfWork,
+    UnitOfWork,
+)
 from app.observability.logging import configure_logging
+from app.workflows.import_resolution import (
+    ImportEntityResolutionWorkflow,
+    ImportProcessingJobCoordinator,
+    ImportProcessingJobRunner,
+)
 from app.workflows.mvp_prospect_analysis import UowFactory
 from app.workflows.prospect_batch import ProspectJobCoordinator, ProspectJobRunner
 
@@ -77,6 +86,16 @@ async def run_worker() -> None:
         retry_delay=timedelta(seconds=settings.prospect_job_retry_delay_seconds),
     )
     runner = ProspectJobRunner(coordinator=coordinator, batch_workflow=batch_workflow)
+    import_uow_factory = _import_uow_factory(typed_uow_factory)
+    import_coordinator = ImportProcessingJobCoordinator(
+        import_uow_factory,
+        lease_ttl=timedelta(seconds=settings.import_job_lease_ttl_seconds),
+        retry_delay=timedelta(seconds=settings.import_job_retry_delay_seconds),
+    )
+    import_runner = ImportProcessingJobRunner(
+        coordinator=import_coordinator,
+        workflow=ImportEntityResolutionWorkflow(import_uow_factory),
+    )
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -86,7 +105,9 @@ async def run_worker() -> None:
 
     try:
         while not stop.is_set():
-            worked = await runner.run_once(owner=owner)
+            import_worked = await import_runner.run_once(owner=owner)
+            prospect_worked = await runner.run_once(owner=owner)
+            worked = import_worked or prospect_worked
             if worked:
                 continue
             try:
@@ -103,6 +124,12 @@ async def run_worker() -> None:
 def _prospect_uow_factory(
     factory: UowFactory,
 ) -> Callable[[], ProspectBatchUnitOfWork]:
+    return factory  # type: ignore[return-value]
+
+
+def _import_uow_factory(
+    factory: UowFactory,
+) -> Callable[[], ImportResolutionUnitOfWork]:
     return factory  # type: ignore[return-value]
 
 

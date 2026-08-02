@@ -26,6 +26,8 @@ from app.database.repositories import (
     SqlAlchemyDiscoveryTaskRepository,
     SqlAlchemyImportEvidencePromotionRepository,
     SqlAlchemyImportEvidenceRepository,
+    SqlAlchemyImportProcessingJobRepository,
+    SqlAlchemyImportResolutionRepository,
     SqlAlchemyOpportunityRepository,
     SqlAlchemyOutreachRepository,
     SqlAlchemyProspectBatchRepository,
@@ -42,6 +44,8 @@ from app.domain.repositories import (
     ImportEvidencePromotionRepository,
     ImportEvidenceRepository,
     ImportEvidenceUnitOfWork,
+    ImportProcessingJobRepository,
+    ImportResolutionRepository,
     OpportunityRepository,
     OutreachRepository,
     ProspectBatchRepository,
@@ -64,6 +68,8 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
     prospect_jobs: ProspectJobRepository
+    import_resolution: ImportResolutionRepository
+    import_processing_jobs: ImportProcessingJobRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -79,6 +85,8 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self.discovery_tasks = SqlAlchemyDiscoveryTaskRepository(self._session)
         self.prospect_batches = SqlAlchemyProspectBatchRepository(self._session)
         self.prospect_jobs = SqlAlchemyProspectJobRepository(self._session)
+        self.import_resolution = SqlAlchemyImportResolutionRepository(self._session)
+        self.import_processing_jobs = SqlAlchemyImportProcessingJobRepository(self._session)
         self.import_evidence = SqlAlchemyImportEvidenceRepository(self._session)
         self.import_evidence_promotions = SqlAlchemyImportEvidencePromotionRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)

@@ -12,7 +12,7 @@ from app.domain.import_evidence.values import (
     EntityMatchMethod,
     EntityMatchStatus,
 )
-from app.shared.normalization import normalize_company_name
+from app.shared.normalization import normalize_company_name as normalize_company_name
 
 # -- thresholds (named, not magic) ---------------------------------------------
 
