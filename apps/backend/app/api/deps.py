@@ -16,6 +16,7 @@ from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.uow import SqlAlchemyUnitOfWork
 from app.domain.discovery import CompanyDiscoveryProvider
 from app.domain.repositories import (
+    BulkImportUnitOfWork,
     DiscoveryTaskUnitOfWork,
     ProspectBatchUnitOfWork,
     UnitOfWork,
@@ -38,6 +39,7 @@ from app.services.scoring import DeterministicOpportunityScoringService
 from app.shared.exceptions import ProviderUnavailableError
 from app.tools.importyeti import ImportYetiCompanyDiscoveryProvider
 from app.tools.website import FetchLimits, SafeFetcher, SiteScope
+from app.workflows.bulk_import import BulkImportQueryWorkflow, BulkImportWorkflow
 from app.workflows.company_ingestion import CompanyIngestionWorkflow
 from app.workflows.contact_ingestion import ContactIngestionWorkflow
 from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
@@ -98,6 +100,22 @@ def get_uow_factory(request: Request) -> UowFactory:
 
 
 UowFactoryDep = Annotated[UowFactory, Depends(get_uow_factory)]
+
+
+def get_bulk_import_workflow(uow_factory: UowFactoryDep) -> BulkImportWorkflow:
+    return BulkImportWorkflow(cast(Callable[[], BulkImportUnitOfWork], uow_factory))
+
+
+BulkImportWorkflowDep = Annotated[BulkImportWorkflow, Depends(get_bulk_import_workflow)]
+
+
+def get_bulk_import_query_workflow(uow_factory: UowFactoryDep) -> BulkImportQueryWorkflow:
+    return BulkImportQueryWorkflow(cast(Callable[[], BulkImportUnitOfWork], uow_factory))
+
+
+BulkImportQueryDep = Annotated[
+    BulkImportQueryWorkflow, Depends(get_bulk_import_query_workflow)
+]
 
 
 def get_opportunity_scoring_service() -> OpportunityScoringService:

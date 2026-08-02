@@ -29,6 +29,58 @@ export type DiscoveryTaskStatus =
   | "partial_failed"
   | "failed";
 
+export type ImportSessionStatus =
+  | "receiving"
+  | "processing"
+  | "completed"
+  | "partial_failed"
+  | "failed";
+
+export type RawImportRowStatus = "accepted" | "invalid" | "duplicate";
+
+export interface ImportSessionResponse {
+  session_id: string;
+  source: string;
+  original_filename: string;
+  file_type: string;
+  file_size_bytes: number;
+  file_sha256: string;
+  mapping_json: Record<string, unknown>;
+  encoding: string;
+  status: ImportSessionStatus;
+  total_rows: number;
+  accepted_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error_summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportSessionCreateResponse extends ImportSessionResponse {
+  reused_existing: boolean;
+}
+
+export interface RawImportRowResponse {
+  id: string;
+  row_number: number;
+  raw_payload: Record<string, unknown>;
+  row_hash: string;
+  status: RawImportRowStatus;
+  error_codes: string[];
+  created_at: string;
+}
+
+export interface RawImportRowListResponse {
+  session_id: string;
+  page: number;
+  limit: number;
+  total: number;
+  rows: RawImportRowResponse[];
+}
+
 export interface DiscoveryTaskResponse {
   task_id: string;
   original_prompt: string;
@@ -633,6 +685,46 @@ async function requestForm<T>(
 
 export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return requestJson<RuntimeStatusResponse>("/health/runtime");
+}
+
+export function createBulkImportSession(
+  file: File,
+  source: string,
+  mapping?: Record<string, string>,
+): Promise<ImportSessionCreateResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("source", source);
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  return requestForm<ImportSessionCreateResponse>(
+    "/import-sessions",
+    form,
+    "bulk_import_upload_failed",
+  );
+}
+
+export function getBulkImportSession(
+  sessionId: string,
+): Promise<ImportSessionResponse> {
+  return requestJson<ImportSessionResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}`,
+  );
+}
+
+export function getBulkImportRows(
+  sessionId: string,
+  options: { page: number; limit: number; status?: RawImportRowStatus },
+): Promise<RawImportRowListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page),
+    limit: String(options.limit),
+  });
+  if (options.status) params.set("status", options.status);
+  return requestJson<RawImportRowListResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/rows?${params.toString()}`,
+  );
 }
 
 export function createDiscoveryTask(prompt: string): Promise<DiscoveryTaskResponse> {

@@ -3,6 +3,8 @@ empty → upgrade head → downgrade base → upgrade head."""
 
 import asyncio
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from sqlalchemy import text
@@ -62,7 +64,43 @@ async def _column_names(url: str, table_name: str) -> set[str]:
         await engine.dispose()
 
 
+async def _insert_core_company(url: str, company_id: UUID) -> None:
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO companies "
+                    "(id, name, normalized_name, website, website_host, verified, created_at) "
+                    "VALUES (:id, :name, :normalized_name, NULL, NULL, false, :created_at)"
+                ),
+                {
+                    "id": company_id,
+                    "name": "Migration Core Company",
+                    "normalized_name": "migration core company",
+                    "created_at": datetime(2026, 8, 1, tzinfo=UTC),
+                },
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _company_exists(url: str, company_id: UUID) -> bool:
+    engine = create_async_engine(url)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.scalar(
+                text("SELECT count(*) FROM companies WHERE id = :id"),
+                {"id": company_id},
+            )
+            return int(result or 0) == 1
+    finally:
+        await engine.dispose()
+
+
 EXPECTED_TABLES = {
+    "import_sessions",
+    "raw_import_rows",
     "companies",
     "company_aliases",
     "company_sources",
@@ -102,3 +140,18 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     assert EXPECTED_TABLES <= tables_again
     draft_columns_again = asyncio.run(_column_names(migration_db_url, "email_drafts"))
     assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns_again
+
+
+def test_d5a1_downgrade_preserves_existing_core_data(migration_db_url: str) -> None:
+    company_id = UUID("00000000-0000-0000-0000-00000000d5a1")
+    run_alembic(["upgrade", "head"], MIGRATION_DB)
+    asyncio.run(_insert_core_company(migration_db_url, company_id))
+
+    run_alembic(["downgrade", "d3a3b4c5d6e7"], MIGRATION_DB)
+    tables = asyncio.run(_table_names(migration_db_url))
+    assert "import_sessions" not in tables
+    assert "raw_import_rows" not in tables
+    assert asyncio.run(_company_exists(migration_db_url, company_id))
+
+    run_alembic(["upgrade", "head"], MIGRATION_DB)
+    assert asyncio.run(_company_exists(migration_db_url, company_id))

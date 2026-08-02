@@ -11,6 +11,7 @@ from types import TracebackType
 from typing import Protocol
 from uuid import UUID
 
+from app.domain.bulk_import import ImportSession, RawImportRow, RawImportRowStatus
 from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
 from app.domain.discovery import DiscoveryTask
@@ -53,6 +54,28 @@ class CompanyRepository(Protocol):
         """Dedup lookup: the canonical company already using this web host, if any."""
         ...
 
+
+class BulkImportRepository(Protocol):
+    async def get_session(self, session_id: UUID) -> ImportSession | None: ...
+
+    async def find_session(
+        self, *, source: str, file_sha256: str
+    ) -> ImportSession | None: ...
+
+    async def add_session(self, session: ImportSession) -> None: ...
+
+    async def save_session(self, session: ImportSession) -> None: ...
+
+    async def add_rows(self, rows: tuple[RawImportRow, ...]) -> None: ...
+
+    async def list_rows(
+        self,
+        *,
+        session_id: UUID,
+        status: RawImportRowStatus | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[RawImportRow], int]: ...
 
 class OpportunityRepository(Protocol):
     async def get_by_id(self, opportunity_id: UUID) -> Opportunity | None: ...
@@ -293,6 +316,25 @@ class ImportEvidenceUnitOfWork(Protocol):
     ) -> None: ...
 
     async def commit(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class BulkImportUnitOfWork(Protocol):
+    bulk_import: BulkImportRepository
+
+    async def __aenter__(self) -> "BulkImportUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
 
     async def rollback(self) -> None: ...
 
