@@ -32,6 +32,7 @@ from app.domain.import_resolution import (
     ImportEntityReviewStatus,
     ImportEntityType,
     ImportJobStatus,
+    ImportJobType,
     ImportProcessingJob,
     ImportResolution,
 )
@@ -427,7 +428,24 @@ class SqlAlchemyImportProcessingJobRepository:
     async def get_latest_for_session(self, session_id: UUID) -> ImportProcessingJob | None:
         model = await self._session.scalar(
             select(ImportProcessingJobModel)
-            .where(ImportProcessingJobModel.import_session_id == session_id)
+            .where(
+                ImportProcessingJobModel.import_session_id == session_id,
+                ImportProcessingJobModel.job_type == ImportJobType.ENTITY_RESOLUTION.value,
+            )
+            .order_by(ImportProcessingJobModel.created_at.desc())
+            .limit(1)
+        )
+        return ImportResolutionMapper.job_to_domain(model) if model else None
+
+    async def get_latest_for_routing_run(
+        self, routing_run_id: UUID
+    ) -> ImportProcessingJob | None:
+        model = await self._session.scalar(
+            select(ImportProcessingJobModel)
+            .where(
+                ImportProcessingJobModel.routing_run_id == routing_run_id,
+                ImportProcessingJobModel.job_type == ImportJobType.PROSPECT_ROUTING.value,
+            )
             .order_by(ImportProcessingJobModel.created_at.desc())
             .limit(1)
         )

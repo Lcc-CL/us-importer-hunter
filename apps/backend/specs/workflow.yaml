@@ -49,6 +49,35 @@ workflows:
     batch_size: 250
     status: implemented
 
+  prospect_routing:
+    package: app.workflows.prospect_routing
+    description: >
+      D5c background deterministic pre-score and sales-routing workflow for a
+      completed or partial-failed ImportSession after entity resolution. It
+      projects persisted RawImportRow, canonical Company, resolution-profile and
+      CompanyContact facts into an auditable feature snapshot, applies the fixed
+      d5c-deterministic-routing-v1 weights, and recommends A/B/C/D. Companies with
+      unresolved identity review are blocked without stopping other companies.
+      Human confirm, override or exclude is required before an effective-tier A
+      company can enter a routing-sourced ProspectBatch of at most five companies.
+      Creating that batch does not create a ProspectJob and never starts Research,
+      Opportunity scoring, draft generation, Umail export or email delivery. No
+      provider or LLM is invoked.
+    steps:
+      - { id: aggregate_features, service: routing_feature_projector }
+      - { id: deterministic_pre_score, service: deterministic_prospect_routing_scorer }
+      - { id: persist_routes, aggregate: prospect_route }
+      - { id: review_routes, workflow: prospect_route_review, human_review: required }
+      - { id: create_a_tier_batch, aggregate: prospect_batch, conditional: confirmed_effective_tier_a }
+    statuses: [pending, running, completed, partial_completed, failed]
+    route_review_statuses: [suggested, confirmed, overridden, blocked]
+    tiers: [A, B, C, D]
+    execution: postgresql_worker
+    job_statuses: [pending, leased, running, completed, failed, cancelled]
+    rules_version: d5c-deterministic-routing-v1
+    limits: { companies_per_prospect_batch: 5, worker_concurrency: 1 }
+    status: implemented
+
   discovery_task:
     package: app.workflows.discovery_task
     description: >

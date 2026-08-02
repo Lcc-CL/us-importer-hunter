@@ -224,6 +224,15 @@ class ImportProcessingJobModel(Base):
         CheckConstraint("attempt_count >= 0", name="ck_import_processing_jobs_attempts"),
         CheckConstraint("max_attempts > 0", name="ck_import_processing_jobs_max_attempts"),
         CheckConstraint("recovery_count >= 0", name="ck_import_processing_jobs_recovery"),
+        CheckConstraint(
+            "job_type IN ('entity_resolution','prospect_routing')",
+            name="ck_import_processing_jobs_type",
+        ),
+        CheckConstraint(
+            "(job_type = 'entity_resolution' AND routing_run_id IS NULL) OR "
+            "(job_type = 'prospect_routing' AND routing_run_id IS NOT NULL)",
+            name="ck_import_processing_jobs_subject",
+        ),
         Index(
             "uq_import_processing_jobs_active_business",
             "business_key",
@@ -232,6 +241,7 @@ class ImportProcessingJobModel(Base):
         ),
         Index("ix_import_processing_jobs_claim", "status", "available_at", "created_at"),
         Index("ix_import_processing_jobs_session", "import_session_id", "created_at"),
+        Index("ix_import_processing_jobs_routing_run", "routing_run_id", "created_at"),
         Index("ix_import_processing_jobs_lease_expiry", "lease_expires_at"),
     )
 
@@ -239,6 +249,10 @@ class ImportProcessingJobModel(Base):
     import_session_id: Mapped[UUID] = mapped_column(
         ForeignKey("import_sessions.id", ondelete="CASCADE"), nullable=False
     )
+    routing_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("prospect_routing_runs.id", ondelete="CASCADE")
+    )
+    job_type: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     business_key: Mapped[str] = mapped_column(String(64), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

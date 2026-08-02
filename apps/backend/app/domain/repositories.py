@@ -45,6 +45,13 @@ from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
 from app.domain.prospect_batch import ProspectBatch
 from app.domain.prospect_job import ProspectJob
+from app.domain.prospect_routing import (
+    ProspectRoute,
+    ProspectRouteReviewStatus,
+    ProspectRoutingRun,
+    ProspectTier,
+    RoutingSourceCompany,
+)
 from app.domain.research import ResearchRun
 from app.domain.task import Task
 from app.domain.values import CompanyName, IdempotencyKey
@@ -181,6 +188,10 @@ class ProspectBatchRepository(Protocol):
 
     async def save(self, batch: ProspectBatch) -> None: ...
 
+    async def find_for_routing_selection(
+        self, *, routing_run_id: UUID, routing_selection_hash: str
+    ) -> ProspectBatch | None: ...
+
     async def has_completed_pipeline(
         self,
         *,
@@ -308,6 +319,10 @@ class ImportProcessingJobRepository(Protocol):
         self, session_id: UUID
     ) -> ImportProcessingJob | None: ...
 
+    async def get_latest_for_routing_run(
+        self, routing_run_id: UUID
+    ) -> ImportProcessingJob | None: ...
+
     async def find_active_by_business_key(
         self, business_key: str
     ) -> ImportProcessingJob | None: ...
@@ -327,6 +342,65 @@ class ImportProcessingJobRepository(Protocol):
     async def get_stale_for_update(
         self, *, now: datetime, limit: int
     ) -> list[ImportProcessingJob]: ...
+
+
+class ProspectRoutingRepository(Protocol):
+    async def get_run(self, routing_run_id: UUID) -> ProspectRoutingRun | None: ...
+
+    async def get_run_for_update(
+        self, routing_run_id: UUID
+    ) -> ProspectRoutingRun | None: ...
+
+    async def find_run_by_configuration(
+        self,
+        *,
+        import_session_id: UUID,
+        rules_version: str,
+        configuration_hash: str,
+    ) -> ProspectRoutingRun | None: ...
+
+    async def add_run(self, run: ProspectRoutingRun) -> None: ...
+
+    async def save_run(self, run: ProspectRoutingRun) -> None: ...
+
+    async def add_routes(self, routes: tuple[ProspectRoute, ...]) -> None: ...
+
+    async def list_available_generations(
+        self, routing_run_id: UUID
+    ) -> tuple[int, ...]: ...
+
+    async def get_route(self, route_id: UUID) -> ProspectRoute | None: ...
+
+    async def get_route_for_update(self, route_id: UUID) -> ProspectRoute | None: ...
+
+    async def save_route(self, route: ProspectRoute) -> None: ...
+
+    async def list_routes(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        tier: ProspectTier | None,
+        review_status: ProspectRouteReviewStatus | None,
+        minimum_score: float | None,
+        maximum_score: float | None,
+        has_contact: bool | None,
+        role_category: str | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[ProspectRoute], int]: ...
+
+    async def list_routes_for_companies(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        company_ids: tuple[UUID, ...],
+    ) -> list[ProspectRoute]: ...
+
+    async def list_source_companies(
+        self, import_session_id: UUID
+    ) -> tuple[RoutingSourceCompany, ...]: ...
 
 
 class ResearchRunRepository(Protocol):
@@ -523,6 +597,8 @@ class ImportResolutionUnitOfWork(Protocol):
     contacts: ContactRepository
     import_resolution: ImportResolutionRepository
     import_processing_jobs: ImportProcessingJobRepository
+    prospect_routing: ProspectRoutingRepository
+    prospect_batches: ProspectBatchRepository
 
     async def __aenter__(self) -> "ImportResolutionUnitOfWork": ...
 

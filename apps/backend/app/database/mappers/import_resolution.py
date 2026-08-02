@@ -18,6 +18,7 @@ from app.domain.import_resolution import (
     ImportEntityReviewStatus,
     ImportEntityType,
     ImportJobStatus,
+    ImportJobType,
     ImportProcessingJob,
     ImportResolution,
     ImportResolutionStatus,
@@ -205,6 +206,8 @@ class ImportResolutionMapper:
         return ImportProcessingJobModel(
             id=job.id,
             import_session_id=job.import_session_id,
+            routing_run_id=job.routing_run_id,
+            job_type=job.job_type.value,
             status=job.status.value,
             business_key=job.business_key,
             available_at=job.available_at,
@@ -229,6 +232,8 @@ class ImportResolutionMapper:
         return ImportProcessingJob(
             id=model.id,
             import_session_id=model.import_session_id,
+            routing_run_id=model.routing_run_id,
+            job_type=ImportJobType(model.job_type),
             status=ImportJobStatus(model.status),
             business_key=model.business_key,
             available_at=model.available_at,

@@ -1,0 +1,628 @@
+"""Deterministic, provider-free feature projection and pre-score policy."""
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from typing import Any
+from uuid import UUID
+
+from app.domain.prospect_routing import (
+    ProspectRoute,
+    ProspectRoutingCriteria,
+    ProspectTier,
+    RoutingFeatureInput,
+    RoutingSourceCompany,
+)
+
+DEFAULT_WEIGHTS: dict[str, float] = {
+    "product_or_hs_match": 30.0,
+    "import_recency": 20.0,
+    "import_frequency": 15.0,
+    "origin_country_match": 10.0,
+    "port_match": 10.0,
+    "contact_quality": 10.0,
+    "data_completeness": 5.0,
+}
+
+PREFERRED_ROLES = frozenset(
+    {
+        "owner_founder",
+        "executive",
+        "procurement",
+        "supply_chain",
+        "logistics",
+        "operations",
+        "import_export",
+    }
+)
+
+ASIA_COUNTRIES = frozenset(
+    {
+        "china",
+        "cn",
+        "hong kong",
+        "taiwan",
+        "vietnam",
+        "thailand",
+        "malaysia",
+        "indonesia",
+        "india",
+        "japan",
+        "south korea",
+        "korea",
+        "singapore",
+        "philippines",
+        "中国",
+        "香港",
+        "台湾",
+        "越南",
+        "泰国",
+        "马来西亚",
+        "印度尼西亚",
+        "印度",
+        "日本",
+        "韩国",
+        "新加坡",
+        "菲律宾",
+    }
+)
+
+ROUTING_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "product_description": (
+        "product_description",
+        "product",
+        "products",
+        "commodity",
+        "description",
+        "产品",
+        "产品描述",
+        "商品描述",
+        "品名",
+    ),
+    "hs_code": ("hs_code", "hscode", "hs code", "海关编码", "hs编码"),
+    "origin_country": (
+        "origin_country",
+        "country_of_origin",
+        "supplier_country",
+        "supplier",
+        "来源国",
+        "原产国",
+        "供应商国家",
+        "供应商",
+    ),
+    "shipment_date": (
+        "shipment_date",
+        "arrival_date",
+        "import_date",
+        "date",
+        "进口日期",
+        "到港日期",
+        "提单日期",
+    ),
+    "pol": ("pol", "port_of_loading", "loading_port", "起运港", "装货港"),
+    "pod": ("pod", "port_of_discharge", "destination_port", "目的港", "卸货港"),
+    "company_type": ("company_type", "公司类型", "企业类型", "客户类型"),
+}
+
+_SPLIT_VALUES = re.compile(r"[;,|\n]+")
+_HS_CLEAN = re.compile(r"[^0-9a-z]+")
+
+
+@dataclass(frozen=True)
+class RoutingScoreResult:
+    pre_score: float
+    recommended_tier: ProspectTier | None
+    feature_snapshot: dict[str, Any]
+    reason_codes: tuple[str, ...]
+    warning_codes: tuple[str, ...]
+    blocked: bool
+    contact_count: int
+    has_usable_contact: bool
+    has_usable_email: bool
+    preferred_role_category: str | None
+
+
+class RoutingFeatureProjector:
+    """Project source rows into typed, deterministic scoring inputs."""
+
+    def project(
+        self,
+        company: RoutingSourceCompany,
+        *,
+        mapping: Mapping[str, str],
+    ) -> RoutingFeatureInput:
+        products: list[str] = []
+        hs_codes: list[str] = []
+        shipment_dates: list[date] = []
+        origins: list[str] = []
+        pols: list[str] = []
+        pods: list[str] = []
+        company_types: list[str] = []
+        for row in company.rows:
+            fields = _fields(row.raw_payload)
+            products.extend(_split(_value(fields, mapping, "product_description")))
+            hs_codes.extend(_split(_value(fields, mapping, "hs_code")))
+            origins.extend(_split(_value(fields, mapping, "origin_country")))
+            pols.extend(_split(_value(fields, mapping, "pol")))
+            pods.extend(_split(_value(fields, mapping, "pod")))
+            company_types.extend(_split(_value(fields, mapping, "company_type")))
+            parsed_date = _parse_date(_value(fields, mapping, "shipment_date"))
+            if parsed_date is not None:
+                shipment_dates.append(parsed_date)
+
+        intermediary_signals = _intermediary_signals(
+            company.company_name,
+            company.profile_company_type,
+            tuple(company_types),
+        )
+        explicit_type = _explicit_intermediary_type(
+            company.profile_company_type,
+            tuple(company_types),
+        )
+        return RoutingFeatureInput(
+            company_id=company.company_id,
+            company_name=company.company_name,
+            website=company.website,
+            profile_domain=company.profile_domain,
+            profile_address=company.profile_address,
+            profile_company_type=company.profile_company_type,
+            product_descriptions=_dedupe(products),
+            hs_codes=_dedupe(hs_codes),
+            shipment_dates=tuple(shipment_dates),
+            origin_countries=_dedupe(origins),
+            pols=_dedupe(pols),
+            pods=_dedupe(pods),
+            source_row_count=len(company.rows),
+            contacts=company.contacts,
+            intermediary_signals=intermediary_signals,
+            strong_exclusion=explicit_type or len(intermediary_signals) >= 2,
+            unresolved_company_conflict=company.unresolved_company_conflict,
+        )
+
+
+class DeterministicProspectRoutingScorer:
+    """Versioned, explainable policy using only persisted facts."""
+
+    def score(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        criteria: ProspectRoutingCriteria,
+        features: RoutingFeatureInput,
+        today: date | None = None,
+    ) -> ProspectRoute:
+        result = self.evaluate(criteria=criteria, features=features, today=today)
+        return ProspectRoute.create(
+            routing_run_id=routing_run_id,
+            execution_generation=execution_generation,
+            company_id=features.company_id,
+            company_name=features.company_name,
+            pre_score=result.pre_score,
+            recommended_tier=result.recommended_tier,
+            feature_snapshot_json=result.feature_snapshot,
+            reason_codes=result.reason_codes,
+            warning_codes=result.warning_codes,
+            blocked=result.blocked,
+            contact_count=result.contact_count,
+            has_usable_contact=result.has_usable_contact,
+            has_usable_email=result.has_usable_email,
+            preferred_role_category=result.preferred_role_category,
+        )
+
+    def evaluate(
+        self,
+        *,
+        criteria: ProspectRoutingCriteria,
+        features: RoutingFeatureInput,
+        today: date | None = None,
+    ) -> RoutingScoreResult:
+        evaluation_date = today or datetime.now(UTC).date()
+        reasons: list[str] = []
+        warnings: list[str] = []
+
+        product_ratio = _keyword_match_ratio(
+            criteria.target_product_keywords,
+            features.product_descriptions,
+        )
+        hs_ratio = _hs_match_ratio(criteria.target_hs_codes, features.hs_codes)
+        relevance_ratio = _relevance_ratio(criteria, product_ratio, hs_ratio)
+        relevance_points = 30.0 * relevance_ratio
+        reasons.append(_band_reason("PRODUCT_HS_MATCH", relevance_ratio))
+        if criteria.target_product_keywords and not features.product_descriptions:
+            warnings.append("PRODUCT_DATA_MISSING")
+        if criteria.target_hs_codes and not features.hs_codes:
+            warnings.append("HS_CODE_DATA_MISSING")
+
+        recency_ratio, days_since_last = _recency_ratio(
+            features.shipment_dates,
+            evaluation_date,
+        )
+        recency_points = 20.0 * recency_ratio
+        reasons.append(_band_reason("IMPORT_RECENCY", recency_ratio))
+        if days_since_last is None:
+            warnings.append("SHIPMENT_DATE_MISSING")
+
+        active_months = len({(value.year, value.month) for value in features.shipment_dates})
+        frequency_ratio = min(features.source_row_count / 12, 1.0) * 0.6 + min(
+            active_months / 6, 1.0
+        ) * 0.4
+        frequency_points = 15.0 * frequency_ratio
+        reasons.append(_band_reason("IMPORT_FREQUENCY", frequency_ratio))
+
+        origin_targets = (
+            frozenset(_normalize(value) for value in criteria.preferred_origin_countries)
+            if criteria.preferred_origin_countries
+            else ASIA_COUNTRIES
+        )
+        origin_ratio = _value_match_ratio(origin_targets, features.origin_countries)
+        origin_points = 10.0 * origin_ratio
+        reasons.append(_band_reason("ORIGIN_MATCH", origin_ratio))
+        if not features.origin_countries:
+            warnings.append("ORIGIN_DATA_MISSING")
+
+        pol_ratio = _value_match_ratio(
+            frozenset(_normalize(value) for value in criteria.preferred_pol),
+            features.pols,
+        )
+        pod_ratio = _value_match_ratio(
+            frozenset(_normalize(value) for value in criteria.preferred_pod),
+            features.pods,
+        )
+        configured_port_dimensions = int(bool(criteria.preferred_pol)) + int(
+            bool(criteria.preferred_pod)
+        )
+        port_ratio = (
+            (
+                pol_ratio * int(bool(criteria.preferred_pol))
+                + pod_ratio * int(bool(criteria.preferred_pod))
+            )
+            / configured_port_dimensions
+            if configured_port_dimensions
+            else 0.0
+        )
+        port_points = 10.0 * port_ratio
+        reasons.append(
+            "PORT_PREFERENCE_NOT_SET"
+            if not configured_port_dimensions
+            else _band_reason("PORT_MATCH", port_ratio)
+        )
+        if configured_port_dimensions and not features.pols and not features.pods:
+            warnings.append("PORT_DATA_MISSING")
+
+        eligible_contacts = tuple(
+            contact
+            for contact in features.contacts
+            if contact.status == "active" and contact.has_usable_channel
+        )
+        usable_emails = tuple(contact for contact in eligible_contacts if contact.has_usable_email)
+        preferred_contacts = tuple(
+            contact for contact in eligible_contacts if contact.role_category in PREFERRED_ROLES
+        )
+        contact_coverage_ratio = min(len(eligible_contacts) / 2, 1.0)
+        preferred_role_ratio = 1.0 if preferred_contacts else 0.0
+        contact_ratio = 0.4 * contact_coverage_ratio + 0.6 * preferred_role_ratio
+        contact_points = 10.0 * contact_ratio
+        reasons.append(_band_reason("CONTACT_COVERAGE", contact_coverage_ratio))
+        reasons.append(_band_reason("PREFERRED_ROLE_CONTACT", preferred_role_ratio))
+        if not eligible_contacts:
+            warnings.append("USABLE_CONTACT_MISSING")
+        elif not preferred_contacts:
+            warnings.append("PREFERRED_ROLE_CONTACT_MISSING")
+        if not usable_emails:
+            warnings.append("USABLE_EMAIL_MISSING")
+
+        completeness_flags = {
+            "product_or_hs": bool(features.product_descriptions or features.hs_codes),
+            "shipment_date": bool(features.shipment_dates),
+            "origin": bool(features.origin_countries),
+            "port": bool(features.pols or features.pods),
+            "company_profile": bool(
+                features.website
+                or features.profile_domain
+                or features.profile_address
+                or features.profile_company_type
+            ),
+            "contact": bool(features.contacts),
+        }
+        completeness_ratio = sum(completeness_flags.values()) / len(completeness_flags)
+        completeness_points = 5.0 * completeness_ratio
+        reasons.append(_band_reason("DATA_COMPLETENESS", completeness_ratio))
+
+        intermediary_penalty = 0.0
+        if features.intermediary_signals:
+            warnings.append("POSSIBLE_INTERMEDIARY")
+            if not features.strong_exclusion:
+                intermediary_penalty = 5.0
+                reasons.append("POSSIBLE_INTERMEDIARY_WEAK_PENALTY")
+        if features.strong_exclusion:
+            reasons.append("STRONG_INTERMEDIARY_EXCLUSION")
+
+        total = max(
+            0.0,
+            min(
+                100.0,
+                relevance_points
+                + recency_points
+                + frequency_points
+                + origin_points
+                + port_points
+                + contact_points
+                + completeness_points
+                - intermediary_penalty,
+            ),
+        )
+        pre_score = round(total, 2)
+        explicit_mismatch = _explicit_mismatch(criteria, features, product_ratio, hs_ratio)
+        blocked = features.unresolved_company_conflict
+        recommended_tier = recommend_prospect_tier(
+            pre_score=pre_score,
+            has_usable_contact=bool(eligible_contacts),
+            has_preferred_role_contact=bool(preferred_contacts),
+            has_usable_email=bool(usable_emails),
+            strong_exclusion=features.strong_exclusion,
+            explicit_mismatch=explicit_mismatch,
+            blocked=blocked,
+        )
+        if blocked:
+            reasons.append("UNRESOLVED_COMPANY_CONFLICT_BLOCKED")
+        elif explicit_mismatch:
+            reasons.append("EXPLICIT_TARGET_MISMATCH")
+        reasons.append(
+            "ROUTED_BLOCKED" if recommended_tier is None else f"ROUTED_{recommended_tier.value}"
+        )
+
+        preferred_role = preferred_contacts[0].role_category if preferred_contacts else None
+        snapshot: dict[str, Any] = {
+            "product_match_score": round(product_ratio * 100, 2),
+            "hs_code_match_score": round(hs_ratio * 100, 2),
+            "product_hs_component": round(relevance_points, 2),
+            "import_recency_score": round(recency_ratio * 100, 2),
+            "import_recency_component": round(recency_points, 2),
+            "days_since_last_import": days_since_last,
+            "import_frequency_score": round(frequency_ratio * 100, 2),
+            "import_frequency_component": round(frequency_points, 2),
+            "source_row_count": features.source_row_count,
+            "active_import_months": active_months,
+            "origin_country_match_score": round(origin_ratio * 100, 2),
+            "origin_country_component": round(origin_points, 2),
+            "port_match_score": round(port_ratio * 100, 2),
+            "port_component": round(port_points, 2),
+            "contact_coverage_score": round(contact_coverage_ratio * 100, 2),
+            "preferred_role_contact_score": round(preferred_role_ratio * 100, 2),
+            "contact_component": round(contact_points, 2),
+            "data_completeness_score": round(completeness_ratio * 100, 2),
+            "data_completeness_component": round(completeness_points, 2),
+            "data_completeness_flags": completeness_flags,
+            "intermediary_penalty": intermediary_penalty,
+            "intermediary_signals": list(features.intermediary_signals),
+            "unresolved_entity_penalty": "blocked" if blocked else None,
+            "observed_products": list(features.product_descriptions),
+            "observed_hs_codes": list(features.hs_codes),
+            "observed_origin_countries": list(features.origin_countries),
+            "observed_pol": list(features.pols),
+            "observed_pod": list(features.pods),
+            "contact_count": len(features.contacts),
+            "usable_contact_count": len(eligible_contacts),
+            "usable_email_contact_count": len(usable_emails),
+            "preferred_role_contact_count": len(preferred_contacts),
+            "preferred_role_category": preferred_role,
+            "strong_exclusion": features.strong_exclusion,
+            "explicit_target_mismatch": explicit_mismatch,
+            "calculation_total": pre_score,
+        }
+        return RoutingScoreResult(
+            pre_score=pre_score,
+            recommended_tier=recommended_tier,
+            feature_snapshot=snapshot,
+            reason_codes=tuple(dict.fromkeys(reasons)),
+            warning_codes=tuple(dict.fromkeys(warnings)),
+            blocked=blocked,
+            contact_count=len(features.contacts),
+            has_usable_contact=bool(eligible_contacts),
+            has_usable_email=bool(usable_emails),
+            preferred_role_category=preferred_role,
+        )
+
+
+def _fields(payload: Mapping[str, Any]) -> dict[str, Any]:
+    raw = payload.get("fields")
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def recommend_prospect_tier(
+    *,
+    pre_score: float,
+    has_usable_contact: bool,
+    has_preferred_role_contact: bool,
+    has_usable_email: bool,
+    strong_exclusion: bool,
+    explicit_mismatch: bool,
+    blocked: bool,
+) -> ProspectTier | None:
+    if blocked:
+        return None
+    if strong_exclusion or explicit_mismatch:
+        return ProspectTier.D
+    if pre_score >= 75 and has_usable_contact and has_preferred_role_contact:
+        return ProspectTier.A
+    if pre_score >= 50 and has_usable_email:
+        return ProspectTier.B
+    if pre_score >= 30:
+        return ProspectTier.C
+    return ProspectTier.D
+
+
+def _value(fields: Mapping[str, Any], mapping: Mapping[str, str], logical: str) -> str | None:
+    mapped = mapping.get(logical)
+    raw: object | None = fields.get(mapped) if mapped else None
+    if raw is None:
+        lowered = {str(key).strip().lower(): value for key, value in fields.items()}
+        for alias in ROUTING_FIELD_ALIASES[logical]:
+            if alias.lower() in lowered:
+                raw = lowered[alias.lower()]
+                break
+    if raw is None:
+        return None
+    clean = str(raw).strip()
+    return clean or None
+
+
+def _split(value: str | None) -> list[str]:
+    if value is None:
+        return []
+    return [part.strip() for part in _SPLIT_VALUES.split(value) if part.strip()]
+
+
+def _dedupe(values: list[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(values))
+
+
+def _normalize(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _normalize_hs(value: str) -> str:
+    return _HS_CLEAN.sub("", value.casefold())
+
+
+def _keyword_match_ratio(targets: tuple[str, ...], observations: tuple[str, ...]) -> float:
+    if not targets:
+        return 0.0
+    haystack = " ".join(_normalize(value) for value in observations)
+    matches = sum(_normalize(target) in haystack for target in targets)
+    return matches / len(targets)
+
+
+def _hs_match_ratio(targets: tuple[str, ...], observations: tuple[str, ...]) -> float:
+    if not targets:
+        return 0.0
+    observed = tuple(_normalize_hs(value) for value in observations)
+    matches = 0
+    for target in targets:
+        normalized_target = _normalize_hs(target)
+        if normalized_target and any(
+            value.startswith(normalized_target) or normalized_target.startswith(value)
+            for value in observed
+            if value
+        ):
+            matches += 1
+    return matches / len(targets)
+
+
+def _relevance_ratio(
+    criteria: ProspectRoutingCriteria,
+    product_ratio: float,
+    hs_ratio: float,
+) -> float:
+    if criteria.target_product_keywords and criteria.target_hs_codes:
+        return product_ratio * 0.6 + hs_ratio * 0.4
+    return product_ratio if criteria.target_product_keywords else hs_ratio
+
+
+def _recency_ratio(values: tuple[date, ...], today: date) -> tuple[float, int | None]:
+    if not values:
+        return 0.0, None
+    days = max(0, (today - max(values)).days)
+    if days <= 90:
+        return 1.0, days
+    if days <= 180:
+        return 0.75, days
+    if days <= 365:
+        return 0.5, days
+    if days <= 730:
+        return 0.25, days
+    return 0.0, days
+
+
+def _value_match_ratio(targets: frozenset[str], observations: tuple[str, ...]) -> float:
+    if not targets or not observations:
+        return 0.0
+    normalized_observations = tuple(_normalize(value) for value in observations)
+    return 1.0 if any(
+        target in observation or observation in target
+        for target in targets
+        for observation in normalized_observations
+        if target and observation
+    ) else 0.0
+
+
+def _band_reason(prefix: str, ratio: float) -> str:
+    if ratio >= 0.999:
+        return f"{prefix}_FULL"
+    if ratio > 0:
+        return f"{prefix}_PARTIAL"
+    return f"{prefix}_NONE"
+
+
+def _parse_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    candidate = value.strip()
+    for format_string in (
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%m/%d/%Y",
+        "%m/%d/%y",
+        "%Y%m%d",
+        "%Y-%m-%dT%H:%M:%S",
+    ):
+        try:
+            return datetime.strptime(candidate, format_string).date()
+        except ValueError:
+            continue
+    try:
+        return date.fromisoformat(candidate[:10])
+    except ValueError:
+        return None
+
+
+def _explicit_mismatch(
+    criteria: ProspectRoutingCriteria,
+    features: RoutingFeatureInput,
+    product_ratio: float,
+    hs_ratio: float,
+) -> bool:
+    product_evaluable = bool(criteria.target_product_keywords and features.product_descriptions)
+    hs_evaluable = bool(criteria.target_hs_codes and features.hs_codes)
+    if not product_evaluable and not hs_evaluable:
+        return False
+    product_miss = not product_evaluable or product_ratio == 0
+    hs_miss = not hs_evaluable or hs_ratio == 0
+    return product_miss and hs_miss
+
+
+def _intermediary_signals(
+    company_name: str,
+    profile_type: str | None,
+    raw_types: tuple[str, ...],
+) -> tuple[str, ...]:
+    text = " ".join((company_name, profile_type or "", *raw_types)).casefold()
+    categories = {
+        "freight_forwarder": ("freight forward", "货代"),
+        "customs_broker": ("customs broker", "报关"),
+        "third_party_logistics": ("3pl", "third party logistics"),
+        "warehouse_operator": ("warehouse", "warehousing", "仓储"),
+    }
+    return tuple(
+        category
+        for category, keywords in categories.items()
+        if any(keyword in text for keyword in keywords)
+    )
+
+
+def _explicit_intermediary_type(profile_type: str | None, raw_types: tuple[str, ...]) -> bool:
+    text = " ".join((profile_type or "", *raw_types)).casefold()
+    return any(
+        keyword in text
+        for keyword in (
+            "freight forwarder",
+            "customs broker",
+            "third party logistics",
+            "3pl provider",
+            "warehouse operator",
+            "货代",
+            "报关代理",
+        )
+    )

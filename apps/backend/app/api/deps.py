@@ -65,6 +65,12 @@ from app.workflows.prospect_batch import (
     ProspectBatchWorkflow,
     ProspectJobQueryWorkflow,
 )
+from app.workflows.prospect_routing import (
+    ProspectRouteReviewWorkflow,
+    ProspectRoutingBatchWorkflow,
+    ProspectRoutingQueryWorkflow,
+    ProspectRoutingSubmissionWorkflow,
+)
 from app.workflows.research import (
     ClaimPromotionWorkflow,
     ResearchLimits,
@@ -165,6 +171,64 @@ def get_import_entity_review_workflow(
 ImportEntityReviewDep = Annotated[
     ImportEntityReviewWorkflow,
     Depends(get_import_entity_review_workflow),
+]
+
+
+def get_prospect_routing_submission_workflow(
+    uow_factory: UowFactoryDep,
+    settings: SettingsDep,
+) -> ProspectRoutingSubmissionWorkflow:
+    return ProspectRoutingSubmissionWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory),
+        max_attempts=settings.import_job_max_attempts,
+    )
+
+
+ProspectRoutingSubmissionDep = Annotated[
+    ProspectRoutingSubmissionWorkflow,
+    Depends(get_prospect_routing_submission_workflow),
+]
+
+
+def get_prospect_routing_query_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectRoutingQueryWorkflow:
+    return ProspectRoutingQueryWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ProspectRoutingQueryDep = Annotated[
+    ProspectRoutingQueryWorkflow,
+    Depends(get_prospect_routing_query_workflow),
+]
+
+
+def get_prospect_route_review_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectRouteReviewWorkflow:
+    return ProspectRouteReviewWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ProspectRouteReviewDep = Annotated[
+    ProspectRouteReviewWorkflow,
+    Depends(get_prospect_route_review_workflow),
+]
+
+
+def get_prospect_routing_batch_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectRoutingBatchWorkflow:
+    return ProspectRoutingBatchWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ProspectRoutingBatchDep = Annotated[
+    ProspectRoutingBatchWorkflow,
+    Depends(get_prospect_routing_batch_workflow),
 ]
 
 

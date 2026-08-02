@@ -107,6 +107,8 @@ EXPECTED_TABLES = {
     "company_contacts",
     "import_entity_decisions",
     "import_processing_jobs",
+    "prospect_routing_runs",
+    "prospect_routes",
     "companies",
     "company_aliases",
     "company_sources",

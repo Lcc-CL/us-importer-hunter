@@ -48,6 +48,7 @@ from app.database.models.prospect_batch import (
     ProspectBatchJobModel,
     ProspectBatchModel,
 )
+from app.database.models.prospect_routing import ProspectRouteModel, ProspectRoutingRunModel
 from app.database.models.research import (
     ResearchClaimModel,
     ResearchPageModel,
@@ -94,6 +95,8 @@ __all__ = [
     "ProspectBatchCompanyModel",
     "ProspectBatchJobModel",
     "ProspectBatchModel",
+    "ProspectRouteModel",
+    "ProspectRoutingRunModel",
     "ResearchClaimModel",
     "ResearchPageModel",
     "ResearchPromotionModel",

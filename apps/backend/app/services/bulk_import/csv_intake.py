@@ -39,6 +39,7 @@ ALLOWED_LOGICAL_FIELDS = frozenset(
         "product_description",
         "hs_code",
         "supplier",
+        "origin_country",
         "shipment_date",
         "pol",
         "pod",

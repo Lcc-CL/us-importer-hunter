@@ -16,6 +16,9 @@ class ProspectBatchMapper:
         return ProspectBatchModel(
             id=batch.id,
             discovery_task_id=batch.discovery_task_id,
+            routing_run_id=batch.routing_run_id,
+            routing_execution_generation=batch.routing_execution_generation,
+            routing_selection_hash=batch.routing_selection_hash,
             requested_count=batch.requested_count,
             effective_count=batch.effective_count,
             status=batch.status.value,
@@ -65,6 +68,9 @@ class ProspectBatchMapper:
         batch = ProspectBatch(
             id=model.id,
             discovery_task_id=model.discovery_task_id,
+            routing_run_id=model.routing_run_id,
+            routing_execution_generation=model.routing_execution_generation,
+            routing_selection_hash=model.routing_selection_hash,
             requested_count=model.requested_count,
             effective_count=model.effective_count,
             created_at=model.created_at,
