@@ -101,6 +101,12 @@ async def _company_exists(url: str, company_id: UUID) -> bool:
 EXPECTED_TABLES = {
     "import_sessions",
     "raw_import_rows",
+    "import_resolutions",
+    "company_external_identities",
+    "company_resolution_profiles",
+    "company_contacts",
+    "import_entity_decisions",
+    "import_processing_jobs",
     "companies",
     "company_aliases",
     "company_sources",

@@ -1,0 +1,43 @@
+"""Auditable company/contact entity-resolution domain state."""
+
+from app.domain.import_resolution.models import (
+    ACTIVE_IMPORT_JOB_STATUSES,
+    CompanyContact,
+    CompanyContactStatus,
+    CompanyExternalIdentity,
+    CompanyResolutionCandidate,
+    CompanyResolutionProfile,
+    ContactIdentityCandidate,
+    ImportDecisionView,
+    ImportEntityDecision,
+    ImportEntityDecisionKind,
+    ImportEntityReviewStatus,
+    ImportEntityType,
+    ImportJobStatus,
+    ImportProcessingJob,
+    ImportResolution,
+    ImportResolutionStatus,
+    ImportReviewAction,
+    ImportRoleCategory,
+)
+
+__all__ = [
+    "ACTIVE_IMPORT_JOB_STATUSES",
+    "CompanyContact",
+    "CompanyContactStatus",
+    "CompanyExternalIdentity",
+    "CompanyResolutionCandidate",
+    "CompanyResolutionProfile",
+    "ContactIdentityCandidate",
+    "ImportDecisionView",
+    "ImportEntityDecision",
+    "ImportEntityDecisionKind",
+    "ImportEntityReviewStatus",
+    "ImportEntityType",
+    "ImportJobStatus",
+    "ImportProcessingJob",
+    "ImportResolution",
+    "ImportResolutionStatus",
+    "ImportReviewAction",
+    "ImportRoleCategory",
+]

@@ -28,6 +28,19 @@ from app.domain.import_evidence.values import (
     NormalizedShipment,
     RawImportRecord,
 )
+from app.domain.import_resolution import (
+    CompanyContact,
+    CompanyExternalIdentity,
+    CompanyResolutionCandidate,
+    CompanyResolutionProfile,
+    ContactIdentityCandidate,
+    ImportDecisionView,
+    ImportEntityDecision,
+    ImportEntityReviewStatus,
+    ImportEntityType,
+    ImportProcessingJob,
+    ImportResolution,
+)
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
 from app.domain.prospect_batch import ProspectBatch
@@ -67,6 +80,16 @@ class BulkImportRepository(Protocol):
     async def save_session(self, session: ImportSession) -> None: ...
 
     async def add_rows(self, rows: tuple[RawImportRow, ...]) -> None: ...
+
+    async def get_row(self, row_id: UUID) -> RawImportRow | None: ...
+
+    async def list_accepted_rows_after(
+        self,
+        *,
+        session_id: UUID,
+        after_row_number: int,
+        limit: int,
+    ) -> list[RawImportRow]: ...
 
     async def list_rows(
         self,
@@ -194,6 +217,116 @@ class ProspectJobRepository(Protocol):
     async def get_stale_for_update(
         self, *, now: datetime, limit: int
     ) -> list[ProspectJob]: ...
+
+
+class ImportResolutionRepository(Protocol):
+    async def get_resolution(self, session_id: UUID) -> ImportResolution | None: ...
+
+    async def get_resolution_for_update(
+        self, session_id: UUID
+    ) -> ImportResolution | None: ...
+
+    async def add_resolution(self, resolution: ImportResolution) -> None: ...
+
+    async def save_resolution(self, resolution: ImportResolution) -> None: ...
+
+    async def list_processed_row_ids(self, session_id: UUID) -> set[UUID]: ...
+
+    async def add_decisions(self, decisions: tuple[ImportEntityDecision, ...]) -> None: ...
+
+    async def get_decision(self, decision_id: UUID) -> ImportEntityDecision | None: ...
+
+    async def get_decision_for_update(
+        self, decision_id: UUID
+    ) -> ImportEntityDecision | None: ...
+
+    async def get_row_decision(
+        self,
+        *,
+        session_id: UUID,
+        raw_import_row_id: UUID,
+        entity_type: ImportEntityType,
+    ) -> ImportEntityDecision | None: ...
+
+    async def save_decision(self, decision: ImportEntityDecision) -> None: ...
+
+    async def list_decisions(
+        self,
+        *,
+        session_id: UUID,
+        entity_type: ImportEntityType | None,
+        review_status: ImportEntityReviewStatus | None,
+        min_confidence: float | None,
+        max_confidence: float | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[ImportDecisionView], int]: ...
+
+    async def list_company_candidates(self) -> list[CompanyResolutionCandidate]: ...
+
+    async def list_external_identities(self) -> list[CompanyExternalIdentity]: ...
+
+    async def add_external_identity(self, identity: CompanyExternalIdentity) -> None: ...
+
+    async def save_external_identity(self, identity: CompanyExternalIdentity) -> None: ...
+
+    async def update_external_identities(
+        self, identities: tuple[CompanyExternalIdentity, ...]
+    ) -> None: ...
+
+    async def get_company_profile(
+        self, company_id: UUID
+    ) -> CompanyResolutionProfile | None: ...
+
+    async def list_company_profiles(self) -> list[CompanyResolutionProfile]: ...
+
+    async def add_company_profile(self, profile: CompanyResolutionProfile) -> None: ...
+
+    async def save_company_profile(self, profile: CompanyResolutionProfile) -> None: ...
+
+    async def update_company_profiles(
+        self, profiles: tuple[CompanyResolutionProfile, ...]
+    ) -> None: ...
+
+    async def list_contact_candidates(self) -> list[ContactIdentityCandidate]: ...
+
+    async def list_company_contacts(self) -> list[CompanyContact]: ...
+
+    async def add_company_contact(self, link: CompanyContact) -> None: ...
+
+    async def save_company_contact(self, link: CompanyContact) -> None: ...
+
+    async def update_company_contacts(self, links: tuple[CompanyContact, ...]) -> None: ...
+
+
+class ImportProcessingJobRepository(Protocol):
+    async def get_by_id_for_update(
+        self, job_id: UUID
+    ) -> ImportProcessingJob | None: ...
+
+    async def get_latest_for_session(
+        self, session_id: UUID
+    ) -> ImportProcessingJob | None: ...
+
+    async def find_active_by_business_key(
+        self, business_key: str
+    ) -> ImportProcessingJob | None: ...
+
+    async def add(self, job: ImportProcessingJob) -> None: ...
+
+    async def save(self, job: ImportProcessingJob) -> None: ...
+
+    async def claim_next(
+        self,
+        *,
+        owner: str,
+        now: datetime,
+        lease_ttl: timedelta,
+    ) -> ImportProcessingJob | None: ...
+
+    async def get_stale_for_update(
+        self, *, now: datetime, limit: int
+    ) -> list[ImportProcessingJob]: ...
 
 
 class ResearchRunRepository(Protocol):
@@ -369,6 +502,29 @@ class ProspectBatchUnitOfWork(Protocol):
     research_runs: ResearchRunRepository
 
     async def __aenter__(self) -> "ProspectBatchUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class ImportResolutionUnitOfWork(Protocol):
+    bulk_import: BulkImportRepository
+    companies: CompanyRepository
+    contacts: ContactRepository
+    import_resolution: ImportResolutionRepository
+    import_processing_jobs: ImportProcessingJobRepository
+
+    async def __aenter__(self) -> "ImportResolutionUnitOfWork": ...
 
     async def __aexit__(
         self,

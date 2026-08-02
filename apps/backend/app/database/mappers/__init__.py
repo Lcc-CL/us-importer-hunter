@@ -16,6 +16,7 @@ from app.database.mappers.import_evidence import (
     ImportEvidencePromotionMapper,
     ImportEvidenceQualityMapper,
 )
+from app.database.mappers.import_resolution import ImportResolutionMapper
 from app.database.mappers.opportunity import OpportunityMapper
 from app.database.mappers.outreach import OutreachMapper
 from app.database.mappers.prospect_batch import ProspectBatchMapper
@@ -29,6 +30,7 @@ __all__ = [
     "ImportEvidenceQualityMapper",
     "ImportEvidencePromotionMapper",
     "ImporterEvidenceAggregateMapper",
+    "ImportResolutionMapper",
     "ContactMapper",
     "FitAssessmentMapper",
     "DiscoveryTaskMapper",

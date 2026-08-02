@@ -7,6 +7,7 @@ from app.api.routes import (
     discovery_tasks,
     health,
     import_evidence,
+    import_resolution,
     mvp,
     prospect_batches,
     research,
@@ -14,6 +15,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(bulk_import.router)
+api_router.include_router(import_resolution.router)
 api_router.include_router(health.router)
 api_router.include_router(mvp.router)
 api_router.include_router(research.router)

@@ -24,6 +24,31 @@ workflows:
     limits: { max_bytes: 20971520, max_rows: 20000 }
     status: implemented
 
+  import_entity_resolution:
+    package: app.workflows.import_resolution
+    description: >
+      D5b1 background deterministic resolution from accepted RawImportRow data
+      into canonical Company and Contact identities plus CompanyContact employment
+      projections. Source plus external company ID is stable across files; domain,
+      normalized name/address and contact channels are evaluated without LLM or
+      external providers. Ambiguous company or contact candidates remain behind an
+      auditable human-review gate and do not create CompanyContact links early.
+      Processing uses an import-specific PostgreSQL job with lease, retry, heartbeat
+      and stale recovery, and never creates Opportunity, Research, ProspectBatch,
+      Outreach, Draft or Umail data.
+    steps:
+      - { id: project_raw_fields, service: raw_import_projector }
+      - { id: resolve_company, service: deterministic_entity_matcher }
+      - { id: resolve_contact, service: deterministic_entity_matcher }
+      - { id: persist_decisions, aggregate: import_entity_decision }
+      - { id: persist_employment, aggregate: company_contact, conditional: identity_confirmed }
+      - { id: review_ambiguous_matches, workflow: import_entity_review, human_review: required }
+    statuses: [pending, running, completed, partial_failed, failed]
+    execution: postgresql_worker
+    job_statuses: [pending, leased, running, completed, failed, cancelled]
+    batch_size: 250
+    status: implemented
+
   discovery_task:
     package: app.workflows.discovery_task
     description: >

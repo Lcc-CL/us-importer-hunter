@@ -37,7 +37,9 @@ class ContactModel(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    company_id: Mapped[UUID] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    company_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(200))
     normalized_name: Mapped[str] = mapped_column(String(200))
     title_raw: Mapped[str | None] = mapped_column(String(200))

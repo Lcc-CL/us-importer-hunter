@@ -38,6 +38,32 @@ export type ImportSessionStatus =
 
 export type RawImportRowStatus = "accepted" | "invalid" | "duplicate";
 
+export type ImportResolutionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "partial_failed"
+  | "failed";
+
+export type ImportProcessingJobStatus =
+  | "pending"
+  | "leased"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type ImportEntityType = "company" | "contact";
+export type ImportEntityReviewStatus = "not_required" | "pending" | "reviewed";
+export type ImportEntityDecisionKind =
+  | "auto_create"
+  | "auto_merge"
+  | "review_required"
+  | "manual_merge"
+  | "keep_separate"
+  | "rejected";
+export type ImportReviewAction = "merge" | "keep_separate" | "reject";
+
 export interface ImportSessionResponse {
   session_id: string;
   source: string;
@@ -79,6 +105,65 @@ export interface RawImportRowListResponse {
   limit: number;
   total: number;
   rows: RawImportRowResponse[];
+}
+
+export interface ImportResolutionStartResponse {
+  session_id: string;
+  processing_job_id: string;
+  status: ImportProcessingJobStatus;
+  reused: boolean;
+}
+
+export interface ImportResolutionResponse {
+  session_id: string;
+  processing_job_id: string | null;
+  processing_status: ImportProcessingJobStatus | null;
+  resolution_status: ImportResolutionStatus;
+  total_rows: number;
+  processed_rows: number;
+  companies_created: number;
+  companies_reused: number;
+  company_reviews_required: number;
+  contacts_created: number;
+  contacts_reused: number;
+  company_contacts_created: number;
+  invalid_rows: number;
+  failed_rows: number;
+  attempt_count: number;
+  max_attempts: number;
+  heartbeat_at: string | null;
+  last_error_code: string | null;
+  last_error_summary: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+}
+
+export interface ImportEntityDecisionResponse {
+  decision_id: string;
+  session_id: string;
+  raw_import_row_id: string;
+  row_number: number | null;
+  source_label: string | null;
+  entity_type: ImportEntityType;
+  candidate_entity_id: string | null;
+  candidate_label: string | null;
+  decision: ImportEntityDecisionKind;
+  confidence: number;
+  reason_codes: string[];
+  review_status: ImportEntityReviewStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportEntityDecisionListResponse {
+  session_id: string;
+  page: number;
+  limit: number;
+  total: number;
+  decisions: ImportEntityDecisionResponse[];
 }
 
 export interface DiscoveryTaskResponse {
@@ -724,6 +809,64 @@ export function getBulkImportRows(
   if (options.status) params.set("status", options.status);
   return requestJson<RawImportRowListResponse>(
     `/import-sessions/${encodeURIComponent(sessionId)}/rows?${params.toString()}`,
+  );
+}
+
+export function startImportResolution(
+  sessionId: string,
+): Promise<ImportResolutionStartResponse> {
+  return requestJson<ImportResolutionStartResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/resolve`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function getImportResolution(
+  sessionId: string,
+): Promise<ImportResolutionResponse> {
+  return requestJson<ImportResolutionResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/resolution`,
+  );
+}
+
+export function getImportEntityDecisions(
+  sessionId: string,
+  options: {
+    page?: number;
+    limit?: number;
+    entityType?: ImportEntityType;
+    reviewStatus?: ImportEntityReviewStatus;
+    minConfidence?: number;
+    maxConfidence?: number;
+  } = {},
+): Promise<ImportEntityDecisionListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    limit: String(options.limit ?? 50),
+  });
+  if (options.entityType) params.set("entity_type", options.entityType);
+  if (options.reviewStatus) params.set("review_status", options.reviewStatus);
+  if (options.minConfidence !== undefined) {
+    params.set("min_confidence", String(options.minConfidence));
+  }
+  if (options.maxConfidence !== undefined) {
+    params.set("max_confidence", String(options.maxConfidence));
+  }
+  return requestJson<ImportEntityDecisionListResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/entity-decisions?${params.toString()}`,
+  );
+}
+
+export function reviewImportEntityDecision(
+  decisionId: string,
+  action: ImportReviewAction,
+): Promise<ImportEntityDecisionResponse> {
+  return requestJson<ImportEntityDecisionResponse>(
+    `/import-entity-decisions/${encodeURIComponent(decisionId)}/review`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action, reviewed_by: "local_reviewer" }),
+    },
   );
 }
 

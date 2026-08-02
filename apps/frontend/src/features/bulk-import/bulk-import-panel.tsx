@@ -1,13 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileCheck2, Upload } from "lucide-react";
+import { FileCheck2, GitMerge, Play, Upload } from "lucide-react";
 
 import {
   createBulkImportSession,
+  ApiError,
   getBulkImportRows,
   getBulkImportSession,
   getClientErrorDetails,
+  getImportEntityDecisions,
+  getImportResolution,
+  reviewImportEntityDecision,
+  startImportResolution,
+  type ImportEntityDecisionResponse,
+  type ImportResolutionResponse,
+  type ImportReviewAction,
   type ImportSessionResponse,
   type RawImportRowResponse,
   type RawImportRowStatus,
@@ -30,6 +38,10 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
   const [rowTotal, setRowTotal] = useState(0);
   const [rowStatus, setRowStatus] = useState<RawImportRowStatus | "">("");
   const [page, setPage] = useState(1);
+  const [resolution, setResolution] = useState<ImportResolutionResponse | null>(null);
+  const [decisions, setDecisions] = useState<ImportEntityDecisionResponse[]>([]);
+  const [resolving, setResolving] = useState(false);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(Boolean(initialSessionId));
   const [error, setError] = useState<string | null>(null);
 
@@ -56,12 +68,36 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
     [loadRows],
   );
 
+  const loadResolutionState = useCallback(
+    async (sessionId: string, tolerateMissing = false) => {
+      try {
+        const saved = await getImportResolution(sessionId);
+        setResolution(saved);
+        const pending = await getImportEntityDecisions(sessionId, {
+          reviewStatus: "pending",
+          limit: 100,
+        });
+        setDecisions(pending.decisions);
+        return saved;
+      } catch (caught: unknown) {
+        if (tolerateMissing && caught instanceof ApiError && caught.status === 404) {
+          setResolution(null);
+          setDecisions([]);
+          return null;
+        }
+        throw caught;
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!initialSessionId) return;
     let active = true;
     async function load() {
       try {
         await restore(initialSessionId as string);
+        await loadResolutionState(initialSessionId as string, true);
       } catch (caught: unknown) {
         if (active) setError(getClientErrorDetails(caught).message);
       } finally {
@@ -72,7 +108,7 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
     return () => {
       active = false;
     };
-  }, [initialSessionId, restore]);
+  }, [initialSessionId, loadResolutionState, restore]);
 
   useEffect(() => {
     if (!session || !["receiving", "processing"].includes(session.status)) return;
@@ -83,6 +119,19 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
     }, 1500);
     return () => window.clearInterval(timer);
   }, [page, restore, rowStatus, session]);
+
+  useEffect(() => {
+    if (!session || !resolution) return;
+    if (!resolution.processing_status || !["pending", "leased", "running"].includes(resolution.processing_status)) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadResolutionState(session.session_id).catch((caught: unknown) => {
+        setError(getClientErrorDetails(caught).message);
+      });
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [loadResolutionState, resolution, session]);
 
   function persistSessionId(sessionId: string) {
     const currentUrl = new URL(window.location.href);
@@ -120,12 +169,42 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
       setSession(created);
       setPage(1);
       setRowStatus("");
+      setResolution(null);
+      setDecisions([]);
       persistSessionId(created.session_id);
       await loadRows(created.session_id, 1, "");
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleStartResolution() {
+    if (!session || resolving) return;
+    setResolving(true);
+    setError(null);
+    try {
+      await startImportResolution(session.session_id);
+      await loadResolutionState(session.session_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  async function handleReview(decisionId: string, action: ImportReviewAction) {
+    if (!session || reviewingId) return;
+    setReviewingId(decisionId);
+    setError(null);
+    try {
+      await reviewImportEntityDecision(decisionId, action);
+      await loadResolutionState(session.session_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setReviewingId(null);
     }
   }
 
@@ -256,6 +335,150 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
                 <p className="mt-1 text-2xl font-semibold text-slate-950">{value}</p>
               </div>
             ))}
+          </div>
+
+          <div
+            className="mt-6 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4"
+            data-testid="import-resolution-panel"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-800">
+                  {t("bulk.resolutionKicker")}
+                </p>
+                <h3 className="mt-1 text-base font-semibold text-slate-950">
+                  {t("bulk.resolutionTitle")}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {t("bulk.resolutionIntro")}
+                </p>
+              </div>
+              <button
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-cyan-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                data-testid="import-resolution-start"
+                disabled={
+                  resolving ||
+                  !["completed", "partial_failed"].includes(session.status) ||
+                  Boolean(
+                    resolution?.processing_status &&
+                      ["pending", "leased", "running"].includes(
+                        resolution.processing_status,
+                      ),
+                  ) ||
+                  ["completed", "partial_failed"].includes(
+                    resolution?.resolution_status ?? "",
+                  )
+                }
+                onClick={() => void handleStartResolution()}
+                type="button"
+              >
+                {resolution ? <GitMerge className="size-4" /> : <Play className="size-4" />}
+                {resolving ? t("bulk.resolutionStarting") : t("bulk.resolutionStart")}
+              </button>
+            </div>
+
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {t("bulk.resolutionBoundary")}
+            </p>
+
+            {resolution ? (
+              <div className="mt-4" data-testid="import-resolution-result">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span className="rounded-full bg-cyan-100 px-3 py-1 font-semibold text-cyan-900">
+                    {t(`bulk.resolutionStatus.${resolution.resolution_status}`)}
+                  </span>
+                  <span>
+                    {t("bulk.resolutionProgress", {
+                      processed: resolution.processed_rows,
+                      total: resolution.total_rows,
+                    })}
+                  </span>
+                  <span>
+                    {t("bulk.resolutionAttempts", {
+                      attempts: resolution.attempt_count,
+                      max: resolution.max_attempts,
+                    })}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                  {[
+                    [t("bulk.companiesCreated"), resolution.companies_created],
+                    [t("bulk.companiesReused"), resolution.companies_reused],
+                    [t("bulk.companyReviews"), resolution.company_reviews_required],
+                    [t("bulk.contactsCreated"), resolution.contacts_created],
+                    [t("bulk.contactsReused"), resolution.contacts_reused],
+                    [t("bulk.companyContacts"), resolution.company_contacts_created],
+                    [t("bulk.failedRows"), resolution.failed_rows],
+                  ].map(([label, value]) => (
+                    <div className="rounded-xl bg-white p-3" key={String(label)}>
+                      <p className="text-[11px] leading-4 text-slate-500">{label}</p>
+                      <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      {t("bulk.pendingReviews")}
+                    </h4>
+                    <span className="text-xs text-slate-500">{decisions.length}</span>
+                  </div>
+                  {decisions.length ? (
+                    <div className="mt-2 space-y-2" data-testid="import-resolution-reviews">
+                      {decisions.map((decision) => (
+                        <div
+                          className="rounded-xl border border-slate-200 bg-white p-3"
+                          key={decision.decision_id}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-sm text-slate-800">
+                              <span className="font-semibold">
+                                {decision.entity_type === "company"
+                                  ? t("bulk.entityCompany")
+                                  : t("bulk.entityContact")}
+                              </span>
+                              <span className="ml-2 text-xs text-slate-500">
+                                #{decision.row_number ?? "—"} · {decision.candidate_label ?? "—"}
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-500">
+                              {(decision.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-slate-600">
+                            {decision.reason_codes.join(" · ")}
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {(
+                              [
+                                ["merge", t("bulk.reviewMerge")],
+                                ["keep_separate", t("bulk.reviewSeparate")],
+                                ["reject", t("bulk.reviewReject")],
+                              ] as const
+                            ).map(([action, label]) => (
+                              <button
+                                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40"
+                                disabled={Boolean(reviewingId)}
+                                key={action}
+                                onClick={() => void handleReview(decision.decision_id, action)}
+                                type="button"
+                              >
+                                {reviewingId === decision.decision_id
+                                  ? t("bulk.reviewing")
+                                  : label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">{t("bulk.noPendingReviews")}</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">

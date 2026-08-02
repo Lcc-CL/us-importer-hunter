@@ -33,7 +33,10 @@ class SqlAlchemyCompanyRepository:
 
     async def find_by_normalized_name(self, name: CompanyName) -> Company | None:
         result = await self._session.execute(
-            select(CompanyModel).where(CompanyModel.normalized_name == name.normalized)
+            select(CompanyModel)
+            .where(CompanyModel.normalized_name == name.normalized)
+            .order_by(CompanyModel.created_at)
+            .limit(1)
         )
         model = result.scalar_one_or_none()
         return CompanyMapper.to_domain(model) if model else None

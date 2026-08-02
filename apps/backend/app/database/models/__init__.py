@@ -29,6 +29,14 @@ from app.database.models.import_evidence import (
     ImportEvidenceSnapshotModel,
     NormalizedShipmentModel,
 )
+from app.database.models.import_resolution import (
+    CompanyContactModel,
+    CompanyExternalIdentityModel,
+    CompanyResolutionProfileModel,
+    ImportEntityDecisionModel,
+    ImportProcessingJobModel,
+    ImportResolutionModel,
+)
 from app.database.models.opportunity import (
     OpportunityAssessmentModel,
     OpportunityEvidenceModel,
@@ -53,6 +61,9 @@ __all__ = [
     "CompanyModel",
     "CompanySignalModel",
     "CompanySourceModel",
+    "CompanyContactModel",
+    "CompanyExternalIdentityModel",
+    "CompanyResolutionProfileModel",
     "ImportSessionModel",
     "RawImportRowModel",
     "ContactModel",
@@ -67,6 +78,9 @@ __all__ = [
     "ImportEvidenceSignalModel",
     "ImportEvidenceSnapshotModel",
     "ImportEvidenceSignalPromotionModel",
+    "ImportEntityDecisionModel",
+    "ImportProcessingJobModel",
+    "ImportResolutionModel",
     "ImporterEntityMatchModel",
     "ImporterEvidenceAggregateModel",
     "ImporterEvidenceAggregateShipmentModel",

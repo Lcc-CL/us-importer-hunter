@@ -140,6 +140,18 @@ class TestAggregate:
         for forbidden in ("score", "priority", "opportunity_score"):
             assert not hasattr(contact, forbidden)
 
+    def test_create_unassigned_contact_has_no_company_scoped_events(self) -> None:
+        unassigned = Contact.create_unassigned(
+            PersonName("Unassigned Buyer"), JobTitle("Procurement Manager")
+        )
+        unassigned.add_channel(make_channel("unassigned@example.com"))
+        unassigned.activate()
+        assert unassigned.company_id is None
+        assert not any(
+            isinstance(event, (ContactCreated, ContactabilityChanged))
+            for event in unassigned.drain_events()
+        )
+
     def test_channel_dedup(self, contact: Contact) -> None:
         contact.add_channel(make_channel())
         with pytest.raises(DuplicateOperation):
