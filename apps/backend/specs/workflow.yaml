@@ -102,18 +102,25 @@ workflows:
   prospect_batch:
     package: app.workflows.prospect_batch
     description: >
-      D3a background supervisor for at most five companies saved by a completed
-      or partial_failed manual_csv Discovery Task. HTTP submission atomically
-      persists a batch plus PostgreSQL execution job and returns 202. A separate
-      single-job worker leases the job, updates heartbeats, and sequentially reuses
-      website Research, deterministic Opportunity scoring, public website contact
-      discovery, Contact ingestion, decision-maker selection and review-only draft
-      generation. New Research claims always stop at awaiting_evidence_review;
-      no claim is auto-confirmed. Once every claim is accepted or rejected, an
-      explicit Resume submits another background execution without re-running
-      completed stages. Expired leases are recovered without restarting human
-      evidence review. No email is sent.
+      D3a/D5d1 background supervisor for at most five companies from either a
+      completed or partial_failed manual_csv Discovery Task or an immutable,
+      confirmed effective-tier A prospect-routing generation. Discovery submission
+      atomically creates the batch and PostgreSQL execution job; a routing-sourced
+      batch is created without a job and requires a second explicit, provider-safe
+      start confirmation. Both sources are translated into a typed source context;
+      routing provenance retains the RoutingRun generation, Route feature/reason
+      snapshot, RawImportRow and ImportEntityDecision references without fabricating
+      a DiscoveryTask. A separate single-job worker leases the job, updates
+      heartbeats, and sequentially reuses website Research, deterministic
+      Opportunity scoring, public website contact discovery, Contact ingestion,
+      decision-maker selection and review-only draft generation. New Research
+      claims always stop at awaiting_evidence_review; no claim is auto-confirmed.
+      Once every claim is accepted or rejected, an explicit Resume submits another
+      background execution without re-running completed stages. Expired leases are
+      recovered without restarting human evidence review. No email is sent.
     steps:
+      - { id: resolve_typed_source, service: prospect_batch_source_context }
+      - { id: confirm_routing_start, policy: explicit_confirmation_and_provider_preflight, conditional: prospect_routing_source }
       - { id: validate_companies, service: prospect_batch_preflight, for_each: company }
       - { id: research, workflow: research, for_each: company }
       - { id: evidence_gate, policy: human_review_required_for_new_claims }

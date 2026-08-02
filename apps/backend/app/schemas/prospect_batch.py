@@ -1,7 +1,7 @@
 """HTTP contracts for the D2 batch prospect pipeline."""
 
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints
@@ -38,6 +38,21 @@ class ProspectBatchCreateResponse(BaseModel):
     job_id: UUID
     status: str
     reused: bool
+
+
+class ProspectBatchStartRequest(BaseModel):
+    confirmation: bool
+    provider_mode: Literal["configured"] = "configured"
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
+    sender: BatchSenderRequest | None = None
+
+
+class ProspectBatchStartResponse(BaseModel):
+    batch_id: UUID
+    job_id: UUID
+    status: str
+    reused: bool
+    processing_started: bool = True
 
 
 class ProspectBatchExecutionResponse(BaseModel):
@@ -88,6 +103,7 @@ class ProspectBatchResumeRequest(BaseModel):
 
 class ProspectBatchResponse(BaseModel):
     batch_id: UUID
+    source_kind: str
     discovery_task_id: UUID | None
     routing_run_id: UUID | None
     routing_execution_generation: int | None
@@ -108,6 +124,7 @@ class ProspectBatchResponse(BaseModel):
     def from_domain(cls, batch: ProspectBatch) -> Self:
         return cls(
             batch_id=batch.id,
+            source_kind=batch.source_kind.value,
             discovery_task_id=batch.discovery_task_id,
             routing_run_id=batch.routing_run_id,
             routing_execution_generation=batch.routing_execution_generation,

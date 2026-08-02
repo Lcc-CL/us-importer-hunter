@@ -127,8 +127,12 @@ export function MvpAnalysisPage({
   const batchReturnHref = initialBatchId
     ? `/?${new URLSearchParams({
         ...(initialTaskId ? { task_id: initialTaskId } : {}),
+        ...(initialImportSessionId
+          ? { import_session_id: initialImportSessionId }
+          : {}),
+        ...(initialRoutingRunId ? { routing_run_id: initialRoutingRunId } : {}),
         batch_id: initialBatchId,
-      }).toString()}#prospect-batch-panel`
+      }).toString()}#${initialRoutingRunId ? "prospect-routing-batch" : "prospect-batch-panel"}`
     : undefined;
 
   const patchContact = (patch: Partial<ProspectContact>) =>
@@ -423,6 +427,7 @@ export function MvpAnalysisPage({
         </div>
 
         <BulkImportPanel
+          initialBatchId={initialBatchId}
           initialRoutingRunId={initialRoutingRunId}
           initialSessionId={initialImportSessionId}
         />

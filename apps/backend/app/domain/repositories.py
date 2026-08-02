@@ -201,6 +201,16 @@ class ProspectBatchRepository(Protocol):
         exclude_batch_id: UUID | None = None,
     ) -> bool: ...
 
+    async def has_completed_routing_pipeline(
+        self,
+        *,
+        routing_run_id: UUID,
+        routing_execution_generation: int,
+        company_id: UUID,
+        pipeline_version: str,
+        exclude_batch_id: UUID | None = None,
+    ) -> bool: ...
+
 
 class ProspectJobRepository(Protocol):
     async def get_by_id(self, job_id: UUID) -> ProspectJob | None: ...
@@ -573,6 +583,7 @@ class ProspectBatchUnitOfWork(Protocol):
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
     prospect_jobs: ProspectJobRepository
+    prospect_routing: ProspectRoutingRepository
     research_runs: ResearchRunRepository
 
     async def __aenter__(self) -> "ProspectBatchUnitOfWork": ...

@@ -524,6 +524,7 @@ def _entity_state_hash(sources: tuple[RoutingSourceCompany, ...]) -> str:
             "unresolved_company_conflict": source.unresolved_company_conflict,
             "rows": [
                 {
+                    "decision_id": str(row.import_entity_decision_id),
                     "id": str(row.raw_import_row_id),
                     "row_number": row.row_number,
                     "payload": row.raw_payload,

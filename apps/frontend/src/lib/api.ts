@@ -329,6 +329,7 @@ export type ProspectBatchCompanyStatus =
 
 export interface ProspectBatchResponse {
   batch_id: string;
+  source_kind: "discovery" | "prospect_routing";
   discovery_task_id: string | null;
   routing_run_id: string | null;
   routing_execution_generation: number | null;
@@ -359,6 +360,10 @@ export interface ProspectBatchCreateResponse {
   job_id: string;
   status: ProspectJobStatus;
   reused: boolean;
+}
+
+export interface ProspectBatchStartResponse extends ProspectBatchCreateResponse {
+  processing_started: true;
 }
 
 export interface ProspectBatchExecutionResponse {
@@ -1091,6 +1096,28 @@ export function createProspectBatch(
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify({ company_ids: companyIds, limit: 5, sender }),
+    },
+  );
+}
+
+export function startRoutedProspectBatch(
+  batchId: string,
+  options: {
+    confirmation: boolean;
+    sender?: ProspectBatchSender;
+    note?: string;
+  },
+): Promise<ProspectBatchStartResponse> {
+  return requestJson<ProspectBatchStartResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/start`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        confirmation: options.confirmation,
+        provider_mode: "configured",
+        note: options.note?.trim() || null,
+        sender: options.sender,
+      }),
     },
   );
 }

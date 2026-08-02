@@ -190,6 +190,7 @@ def test_raw_projector_extracts_mapped_logistics_fields_and_strong_type() -> Non
         profile_company_type="freight forwarder",
         rows=(
             RoutingSourceRow(
+                import_entity_decision_id=uuid4(),
                 raw_import_row_id=uuid4(),
                 row_number=2,
                 raw_payload={
