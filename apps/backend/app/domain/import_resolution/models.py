@@ -74,6 +74,11 @@ class ImportJobStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ImportJobType(StrEnum):
+    ENTITY_RESOLUTION = "entity_resolution"
+    PROSPECT_ROUTING = "prospect_routing"
+
+
 ACTIVE_IMPORT_JOB_STATUSES = frozenset(
     {ImportJobStatus.PENDING, ImportJobStatus.LEASED, ImportJobStatus.RUNNING}
 )
@@ -549,21 +554,37 @@ class ImportProcessingJob:
     started_at: datetime | None
     completed_at: datetime | None
     updated_at: datetime
+    job_type: ImportJobType = ImportJobType.ENTITY_RESOLUTION
+    routing_run_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        if self.job_type is ImportJobType.ENTITY_RESOLUTION and self.routing_run_id is not None:
+            raise DomainError("entity-resolution jobs cannot reference a routing run")
+        if self.job_type is ImportJobType.PROSPECT_ROUTING and self.routing_run_id is None:
+            raise DomainError("prospect-routing jobs require a routing run")
 
     @classmethod
     def create(
         cls,
         *,
         import_session_id: UUID,
+        job_type: ImportJobType = ImportJobType.ENTITY_RESOLUTION,
+        routing_run_id: UUID | None = None,
+        business_key: str | None = None,
         max_attempts: int = 3,
         now: datetime | None = None,
     ) -> "ImportProcessingJob":
         created_at = now or utcnow()
+        resolved_business_key = business_key or (
+            f"import-resolution:{import_session_id}"
+            if job_type is ImportJobType.ENTITY_RESOLUTION
+            else f"prospect-routing:{routing_run_id}"
+        )
         return cls(
             id=uuid4(),
             import_session_id=import_session_id,
             status=ImportJobStatus.PENDING,
-            business_key=f"import-resolution:{import_session_id}",
+            business_key=resolved_business_key,
             available_at=created_at,
             attempt_count=0,
             max_attempts=max_attempts,
@@ -579,6 +600,8 @@ class ImportProcessingJob:
             started_at=None,
             completed_at=None,
             updated_at=created_at,
+            job_type=job_type,
+            routing_run_id=routing_run_id,
         )
 
     def lease(
@@ -729,7 +752,7 @@ class ImportProcessingJob:
             lease_expires_at=None,
             heartbeat_at=recovered_at,
             last_error_code="WORKER_LEASE_EXPIRED",
-            last_error_summary="worker lease expired before entity resolution completed",
+            last_error_summary="worker lease expired before import processing completed",
             recovery_count=self.recovery_count + 1,
             last_recovered_at=recovered_at,
             completed_at=recovered_at if next_status is ImportJobStatus.FAILED else None,

@@ -64,6 +64,103 @@ export type ImportEntityDecisionKind =
   | "rejected";
 export type ImportReviewAction = "merge" | "keep_separate" | "reject";
 
+export type ProspectRoutingRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "partial_completed"
+  | "failed";
+export type ProspectTier = "A" | "B" | "C" | "D";
+export type ProspectRouteReviewStatus =
+  | "suggested"
+  | "confirmed"
+  | "overridden"
+  | "blocked";
+export type ProspectRouteReviewAction = "confirm" | "override" | "exclude";
+
+export interface ProspectRoutingCriteriaInput {
+  target_product_keywords: string[];
+  target_hs_codes: string[];
+  preferred_origin_countries: string[];
+  preferred_pol: string[];
+  preferred_pod: string[];
+}
+
+export interface ProspectRoutingCreateResponse {
+  routing_run_id: string;
+  processing_job_id: string;
+  status: ImportProcessingJobStatus;
+  reused: boolean;
+  recalculated: boolean;
+}
+
+export interface ProspectRoutingRunResponse {
+  routing_run_id: string;
+  import_session_id: string;
+  processing_job_id: string | null;
+  processing_status: ImportProcessingJobStatus | null;
+  status: ProspectRoutingRunStatus;
+  rules_version: string;
+  execution_generation: number;
+  criteria: Record<string, unknown>;
+  weights_snapshot: Record<string, unknown>;
+  total_companies: number;
+  routed_companies: number;
+  blocked_companies: number;
+  tier_a_count: number;
+  tier_b_count: number;
+  tier_c_count: number;
+  tier_d_count: number;
+  attempt_count: number;
+  max_attempts: number;
+  heartbeat_at: string | null;
+  last_error_code: string | null;
+  last_error_summary: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectRouteResponse {
+  route_id: string;
+  routing_run_id: string;
+  company_id: string;
+  company_name: string;
+  pre_score: number;
+  recommended_tier: ProspectTier | null;
+  effective_tier: ProspectTier | null;
+  feature_snapshot: Record<string, unknown>;
+  reason_codes: string[];
+  warning_codes: string[];
+  review_status: ProspectRouteReviewStatus;
+  override_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  contact_count: number;
+  has_usable_contact: boolean;
+  has_usable_email: boolean;
+  preferred_role_category: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectRouteListResponse {
+  routing_run_id: string;
+  page: number;
+  limit: number;
+  total: number;
+  routes: ProspectRouteResponse[];
+}
+
+export interface ProspectRoutingBatchCreateResponse {
+  batch_id: string;
+  status: ProspectBatchStatus;
+  reused: boolean;
+  processing_started: false;
+}
+
 export interface ImportSessionResponse {
   session_id: string;
   source: string;
@@ -228,7 +325,8 @@ export type ProspectBatchCompanyStatus =
 
 export interface ProspectBatchResponse {
   batch_id: string;
-  discovery_task_id: string;
+  discovery_task_id: string | null;
+  routing_run_id: string | null;
   requested_count: number;
   effective_count: number;
   status: ProspectBatchStatus;
@@ -866,6 +964,77 @@ export function reviewImportEntityDecision(
     {
       method: "POST",
       body: JSON.stringify({ action, reviewed_by: "local_reviewer" }),
+    },
+  );
+}
+
+export function createProspectRoutingRun(
+  sessionId: string,
+  criteria: ProspectRoutingCriteriaInput,
+  campaignName?: string,
+  notes?: string,
+): Promise<ProspectRoutingCreateResponse> {
+  return requestJson<ProspectRoutingCreateResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/routing-runs`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        criteria,
+        campaign_name: campaignName?.trim() || null,
+        notes: notes?.trim() || null,
+      }),
+    },
+  );
+}
+
+export function getProspectRoutingRun(
+  routingRunId: string,
+): Promise<ProspectRoutingRunResponse> {
+  return requestJson<ProspectRoutingRunResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}`,
+  );
+}
+
+export function getProspectRoutes(
+  routingRunId: string,
+): Promise<ProspectRouteListResponse> {
+  return requestJson<ProspectRouteListResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/routes?page=1&limit=200`,
+  );
+}
+
+export function reviewProspectRoute(
+  routeId: string,
+  action: ProspectRouteReviewAction,
+  options: {
+    effectiveTier?: ProspectTier;
+    overrideReason?: string;
+    reviewedBy?: string;
+  } = {},
+): Promise<ProspectRouteResponse> {
+  return requestJson<ProspectRouteResponse>(
+    `/prospect-routes/${encodeURIComponent(routeId)}/review`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action,
+        effective_tier: options.effectiveTier ?? null,
+        override_reason: options.overrideReason?.trim() || null,
+        reviewed_by: options.reviewedBy ?? "local_reviewer",
+      }),
+    },
+  );
+}
+
+export function createRoutedProspectBatch(
+  routingRunId: string,
+  companyIds: string[],
+): Promise<ProspectRoutingBatchCreateResponse> {
+  return requestJson<ProspectRoutingBatchCreateResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/prospect-batches`,
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds }),
     },
   );
 }

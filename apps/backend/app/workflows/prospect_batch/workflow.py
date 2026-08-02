@@ -904,7 +904,13 @@ class ProspectBatchWorkflow:
         async with self._uow_factory() as uow:
             batch = await uow.prospect_batches.get_by_id(batch_id)
             assert batch is not None
-            task = await uow.discovery_tasks.get_by_id(batch.discovery_task_id)
+            discovery_task_id = batch.discovery_task_id
+            if discovery_task_id is None:
+                return (
+                    "ROUTING_BATCH_NOT_STARTED",
+                    "routing-sourced batch requires a later explicit deep-processing start",
+                )
+            task = await uow.discovery_tasks.get_by_id(discovery_task_id)
             company = await uow.companies.get_by_id(company_id)
             if task is None or company is None:
                 return "COMPANY_NOT_FOUND", "company or discovery task no longer exists"
@@ -928,7 +934,7 @@ class ProspectBatchWorkflow:
                     "the discovery task source evidence is not present on the company",
                 )
             if await uow.prospect_batches.has_completed_pipeline(
-                discovery_task_id=batch.discovery_task_id,
+                discovery_task_id=discovery_task_id,
                 company_id=company_id,
                 pipeline_version=PIPELINE_VERSION,
                 exclude_batch_id=batch_id,
@@ -1225,10 +1231,15 @@ def _new_execution_job(
     sender: SenderProfile | None,
     max_attempts: int,
 ) -> ProspectJob:
+    discovery_task_id = batch.discovery_task_id
+    if discovery_task_id is None:
+        raise ApplicationConflictError(
+            "routing-sourced batch cannot start Research during D5c"
+        )
     company_ids = tuple(company.company_id for company in batch.companies)
     return ProspectJob.create(
         batch_id=batch.id,
-        business_key=_business_key(batch.discovery_task_id, company_ids),
+        business_key=_business_key(discovery_task_id, company_ids),
         request_key_hash=None,
         sender=sender,
         max_attempts=max_attempts,

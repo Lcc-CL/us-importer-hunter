@@ -35,14 +35,31 @@ class ProspectBatchModel(Base):
             "status IN ('pending','running','completed','partial_failed','failed')",
             name="ck_prospect_batches_status",
         ),
+        CheckConstraint(
+            "(discovery_task_id IS NOT NULL AND routing_run_id IS NULL "
+            "AND routing_selection_hash IS NULL) OR "
+            "(discovery_task_id IS NULL AND routing_run_id IS NOT NULL "
+            "AND routing_selection_hash IS NOT NULL)",
+            name="ck_prospect_batches_source",
+        ),
+        UniqueConstraint(
+            "routing_run_id",
+            "routing_selection_hash",
+            name="uq_prospect_batches_routing_selection",
+        ),
         Index("ix_prospect_batches_discovery_task", "discovery_task_id", "created_at"),
+        Index("ix_prospect_batches_routing_run", "routing_run_id", "created_at"),
         Index("ix_prospect_batches_status", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    discovery_task_id: Mapped[UUID] = mapped_column(
-        ForeignKey("discovery_tasks.id", ondelete="CASCADE"), nullable=False
+    discovery_task_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("discovery_tasks.id", ondelete="CASCADE"), nullable=True
     )
+    routing_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("prospect_routing_runs.id", ondelete="RESTRICT")
+    )
+    routing_selection_hash: Mapped[str | None] = mapped_column(String(64))
     requested_count: Mapped[int] = mapped_column(Integer)
     effective_count: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(30))

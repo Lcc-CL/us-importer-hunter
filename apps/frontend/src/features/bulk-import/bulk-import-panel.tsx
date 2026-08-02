@@ -1,22 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileCheck2, GitMerge, Play, Upload } from "lucide-react";
+import { Ban, CheckCircle2, FileCheck2, GitMerge, Play, Route, Upload } from "lucide-react";
 
 import {
   createBulkImportSession,
+  createProspectRoutingRun,
+  createRoutedProspectBatch,
   ApiError,
   getBulkImportRows,
   getBulkImportSession,
   getClientErrorDetails,
   getImportEntityDecisions,
   getImportResolution,
+  getProspectRoutes,
+  getProspectRoutingRun,
   reviewImportEntityDecision,
+  reviewProspectRoute,
   startImportResolution,
   type ImportEntityDecisionResponse,
   type ImportResolutionResponse,
   type ImportReviewAction,
   type ImportSessionResponse,
+  type ProspectRouteResponse,
+  type ProspectRoutingRunResponse,
+  type ProspectTier,
   type RawImportRowResponse,
   type RawImportRowStatus,
 } from "@/lib/api";
@@ -27,9 +35,10 @@ const PAGE_SIZE = 20;
 
 interface BulkImportPanelProps {
   initialSessionId?: string;
+  initialRoutingRunId?: string;
 }
 
-export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
+export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkImportPanelProps) {
   const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
   const [mappingText, setMappingText] = useState("");
@@ -42,6 +51,20 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
   const [decisions, setDecisions] = useState<ImportEntityDecisionResponse[]>([]);
   const [resolving, setResolving] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [routingRun, setRoutingRun] = useState<ProspectRoutingRunResponse | null>(null);
+  const [routes, setRoutes] = useState<ProspectRouteResponse[]>([]);
+  const [productKeywords, setProductKeywords] = useState("");
+  const [hsCodes, setHsCodes] = useState("");
+  const [originCountries, setOriginCountries] = useState("");
+  const [preferredPol, setPreferredPol] = useState("");
+  const [preferredPod, setPreferredPod] = useState("");
+  const [campaignName, setCampaignName] = useState("");
+  const [routingBusy, setRoutingBusy] = useState(false);
+  const [reviewingRouteId, setReviewingRouteId] = useState<string | null>(null);
+  const [routeTiers, setRouteTiers] = useState<Record<string, ProspectTier>>({});
+  const [routeReasons, setRouteReasons] = useState<Record<string, string>>({});
+  const [selectedACompanies, setSelectedACompanies] = useState<string[]>([]);
+  const [createdBatchId, setCreatedBatchId] = useState<string | null>(null);
   const [busy, setBusy] = useState(Boolean(initialSessionId));
   const [error, setError] = useState<string | null>(null);
 
@@ -91,6 +114,43 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
     [],
   );
 
+  const loadRoutingState = useCallback(async (routingRunId: string) => {
+    const saved = await getProspectRoutingRun(routingRunId);
+    setRoutingRun(saved);
+    setProductKeywords(stringList(saved.criteria.target_product_keywords).join(", "));
+    setHsCodes(stringList(saved.criteria.target_hs_codes).join(", "));
+    setOriginCountries(stringList(saved.criteria.preferred_origin_countries).join(", "));
+    setPreferredPol(stringList(saved.criteria.preferred_pol).join(", "));
+    setPreferredPod(stringList(saved.criteria.preferred_pod).join(", "));
+    setCampaignName(
+      typeof saved.criteria.campaign_name === "string"
+        ? saved.criteria.campaign_name
+        : "",
+    );
+    if (["completed", "partial_completed"].includes(saved.status)) {
+      const page = await getProspectRoutes(routingRunId);
+      setRoutes(page.routes);
+      const eligible = new Set(
+        page.routes
+          .filter(
+            (route) =>
+              route.effective_tier === "A" &&
+              ["confirmed", "overridden"].includes(route.review_status),
+          )
+          .map((route) => route.company_id),
+      );
+      setSelectedACompanies((current) => current.filter((value) => eligible.has(value)));
+      setRouteTiers((current) => {
+        const next = { ...current };
+        for (const route of page.routes) {
+          if (route.effective_tier) next[route.route_id] = route.effective_tier;
+        }
+        return next;
+      });
+    }
+    return saved;
+  }, []);
+
   useEffect(() => {
     if (!initialSessionId) return;
     let active = true;
@@ -98,6 +158,9 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
       try {
         await restore(initialSessionId as string);
         await loadResolutionState(initialSessionId as string, true);
+        if (initialRoutingRunId) {
+          await loadRoutingState(initialRoutingRunId);
+        }
       } catch (caught: unknown) {
         if (active) setError(getClientErrorDetails(caught).message);
       } finally {
@@ -108,7 +171,7 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
     return () => {
       active = false;
     };
-  }, [initialSessionId, loadResolutionState, restore]);
+  }, [initialRoutingRunId, initialSessionId, loadResolutionState, loadRoutingState, restore]);
 
   useEffect(() => {
     if (!session || !["receiving", "processing"].includes(session.status)) return;
@@ -133,9 +196,31 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
     return () => window.clearInterval(timer);
   }, [loadResolutionState, resolution, session]);
 
+  useEffect(() => {
+    if (
+      !routingRun?.processing_status ||
+      !["pending", "leased", "running"].includes(routingRun.processing_status)
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadRoutingState(routingRun.routing_run_id).catch((caught: unknown) => {
+        setError(getClientErrorDetails(caught).message);
+      });
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [loadRoutingState, routingRun]);
+
   function persistSessionId(sessionId: string) {
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("import_session_id", sessionId);
+    currentUrl.searchParams.delete("routing_run_id");
+    window.history.replaceState(null, "", currentUrl);
+  }
+
+  function persistRoutingRunId(routingRunId: string) {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("routing_run_id", routingRunId);
     window.history.replaceState(null, "", currentUrl);
   }
 
@@ -171,6 +256,10 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
       setRowStatus("");
       setResolution(null);
       setDecisions([]);
+      setRoutingRun(null);
+      setRoutes([]);
+      setSelectedACompanies([]);
+      setCreatedBatchId(null);
       persistSessionId(created.session_id);
       await loadRows(created.session_id, 1, "");
     } catch (caught: unknown) {
@@ -208,6 +297,92 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
     }
   }
 
+  async function handleStartRouting() {
+    if (!session || routingBusy) return;
+    const products = splitList(productKeywords);
+    const hs = splitList(hsCodes);
+    if (!products.length && !hs.length) {
+      setError(t("bulk.routingTargetRequired"));
+      return;
+    }
+    setRoutingBusy(true);
+    setError(null);
+    setCreatedBatchId(null);
+    try {
+      const created = await createProspectRoutingRun(
+        session.session_id,
+        {
+          target_product_keywords: products,
+          target_hs_codes: hs,
+          preferred_origin_countries: splitList(originCountries),
+          preferred_pol: splitList(preferredPol),
+          preferred_pod: splitList(preferredPod),
+        },
+        campaignName,
+      );
+      persistRoutingRunId(created.routing_run_id);
+      setSelectedACompanies([]);
+      await loadRoutingState(created.routing_run_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setRoutingBusy(false);
+    }
+  }
+
+  async function handleRouteReview(
+    route: ProspectRouteResponse,
+    action: "confirm" | "override" | "exclude",
+  ) {
+    if (reviewingRouteId) return;
+    const reason = routeReasons[route.route_id]?.trim();
+    if (action !== "confirm" && !reason) {
+      setError(t("bulk.routingReasonRequired"));
+      return;
+    }
+    setReviewingRouteId(route.route_id);
+    setError(null);
+    try {
+      await reviewProspectRoute(route.route_id, action, {
+        effectiveTier:
+          action === "override"
+            ? (routeTiers[route.route_id] ?? route.effective_tier ?? "C")
+            : undefined,
+        overrideReason: reason,
+      });
+      if (routingRun) await loadRoutingState(routingRun.routing_run_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setReviewingRouteId(null);
+    }
+  }
+
+  function toggleACompany(companyId: string) {
+    setSelectedACompanies((current) => {
+      if (current.includes(companyId)) return current.filter((value) => value !== companyId);
+      if (current.length >= 5) return current;
+      return [...current, companyId];
+    });
+  }
+
+  async function handleCreateRoutingBatch() {
+    if (!routingRun || routingBusy || !selectedACompanies.length) return;
+    setRoutingBusy(true);
+    setError(null);
+    try {
+      const created = await createRoutedProspectBatch(
+        routingRun.routing_run_id,
+        selectedACompanies,
+      );
+      setCreatedBatchId(created.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setRoutingBusy(false);
+    }
+  }
+
   async function changeFilter(status: RawImportRowStatus | "") {
     setRowStatus(status);
     setPage(1);
@@ -237,6 +412,15 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
   }
 
   const pageCount = Math.max(1, Math.ceil(rowTotal / PAGE_SIZE));
+  const selectableACompanyIds = new Set(
+    routes
+      .filter(
+        (route) =>
+          route.effective_tier === "A" &&
+          ["confirmed", "overridden"].includes(route.review_status),
+      )
+      .map((route) => route.company_id),
+  );
 
   return (
     <section
@@ -481,6 +665,305 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
             ) : null}
           </div>
 
+          <div
+            className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4"
+            data-testid="prospect-routing-panel"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
+                  {t("bulk.routingKicker")}
+                </p>
+                <h3 className="mt-1 text-base font-semibold text-slate-950">
+                  {t("bulk.routingTitle")}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {t("bulk.routingIntro")}
+                </p>
+              </div>
+              <button
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                data-testid="prospect-routing-start"
+                disabled={
+                  routingBusy ||
+                  !resolution ||
+                  !["completed", "partial_failed"].includes(resolution.resolution_status) ||
+                  Boolean(
+                    routingRun?.processing_status &&
+                      ["pending", "leased", "running"].includes(
+                        routingRun.processing_status,
+                      ),
+                  )
+                }
+                onClick={() => void handleStartRouting()}
+                type="button"
+              >
+                <Route className="size-4" />
+                {routingBusy ? t("bulk.routingStarting") : t("bulk.routingStart")}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                [
+                  t("bulk.routingProducts"),
+                  productKeywords,
+                  setProductKeywords,
+                  "hardware, tools",
+                  "prospect-routing-products",
+                ],
+                [
+                  t("bulk.routingHsCodes"),
+                  hsCodes,
+                  setHsCodes,
+                  "8205, 7318",
+                  "prospect-routing-hs",
+                ],
+                [
+                  t("bulk.routingOrigins"),
+                  originCountries,
+                  setOriginCountries,
+                  "China, Vietnam",
+                  "prospect-routing-origins",
+                ],
+                [
+                  t("bulk.routingPol"),
+                  preferredPol,
+                  setPreferredPol,
+                  "Shanghai",
+                  "prospect-routing-pol",
+                ],
+                [
+                  t("bulk.routingPod"),
+                  preferredPod,
+                  setPreferredPod,
+                  "Los Angeles",
+                  "prospect-routing-pod",
+                ],
+                [
+                  t("bulk.routingCampaign"),
+                  campaignName,
+                  setCampaignName,
+                  t("bulk.routingCampaignPlaceholder"),
+                  "prospect-routing-campaign",
+                ],
+              ].map(([label, value, setter, placeholder, testId]) => (
+                <label className="text-xs font-medium text-slate-700" key={String(testId)}>
+                  {String(label)}
+                  <input
+                    className="mt-1 block w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                    data-testid={String(testId)}
+                    onChange={(event) =>
+                      (setter as (next: string) => void)(event.target.value)
+                    }
+                    placeholder={String(placeholder)}
+                    value={String(value)}
+                  />
+                </label>
+              ))}
+            </div>
+
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {t("bulk.routingBoundary")}
+            </p>
+
+            {routingRun ? (
+              <div className="mt-4" data-testid="prospect-routing-result">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-900">
+                    {t(`bulk.routingStatus.${routingRun.status}`)}
+                  </span>
+                  <span>{routingRun.rules_version}</span>
+                  <span>
+                    {t("bulk.routingAttempts", {
+                      attempts: routingRun.attempt_count,
+                      max: routingRun.max_attempts,
+                    })}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {[
+                    ["A", routingRun.tier_a_count],
+                    ["B", routingRun.tier_b_count],
+                    ["C", routingRun.tier_c_count],
+                    ["D", routingRun.tier_d_count],
+                    [t("bulk.routingBlocked"), routingRun.blocked_companies],
+                    [t("bulk.routingTotal"), routingRun.total_companies],
+                  ].map(([label, value]) => (
+                    <div className="rounded-xl bg-white p-3" key={String(label)}>
+                      <p className="text-[11px] text-slate-500">{label}</p>
+                      <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {routes.length ? (
+                  <div
+                    className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white"
+                    data-testid="prospect-routing-routes"
+                  >
+                    <table className="min-w-[1100px] divide-y divide-slate-200 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="px-3 py-2">{t("bulk.routingSelect")}</th>
+                          <th className="px-3 py-2">{t("bulk.routingCompany")}</th>
+                          <th className="px-3 py-2">{t("bulk.routingScoreTier")}</th>
+                          <th className="px-3 py-2">{t("bulk.routingContacts")}</th>
+                          <th className="px-3 py-2">{t("bulk.routingReasons")}</th>
+                          <th className="px-3 py-2">{t("bulk.routingReview")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {routes.map((route) => {
+                          const selectable = selectableACompanyIds.has(route.company_id);
+                          return (
+                            <tr key={route.route_id}>
+                              <td className="px-3 py-3 align-top">
+                                <input
+                                  aria-label={`${t("bulk.routingSelect")} ${route.company_name}`}
+                                  checked={selectedACompanies.includes(route.company_id)}
+                                  disabled={!selectable}
+                                  onChange={() => toggleACompany(route.company_id)}
+                                  type="checkbox"
+                                />
+                              </td>
+                              <td className="px-3 py-3 align-top">
+                                <p className="font-semibold text-slate-900">
+                                  {route.company_name}
+                                </p>
+                                <p className="mt-1 font-mono text-[10px] text-slate-400">
+                                  {route.company_id}
+                                </p>
+                              </td>
+                              <td className="px-3 py-3 align-top">
+                                <p className="text-lg font-semibold text-slate-950">
+                                  {route.pre_score.toFixed(1)}
+                                </p>
+                                <p className="mt-1 text-slate-600">
+                                  {route.recommended_tier ?? "blocked"} → {route.effective_tier ?? "—"}
+                                </p>
+                              </td>
+                              <td className="px-3 py-3 align-top text-slate-600">
+                                <p>{t("bulk.routingContactCount", { count: route.contact_count })}</p>
+                                <p>{route.preferred_role_category ?? "—"}</p>
+                                <p>{route.has_usable_email ? t("bulk.routingHasEmail") : t("bulk.routingNoEmail")}</p>
+                              </td>
+                              <td className="max-w-sm px-3 py-3 align-top text-slate-600">
+                                <p>{route.reason_codes.join(" · ")}</p>
+                                {route.warning_codes.length ? (
+                                  <p className="mt-1 text-amber-700">
+                                    {route.warning_codes.join(" · ")}
+                                  </p>
+                                ) : null}
+                              </td>
+                              <td className="min-w-72 px-3 py-3 align-top">
+                                {route.review_status === "suggested" ? (
+                                  <div className="space-y-2">
+                                    <div className="flex gap-2">
+                                      <button
+                                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 px-2 py-1 font-semibold text-emerald-800 disabled:opacity-40"
+                                        disabled={Boolean(reviewingRouteId)}
+                                        onClick={() => void handleRouteReview(route, "confirm")}
+                                        type="button"
+                                      >
+                                        <CheckCircle2 className="size-3" />
+                                        {t("bulk.routingConfirm")}
+                                      </button>
+                                      <select
+                                        className="rounded-lg border border-slate-300 px-2 py-1"
+                                        onChange={(event) =>
+                                          setRouteTiers((current) => ({
+                                            ...current,
+                                            [route.route_id]: event.target.value as ProspectTier,
+                                          }))
+                                        }
+                                        value={routeTiers[route.route_id] ?? route.effective_tier ?? "C"}
+                                      >
+                                        {(["A", "B", "C", "D"] as const).map((tier) => (
+                                          <option key={tier} value={tier}>{tier}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <input
+                                      className="block w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                                      onChange={(event) =>
+                                        setRouteReasons((current) => ({
+                                          ...current,
+                                          [route.route_id]: event.target.value,
+                                        }))
+                                      }
+                                      placeholder={t("bulk.routingReasonPlaceholder")}
+                                      value={routeReasons[route.route_id] ?? ""}
+                                    />
+                                    <div className="flex gap-2">
+                                      <button
+                                        className="rounded-lg border border-slate-300 px-2 py-1 font-semibold text-slate-700 disabled:opacity-40"
+                                        disabled={Boolean(reviewingRouteId)}
+                                        onClick={() => void handleRouteReview(route, "override")}
+                                        type="button"
+                                      >
+                                        {t("bulk.routingOverride")}
+                                      </button>
+                                      <button
+                                        className="inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2 py-1 font-semibold text-rose-700 disabled:opacity-40"
+                                        disabled={Boolean(reviewingRouteId)}
+                                        onClick={() => void handleRouteReview(route, "exclude")}
+                                        type="button"
+                                      >
+                                        <Ban className="size-3" />
+                                        {t("bulk.routingExclude")}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <p className="font-semibold text-slate-800">
+                                      {t(`bulk.routingReviewStatus.${route.review_status}`)}
+                                    </p>
+                                    <p className="mt-1 text-slate-500">
+                                      {route.override_reason ?? route.reviewed_by ?? "—"}
+                                    </p>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    data-testid="prospect-routing-create-batch"
+                    disabled={
+                      routingBusy ||
+                      selectedACompanies.length === 0 ||
+                      selectedACompanies.length > 5
+                    }
+                    onClick={() => void handleCreateRoutingBatch()}
+                    type="button"
+                  >
+                    {t("bulk.routingCreateBatch", { count: selectedACompanies.length })}
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    {t("bulk.routingBatchLimit")}
+                  </span>
+                </div>
+                {createdBatchId ? (
+                  <p
+                    className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-sm font-medium text-emerald-900"
+                    data-testid="prospect-routing-batch-created"
+                  >
+                    {t("bulk.routingBatchCreated")} · {createdBatchId}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <label className="text-sm font-medium text-slate-700">
               {t("bulk.rowFilter")}
@@ -553,4 +1036,21 @@ export function BulkImportPanel({ initialSessionId }: BulkImportPanelProps) {
       ) : null}
     </section>
   );
+}
+
+function splitList(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[,;|\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }

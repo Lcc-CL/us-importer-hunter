@@ -32,6 +32,20 @@ class SqlAlchemyProspectBatchRepository:
     async def save(self, batch: ProspectBatch) -> None:
         await self._session.merge(ProspectBatchMapper.to_model(batch))
 
+    async def find_for_routing_selection(
+        self,
+        *,
+        routing_run_id: UUID,
+        routing_selection_hash: str,
+    ) -> ProspectBatch | None:
+        model = await self._session.scalar(
+            select(ProspectBatchModel).where(
+                ProspectBatchModel.routing_run_id == routing_run_id,
+                ProspectBatchModel.routing_selection_hash == routing_selection_hash,
+            )
+        )
+        return ProspectBatchMapper.to_domain(model) if model else None
+
     async def has_completed_pipeline(
         self,
         *,

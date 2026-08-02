@@ -10,6 +10,7 @@ from app.api.routes import (
     import_resolution,
     mvp,
     prospect_batches,
+    prospect_routing,
     research,
 )
 
@@ -22,3 +23,4 @@ api_router.include_router(research.router)
 api_router.include_router(import_evidence.router)
 api_router.include_router(discovery_tasks.router)
 api_router.include_router(prospect_batches.router)
+api_router.include_router(prospect_routing.router)

@@ -8,12 +8,15 @@ from uuid import UUID
 from app.domain.clock import utcnow
 from app.domain.import_resolution import (
     ImportJobStatus,
+    ImportJobType,
     ImportProcessingJob,
     ImportResolutionStatus,
 )
+from app.domain.prospect_routing import ProspectRoutingRunStatus
 from app.domain.repositories import ImportResolutionUnitOfWork
 from app.shared.exceptions import ResourceNotFoundError
 from app.workflows.import_resolution.workflow import ImportEntityResolutionWorkflow
+from app.workflows.prospect_routing import ProspectRoutingExecutionWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -89,15 +92,27 @@ class ImportProcessingJobCoordinator:
                 error_summary=error_summary,
                 delay=self._retry_delay,
             )
-            resolution = await uow.import_resolution.get_resolution_for_update(
-                job.import_session_id
-            )
-            if resolution is not None:
-                if updated.status is ImportJobStatus.PENDING:
-                    resolution.pause_for_retry()
-                else:
-                    resolution.fail("background entity resolution exhausted its retry limit")
-                await uow.import_resolution.save_resolution(resolution)
+            if job.job_type is ImportJobType.ENTITY_RESOLUTION:
+                resolution = await uow.import_resolution.get_resolution_for_update(
+                    job.import_session_id
+                )
+                if resolution is not None:
+                    if updated.status is ImportJobStatus.PENDING:
+                        resolution.pause_for_retry()
+                    else:
+                        resolution.fail(
+                            "background entity resolution exhausted its retry limit"
+                        )
+                    await uow.import_resolution.save_resolution(resolution)
+            else:
+                assert job.routing_run_id is not None
+                run = await uow.prospect_routing.get_run_for_update(job.routing_run_id)
+                if run is not None:
+                    if updated.status is ImportJobStatus.PENDING:
+                        run.pause_for_retry()
+                    else:
+                        run.fail("background prospect routing exhausted its retry limit")
+                    await uow.prospect_routing.save_run(run)
             await uow.import_processing_jobs.save(updated)
             await uow.commit()
             return updated
@@ -108,22 +123,39 @@ class ImportProcessingJobCoordinator:
         async with self._uow_factory() as uow:
             jobs = await uow.import_processing_jobs.get_stale_for_update(now=now, limit=limit)
             for job in jobs:
-                resolution = await uow.import_resolution.get_resolution_for_update(
-                    job.import_session_id
-                )
-                if resolution is not None and resolution.status in {
-                    ImportResolutionStatus.COMPLETED,
-                    ImportResolutionStatus.PARTIAL_FAILED,
-                }:
-                    updated = job.reconcile_completed_after_recovery(now=now)
+                if job.job_type is ImportJobType.ENTITY_RESOLUTION:
+                    resolution = await uow.import_resolution.get_resolution_for_update(
+                        job.import_session_id
+                    )
+                    if resolution is not None and resolution.status in {
+                        ImportResolutionStatus.COMPLETED,
+                        ImportResolutionStatus.PARTIAL_FAILED,
+                    }:
+                        updated = job.reconcile_completed_after_recovery(now=now)
+                    else:
+                        updated = job.recover_stale(now=now)
+                        if resolution is not None:
+                            if updated.status is ImportJobStatus.PENDING:
+                                resolution.pause_for_retry()
+                            else:
+                                resolution.fail("background entity resolution lease expired")
+                            await uow.import_resolution.save_resolution(resolution)
                 else:
-                    updated = job.recover_stale(now=now)
-                    if resolution is not None:
-                        if updated.status is ImportJobStatus.PENDING:
-                            resolution.pause_for_retry()
-                        else:
-                            resolution.fail("background entity resolution lease expired")
-                        await uow.import_resolution.save_resolution(resolution)
+                    assert job.routing_run_id is not None
+                    run = await uow.prospect_routing.get_run_for_update(job.routing_run_id)
+                    if run is not None and run.status in {
+                        ProspectRoutingRunStatus.COMPLETED,
+                        ProspectRoutingRunStatus.PARTIAL_COMPLETED,
+                    }:
+                        updated = job.reconcile_completed_after_recovery(now=now)
+                    else:
+                        updated = job.recover_stale(now=now)
+                        if run is not None:
+                            if updated.status is ImportJobStatus.PENDING:
+                                run.pause_for_retry()
+                            else:
+                                run.fail("background prospect routing lease expired")
+                            await uow.prospect_routing.save_run(run)
                 await uow.import_processing_jobs.save(updated)
                 recovered.append(updated)
             if recovered:
@@ -137,9 +169,11 @@ class ImportProcessingJobRunner:
         *,
         coordinator: ImportProcessingJobCoordinator,
         workflow: ImportEntityResolutionWorkflow,
+        routing_workflow: ProspectRoutingExecutionWorkflow | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._workflow = workflow
+        self._routing_workflow = routing_workflow
 
     async def run_once(self, *, owner: str) -> bool:
         await self._coordinator.recover_stale()
@@ -148,16 +182,25 @@ class ImportProcessingJobRunner:
             return False
         running = await self._coordinator.start(leased.id, owner=owner)
         try:
-            await self._workflow.execute(
-                running.import_session_id,
-                heartbeat=lambda: self._coordinator.heartbeat(running.id, owner=owner),
-            )
+            if running.job_type is ImportJobType.ENTITY_RESOLUTION:
+                await self._workflow.execute(
+                    running.import_session_id,
+                    heartbeat=lambda: self._coordinator.heartbeat(running.id, owner=owner),
+                )
+            else:
+                if self._routing_workflow is None or running.routing_run_id is None:
+                    raise RuntimeError("prospect routing worker is not configured")
+                await self._routing_workflow.execute(
+                    running.routing_run_id,
+                    heartbeat=lambda: self._coordinator.heartbeat(running.id, owner=owner),
+                )
         except Exception as exc:
             logger.error(
-                "import entity resolution background job failed",
+                "import processing background job failed",
                 extra={
                     "job_id": str(running.id),
                     "import_session_id": str(running.import_session_id),
+                    "job_type": running.job_type.value,
                     "error_type": type(exc).__name__,
                 },
             )

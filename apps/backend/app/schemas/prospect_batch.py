@@ -88,7 +88,8 @@ class ProspectBatchResumeRequest(BaseModel):
 
 class ProspectBatchResponse(BaseModel):
     batch_id: UUID
-    discovery_task_id: UUID
+    discovery_task_id: UUID | None
+    routing_run_id: UUID | None
     requested_count: int
     effective_count: int
     status: str
@@ -107,6 +108,7 @@ class ProspectBatchResponse(BaseModel):
         return cls(
             batch_id=batch.id,
             discovery_task_id=batch.discovery_task_id,
+            routing_run_id=batch.routing_run_id,
             requested_count=batch.requested_count,
             effective_count=batch.effective_count,
             status=batch.status.value,

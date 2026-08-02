@@ -37,6 +37,7 @@ from app.workflows.import_resolution import (
 )
 from app.workflows.mvp_prospect_analysis import UowFactory
 from app.workflows.prospect_batch import ProspectJobCoordinator, ProspectJobRunner
+from app.workflows.prospect_routing import ProspectRoutingExecutionWorkflow
 
 
 async def run_worker() -> None:
@@ -95,6 +96,7 @@ async def run_worker() -> None:
     import_runner = ImportProcessingJobRunner(
         coordinator=import_coordinator,
         workflow=ImportEntityResolutionWorkflow(import_uow_factory),
+        routing_workflow=ProspectRoutingExecutionWorkflow(import_uow_factory),
     )
 
     stop = asyncio.Event()

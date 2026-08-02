@@ -8,6 +8,7 @@ export default async function Home({
     task_id?: string | string[];
     batch_id?: string | string[];
     import_session_id?: string | string[];
+    routing_run_id?: string | string[];
     research_id?: string | string[];
   }>;
 }) {
@@ -16,12 +17,16 @@ export default async function Home({
   const taskId = params.task_id;
   const batchId = params.batch_id;
   const importSessionId = params.import_session_id;
+  const routingRunId = params.routing_run_id;
   const researchId = params.research_id;
   return (
     <MvpAnalysisPage
       initialCompanyId={typeof companyId === "string" ? companyId : undefined}
       initialImportSessionId={
         typeof importSessionId === "string" ? importSessionId : undefined
+      }
+      initialRoutingRunId={
+        typeof routingRunId === "string" ? routingRunId : undefined
       }
       initialBatchId={typeof batchId === "string" ? batchId : undefined}
       initialResearchId={typeof researchId === "string" ? researchId : undefined}

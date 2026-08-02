@@ -58,6 +58,7 @@ import type { ApplicationPayload } from "@/lib/research-api";
 interface MvpAnalysisPageProps {
   initialCompanyId?: string;
   initialImportSessionId?: string;
+  initialRoutingRunId?: string;
   initialTaskId?: string;
   initialBatchId?: string;
   initialResearchId?: string;
@@ -73,6 +74,7 @@ function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
 export function MvpAnalysisPage({
   initialCompanyId,
   initialImportSessionId,
+  initialRoutingRunId,
   initialTaskId,
   initialBatchId,
   initialResearchId,
@@ -420,7 +422,10 @@ export function MvpAnalysisPage({
           <ProviderBadge />
         </div>
 
-        <BulkImportPanel initialSessionId={initialImportSessionId} />
+        <BulkImportPanel
+          initialRoutingRunId={initialRoutingRunId}
+          initialSessionId={initialImportSessionId}
+        />
 
         <DiscoveryTaskPanel
           initialBatchId={initialBatchId}
