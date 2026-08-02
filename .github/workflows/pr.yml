@@ -4,7 +4,7 @@ on:
   pull_request:
 
 jobs:
-  d3a:
+  d5a1:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -49,14 +49,38 @@ jobs:
         working-directory: apps/backend
         run: uv run ruff check .
 
-      - name: D3a targeted tests
+      - name: D3a and D5a1 targeted tests
         working-directory: apps/backend
         run: >-
           uv run pytest
+          tests/domain/test_bulk_import.py
+          tests/services/bulk_import/test_csv_intake.py
+          tests/database/integration/test_bulk_import_api.py
+          tests/database/integration/test_bulk_import_performance.py
+          tests/database/integration/test_migrations.py
           tests/domain/test_prospect_job.py
           tests/domain/test_prospect_batch_recovery.py
           tests/workflows/test_prospect_batch.py
           tests/database/integration/test_prospect_batch_api.py
+
+      - name: D5a1 strict mypy
+        working-directory: apps/backend
+        run: >-
+          uv run mypy
+          app/domain/bulk_import
+          app/services/bulk_import
+          app/workflows/bulk_import
+          app/database/models/bulk_import.py
+          app/database/mappers/bulk_import.py
+          app/database/repositories/bulk_import.py
+          app/schemas/bulk_import.py
+          app/api/routes/bulk_import.py
+          tests/domain/test_bulk_import.py
+          tests/services/bulk_import/test_csv_intake.py
+          tests/database/integration/test_bulk_import_api.py
+          tests/database/integration/test_bulk_import_performance.py
+          tests/database/integration/test_migrations.py
+          --strict
 
       - name: Migration consistency
         working-directory: apps/backend
@@ -75,6 +99,10 @@ jobs:
       - name: Frontend TypeScript
         working-directory: apps/frontend
         run: npx tsc --noEmit
+
+      - name: Frontend lint
+        working-directory: apps/frontend
+        run: npm run lint
 
       - name: Frontend production build
         working-directory: apps/frontend

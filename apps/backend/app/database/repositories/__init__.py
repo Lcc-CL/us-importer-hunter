@@ -7,6 +7,7 @@ Rules (ADR-0017):
 - One AsyncSession per Unit of Work, injected via constructor.
 """
 
+from app.database.repositories.bulk_import import SqlAlchemyBulkImportRepository
 from app.database.repositories.company import SqlAlchemyCompanyRepository
 from app.database.repositories.contact import SqlAlchemyContactRepository
 from app.database.repositories.discovery_task import SqlAlchemyDiscoveryTaskRepository
@@ -25,6 +26,7 @@ from app.database.repositories.research import SqlAlchemyResearchRunRepository
 from app.database.repositories.task import SqlAlchemyTaskRepository
 
 __all__ = [
+    "SqlAlchemyBulkImportRepository",
     "SqlAlchemyCompanyRepository",
     "SqlAlchemyImportEvidenceRepository",
     "SqlAlchemyImportEvidencePromotionRepository",

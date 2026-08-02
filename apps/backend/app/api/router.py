@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    bulk_import,
     discovery_tasks,
     health,
     import_evidence,
@@ -12,6 +13,7 @@ from app.api.routes import (
 )
 
 api_router = APIRouter()
+api_router.include_router(bulk_import.router)
 api_router.include_router(health.router)
 api_router.include_router(mvp.router)
 api_router.include_router(research.router)

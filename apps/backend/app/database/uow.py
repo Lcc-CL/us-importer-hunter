@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database.repositories import (
+    SqlAlchemyBulkImportRepository,
     SqlAlchemyCompanyRepository,
     SqlAlchemyContactRepository,
     SqlAlchemyDiscoveryTaskRepository,
@@ -34,6 +35,7 @@ from app.database.repositories import (
 )
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
+    BulkImportRepository,
     CompanyRepository,
     ContactRepository,
     DiscoveryTaskRepository,
@@ -50,6 +52,7 @@ from app.domain.repositories import (
 
 
 class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
+    bulk_import: BulkImportRepository
     companies: CompanyRepository
     contacts: ContactRepository
     import_evidence: ImportEvidenceRepository
@@ -70,6 +73,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
         self._session = self._session_factory()
         self._committed = False
+        self.bulk_import = SqlAlchemyBulkImportRepository(self._session)
         self.companies = SqlAlchemyCompanyRepository(self._session)
         self.contacts = SqlAlchemyContactRepository(self._session)
         self.discovery_tasks = SqlAlchemyDiscoveryTaskRepository(self._session)

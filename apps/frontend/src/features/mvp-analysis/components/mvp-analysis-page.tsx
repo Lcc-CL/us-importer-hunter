@@ -26,6 +26,7 @@ import { ImportEvidencePanel } from "./import-evidence-panel";
 import { ProspectForm } from "./prospect-form";
 import { ProviderBadge } from "./provider-badge";
 import { DiscoveryTaskPanel } from "@/features/discovery";
+import { BulkImportPanel } from "@/features/bulk-import";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
 import type { FlowStep, StepState } from "@/features/research/step-nav";
 import { ContactDiscoveryCard } from "./contact-discovery-card";
@@ -56,6 +57,7 @@ import type { ApplicationPayload } from "@/lib/research-api";
 
 interface MvpAnalysisPageProps {
   initialCompanyId?: string;
+  initialImportSessionId?: string;
   initialTaskId?: string;
   initialBatchId?: string;
   initialResearchId?: string;
@@ -70,6 +72,7 @@ function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
 
 export function MvpAnalysisPage({
   initialCompanyId,
+  initialImportSessionId,
   initialTaskId,
   initialBatchId,
   initialResearchId,
@@ -416,6 +419,8 @@ export function MvpAnalysisPage({
           </div>
           <ProviderBadge />
         </div>
+
+        <BulkImportPanel initialSessionId={initialImportSessionId} />
 
         <DiscoveryTaskPanel
           initialBatchId={initialBatchId}

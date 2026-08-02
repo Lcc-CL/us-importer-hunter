@@ -4,6 +4,26 @@
 # EventBus (ADR-0004/0015); Execution context wraps every run in a Task.
 
 workflows:
+  bulk_import:
+    package: app.workflows.bulk_import
+    description: >
+      D5a1 synchronous traceable raw CSV intake. Preflights a spooled upload
+      without retaining the full file in memory, accepts utf-8-sig, utf-8 or
+      gb18030, rejects files above 20 MB or 20,000 data rows before creating a
+      session, and persists every accepted, invalid and duplicate row in batches
+      of 500. The same source plus file SHA-256 returns the existing session.
+      It never creates Company, Contact, Import Evidence, Opportunity, Research,
+      ProspectBatch, Outreach or Draft records and invokes no provider or LLM.
+    steps:
+      - { id: preflight, service: streaming_csv_intake }
+      - { id: create_session, aggregate: import_session }
+      - { id: persist_raw_rows, aggregate: raw_import_row, batch_size: 500 }
+      - { id: persist_terminal_statistics, aggregate: import_session }
+    statuses: [receiving, processing, completed, partial_failed, failed]
+    execution: sync_http
+    limits: { max_bytes: 20971520, max_rows: 20000 }
+    status: implemented
+
   discovery_task:
     package: app.workflows.discovery_task
     description: >
