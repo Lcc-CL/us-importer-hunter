@@ -17,8 +17,9 @@ D5c 已完成以下闭环：完成实体归并的 `ImportSession` → 从已持�
 - PR #4 `feat/real-prospect-calibration-mvp` 仍为 OPEN；本轮没有修改、合并或
   cherry-pick 该 PR。
 - D5c 目标 commit：`feat(routing): add deterministic prospect pre-score and routing`。
-- D5c PR 在本报告与实现 commit 推送后创建，标题为
-  `feat(routing): add auditable A/B/C/D prospect routing`；按要求本轮不合并该 PR。
+- D5c PR #7 标题为 `feat(routing): add auditable A/B/C/D prospect routing`。合并门禁发现
+  Route 重算会删除历史后，已在同一分支修复为不可变 generation；修复 commit 为
+  `fix(routing): preserve immutable routing generations`，通过门禁后以 Squash Merge 合并。
 - 未创建 release tag。
 
 ## 3. 数据模型和 Migration
@@ -39,11 +40,13 @@ D5c 已完成以下闭环：完成实体归并的 `ImportSession` → 从已持�
 
 数据库唯一约束为
 `(import_session_id, rules_version, configuration_hash)`。同一条件和相同实体状态复用已有
-Run；实体状态改变时保留同一 Run ID、增加 `execution_generation`、清除旧 Route 后重新计算。
+Run；实体状态改变时保留同一 Run ID、增加 `execution_generation`，并为新 generation 追加
+Route。旧 generation 不删除、不覆盖。
 
 ### ProspectRoute
 
-`prospect_routes` 每个 Run、每家公司最多一条，保存：
+`prospect_routes` 每个 Run generation、每家公司最多一条，唯一约束为
+`(routing_run_id, execution_generation, company_id)`，保存：
 
 - `pre_score`、recommended/effective tier；
 - 完整 `feature_snapshot_json`；
@@ -53,7 +56,8 @@ Run；实体状态改变时保留同一 Run ID、增加 `execution_generation`�
 - 联系人数、可用联系人/邮箱、首选角色快照。
 
 blocked Route 在 Domain 与数据库约束中均禁止拥有正式 tier。Pre-Score 和路由判断没有写入
-Company，Canonical Company facts 未被修改。
+Company，Canonical Company facts 未被修改。人工 review 只允许操作当前 generation；历史
+generation Route 及其 confirm / override / exclude 信息保持不可变，尝试再次审核返回 409。
 
 ### 复用 ImportProcessingJob
 
@@ -64,8 +68,10 @@ Company，Canonical Company facts 未被修改。
 ### 扩展 ProspectBatch 来源
 
 `prospect_batches` 现在允许且只允许一种来源：原有 `discovery_task_id`，或新增
-`routing_run_id + routing_selection_hash`。路由选择 hash 包含 Run、执行代次和排序后的公司
-ID，重复选择明确幂等。D5c 创建 Batch 时不会创建 `prospect_batch_jobs`。
+`routing_run_id + routing_execution_generation + routing_selection_hash`。路由选择 hash 包含
+Run、执行代次和排序后的公司 ID，重复选择明确幂等。已创建 Batch 固定指向创建时的 Route
+generation，后续重算不会修改其来源，也不会让它自动切换到最新 Route。D5c 创建 Batch 时
+不会创建 `prospect_batch_jobs`。
 
 Migration 已在 Docker PostgreSQL 完成 upgrade → downgrade 到 D5b1 → upgrade，并通过
 `alembic check`。Downgrade 在存在路由来源 Batch 或 routing job 时 fail closed，避免静默丢失
@@ -121,16 +127,18 @@ entity resolution 或 prospect routing workflow。
 队列。单独表会立即复制恢复协议和测试；通用 `subject_type/subject_id` 又会失去数据库 FK。
 
 Lease、retry、heartbeat、stale recovery 均有真实 PostgreSQL 定向测试。路由每处理 100 家
-公司 heartbeat 一次；结果在最后一个事务整体替换，失败不会留下半批 Route。
+公司 heartbeat 一次；新 generation 在最后一个事务整体追加，失败不会删除或覆盖历史 Route，
+也不会留下可见的半批新 generation。
 
 ## 7. API
 
 - `POST /api/v1/import-sessions/{session_id}/routing-runs`：结构化 422 校验目标产品/HS，
   返回 202、Run/Job ID、reused/recalculated。
 - `GET /api/v1/prospect-routing-runs/{routing_run_id}`：状态、进度、A/B/C/D/blocked、规则、
-  条件、权重、Job retry/heartbeat/error。
+  条件、权重、Job retry/heartbeat/error、`current_execution_generation` 与
+  `available_generations`。
 - `GET /api/v1/prospect-routing-runs/{routing_run_id}/routes`：tier、review status、分数区间、
-  has contact、role、分页过滤。
+  has contact、role、分页过滤；默认查询当前 generation，可用 `generation` 查询历史。
 - `POST /api/v1/prospect-routes/{route_id}/review`：confirm / override / exclude；冲突 409。
 - `POST /api/v1/prospect-routing-runs/{routing_run_id}/prospect-batches`：1–5 家，只接受已
   confirmed/overridden 的 effective A，重复选择返回同一 Batch，`processing_started=false`。
@@ -150,7 +158,8 @@ Import Session 页面新增最小“销售路由”阶段：
 6. 创建后明确显示“已创建深度处理批次，尚未启动 Research 或邮件生成。”
 
 `routing_run_id` 写入 URL，刷新后恢复 Run、统计、Route 和审核结果。中英文文案均已加入，
-没有新增 Umail 页面，也没有重构现有前端结构。
+前端类型已包含 execution generation；本轮没有增加复杂历史代次对比 UI，没有新增 Umail
+页面，也没有重构现有前端结构。
 
 ## 9. 性能结果
 
@@ -184,7 +193,10 @@ channel 聚合投影后降至 77 SQL；Repository 仍返回 Domain snapshot，�
 
 | 门禁 | 结果 |
 | --- | --- |
-| D5c scorer / Domain / API / Migration / architecture boundaries | 22 passed |
+| Route generation 修复定向 scorer / API / Migration | 17 passed |
+| 不可变历史场景 | generation 1 Route、人工 override、Batch 来源均保留；默认查询 generation 2，历史查询 generation 1；相同实体状态不新增 generation |
+| 混合业务 fixture | A=2、B=2、C=2、D=2、blocked=2，reason codes 验证通过 |
+| D5c scorer / Domain / API / Migration / architecture boundaries | 22 passed（初始 D5c 门禁） |
 | 500/5,000/10,000 PostgreSQL 性能 | 1 passed |
 | D5a1 / D5b1 / Discovery / Company / Contact / ProspectBatch 兼容 | 33 passed |
 | Ruff | `All checks passed!` |
@@ -219,6 +231,8 @@ channel 聚合投影后降至 77 SQL；Repository 仍返回 Domain snapshot，�
 4. 路由规则是固定的关键词、前缀 HS 和阈值策略，尚未做真实销售结果 Calibration。
 5. 路由来源 Batch 在 D5c 中只能创建，现有深度处理 workflow 对它明确 fail closed。
 6. Import Worker 仍是单并发轮询；entity resolution 与 routing 共用一个 worker pool。
+7. Route generation 采用同表追加保存；Run 高频重算会线性增加 Route 行数，当前没有历史代次
+   对比 UI 或归档策略。
 
 ## 14. 每项债务保留理由
 
@@ -228,6 +242,8 @@ channel 聚合投影后降至 77 SQL；Repository 仍返回 Domain snapshot，�
 4. 本轮目标就是可审计确定性 Pre-Score；LLM/ML、自动学习和 Calibration 明确排除。
 5. 自动 Research 明确禁止；fail closed 防止用户误以为 Batch 创建等于已处理。
 6. 当前规模 3.961 秒完成，尚无证据需要并发队列或独立 worker pool。
+7. 销售路由审计要求高于节省少量存储；MVP 必须保留原始特征、tier 和人工判断，暂不引入
+   归档服务或复杂历史浏览器。
 
 ## 15. 债务偿还条件
 
@@ -243,6 +259,8 @@ channel 聚合投影后降至 77 SQL；Repository 仍返回 Domain snapshot，�
    证据边界。
 6. Worker 排队延迟、lease 冲突或吞吐 SLA 被真实数据证明不足时，再拆分 worker pool 或增加
    受控并发。
+7. 单 Run generation 数量或 Route 历史存储达到运维阈值，且合规保留周期明确后，再设计只读
+   归档/分区；出现真实人工跨代比较需求后再增加历史对比 UI。
 
 ## 16. 未完成事项
 

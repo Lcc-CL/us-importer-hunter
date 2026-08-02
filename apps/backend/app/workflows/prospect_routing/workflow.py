@@ -53,6 +53,7 @@ class ProspectRoutingSubmission:
 @dataclass(frozen=True)
 class ProspectRoutePage:
     routing_run_id: UUID
+    execution_generation: int
     page: int
     limit: int
     total: int
@@ -134,7 +135,6 @@ class ProspectRoutingSubmissionWorkflow:
                             recalculated=False,
                         )
                     locked.reset_for_recalculation(entity_state_hash=entity_state_hash)
-                    await uow.prospect_routing.replace_routes(locked.id, ())
                     await uow.prospect_routing.save_run(locked)
                     job = _new_routing_job(locked, max_attempts=self._max_attempts)
                     await uow.import_processing_jobs.add(job)
@@ -228,6 +228,7 @@ class ProspectRoutingExecutionWorkflow:
             routes.append(
                 self._scorer.score(
                     routing_run_id=run.id,
+                    execution_generation=run.execution_generation,
                     criteria=run.criteria,
                     features=features,
                 )
@@ -246,7 +247,7 @@ class ProspectRoutingExecutionWorkflow:
                     f"routing run in {locked.status.value} cannot persist results"
                 )
             locked.entity_state_hash = actual_state_hash
-            await uow.prospect_routing.replace_routes(routing_run_id, tuple(routes))
+            await uow.prospect_routing.add_routes(tuple(routes))
             locked.complete(tuple(routes))
             await uow.prospect_routing.save_run(locked)
             await uow.commit()
@@ -259,7 +260,7 @@ class ProspectRoutingQueryWorkflow:
 
     async def get(
         self, routing_run_id: UUID
-    ) -> tuple[ProspectRoutingRun, ImportProcessingJob | None]:
+    ) -> tuple[ProspectRoutingRun, ImportProcessingJob | None, tuple[int, ...]]:
         async with self._uow_factory() as uow:
             run = await uow.prospect_routing.get_run(routing_run_id)
             if run is None:
@@ -269,12 +270,16 @@ class ProspectRoutingQueryWorkflow:
             job = await uow.import_processing_jobs.get_latest_for_routing_run(
                 routing_run_id
             )
-            return run, job
+            generations = await uow.prospect_routing.list_available_generations(
+                routing_run_id
+            )
+            return run, job, generations
 
     async def list_routes(
         self,
         *,
         routing_run_id: UUID,
+        generation: int | None,
         tier: ProspectTier | None,
         review_status: ProspectRouteReviewStatus | None,
         minimum_score: float | None,
@@ -285,12 +290,20 @@ class ProspectRoutingQueryWorkflow:
         limit: int,
     ) -> ProspectRoutePage:
         async with self._uow_factory() as uow:
-            if await uow.prospect_routing.get_run(routing_run_id) is None:
+            run = await uow.prospect_routing.get_run(routing_run_id)
+            if run is None:
                 raise ResourceNotFoundError(
                     f"prospect routing run not found: {routing_run_id}"
                 )
+            selected_generation = generation or run.execution_generation
+            if selected_generation > run.execution_generation:
+                raise InvalidInputError(
+                    code="ROUTING_GENERATION_NOT_AVAILABLE",
+                    message="generation exceeds the current routing execution generation",
+                )
             routes, total = await uow.prospect_routing.list_routes(
                 routing_run_id=routing_run_id,
+                execution_generation=selected_generation,
                 tier=tier,
                 review_status=review_status,
                 minimum_score=minimum_score,
@@ -302,6 +315,7 @@ class ProspectRoutingQueryWorkflow:
             )
             return ProspectRoutePage(
                 routing_run_id=routing_run_id,
+                execution_generation=selected_generation,
                 page=page,
                 limit=limit,
                 total=total,
@@ -326,6 +340,15 @@ class ProspectRouteReviewWorkflow:
             route = await uow.prospect_routing.get_route_for_update(route_id)
             if route is None:
                 raise ResourceNotFoundError(f"prospect route not found: {route_id}")
+            run = await uow.prospect_routing.get_run(route.routing_run_id)
+            if run is None:
+                raise ResourceNotFoundError(
+                    f"prospect routing run not found: {route.routing_run_id}"
+                )
+            if route.execution_generation != run.execution_generation:
+                raise ApplicationConflictError(
+                    "historical prospect routes are immutable"
+                )
             try:
                 if action is ProspectRouteReviewAction.CONFIRM:
                     reviewed = route.confirm(reviewed_by=reviewed_by)
@@ -399,6 +422,7 @@ class ProspectRoutingBatchWorkflow:
                     )
                 routes = await uow.prospect_routing.list_routes_for_companies(
                     routing_run_id=routing_run_id,
+                    execution_generation=run.execution_generation,
                     company_ids=unique_ids,
                 )
                 route_by_company = {route.company_id: route for route in routes}
@@ -435,6 +459,7 @@ class ProspectRoutingBatchWorkflow:
                     return ProspectRoutingBatchSubmission(batch=existing, reused=True)
                 batch = ProspectBatch.create_from_routing(
                     routing_run_id=routing_run_id,
+                    routing_execution_generation=run.execution_generation,
                     routing_selection_hash=selection_hash,
                     requested_count=len(company_ids),
                     companies=tuple(

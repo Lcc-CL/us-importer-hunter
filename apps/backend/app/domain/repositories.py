@@ -363,9 +363,11 @@ class ProspectRoutingRepository(Protocol):
 
     async def save_run(self, run: ProspectRoutingRun) -> None: ...
 
-    async def replace_routes(
-        self, routing_run_id: UUID, routes: tuple[ProspectRoute, ...]
-    ) -> None: ...
+    async def add_routes(self, routes: tuple[ProspectRoute, ...]) -> None: ...
+
+    async def list_available_generations(
+        self, routing_run_id: UUID
+    ) -> tuple[int, ...]: ...
 
     async def get_route(self, route_id: UUID) -> ProspectRoute | None: ...
 
@@ -377,6 +379,7 @@ class ProspectRoutingRepository(Protocol):
         self,
         *,
         routing_run_id: UUID,
+        execution_generation: int,
         tier: ProspectTier | None,
         review_status: ProspectRouteReviewStatus | None,
         minimum_score: float | None,
@@ -388,7 +391,11 @@ class ProspectRoutingRepository(Protocol):
     ) -> tuple[list[ProspectRoute], int]: ...
 
     async def list_routes_for_companies(
-        self, *, routing_run_id: UUID, company_ids: tuple[UUID, ...]
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        company_ids: tuple[UUID, ...],
     ) -> list[ProspectRoute]: ...
 
     async def list_source_companies(

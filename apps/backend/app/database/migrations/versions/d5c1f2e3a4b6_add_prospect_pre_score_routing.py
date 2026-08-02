@@ -100,6 +100,7 @@ def upgrade() -> None:
         "prospect_routes",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("routing_run_id", sa.Uuid(), nullable=False),
+        sa.Column("execution_generation", sa.Integer(), nullable=False),
         sa.Column("company_id", sa.Uuid(), nullable=False),
         sa.Column("company_name", sa.Text(), nullable=False),
         sa.Column("pre_score", sa.Float(), nullable=False),
@@ -130,6 +131,10 @@ def upgrade() -> None:
             "pre_score >= 0 AND pre_score <= 100", name="ck_prospect_routes_score"
         ),
         sa.CheckConstraint(
+            "execution_generation > 0",
+            name="ck_prospect_routes_execution_generation",
+        ),
+        sa.CheckConstraint(
             "recommended_tier IS NULL OR recommended_tier IN ('A','B','C','D')",
             name="ck_prospect_routes_recommended_tier",
         ),
@@ -156,31 +161,39 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "routing_run_id", "company_id", name="uq_prospect_routes_run_company"
+            "routing_run_id",
+            "execution_generation",
+            "company_id",
+            name="uq_prospect_routes_run_generation_company",
         ),
     )
     op.create_index(
-        "ix_prospect_routes_run_tier",
+        "ix_prospect_routes_run_generation_tier",
         "prospect_routes",
-        ["routing_run_id", "effective_tier"],
+        ["routing_run_id", "execution_generation", "effective_tier"],
         unique=False,
     )
     op.create_index(
-        "ix_prospect_routes_run_review",
+        "ix_prospect_routes_run_generation_review",
         "prospect_routes",
-        ["routing_run_id", "review_status"],
+        ["routing_run_id", "execution_generation", "review_status"],
         unique=False,
     )
     op.create_index(
-        "ix_prospect_routes_run_score",
+        "ix_prospect_routes_run_generation_score",
         "prospect_routes",
-        ["routing_run_id", "pre_score"],
+        ["routing_run_id", "execution_generation", "pre_score"],
         unique=False,
     )
     op.create_index(
-        "ix_prospect_routes_run_contact",
+        "ix_prospect_routes_run_generation_contact",
         "prospect_routes",
-        ["routing_run_id", "has_usable_contact", "preferred_role_category"],
+        [
+            "routing_run_id",
+            "execution_generation",
+            "has_usable_contact",
+            "preferred_role_category",
+        ],
         unique=False,
     )
 
@@ -243,6 +256,10 @@ def upgrade() -> None:
     )
     op.add_column(
         "prospect_batches",
+        sa.Column("routing_execution_generation", sa.Integer(), nullable=True),
+    )
+    op.add_column(
+        "prospect_batches",
         sa.Column("routing_selection_hash", sa.String(length=64), nullable=True),
     )
     op.create_foreign_key(
@@ -257,9 +274,10 @@ def upgrade() -> None:
         "ck_prospect_batches_source",
         "prospect_batches",
         "(discovery_task_id IS NOT NULL AND routing_run_id IS NULL "
-        "AND routing_selection_hash IS NULL) OR "
+        "AND routing_execution_generation IS NULL AND routing_selection_hash IS NULL) OR "
         "(discovery_task_id IS NULL AND routing_run_id IS NOT NULL "
-        "AND routing_selection_hash IS NOT NULL)",
+        "AND routing_execution_generation IS NOT NULL "
+        "AND routing_execution_generation > 0 AND routing_selection_hash IS NOT NULL)",
     )
     op.create_unique_constraint(
         "uq_prospect_batches_routing_selection",
@@ -307,6 +325,7 @@ def downgrade() -> None:
         "prospect_batches_routing_run_id_fkey", "prospect_batches", type_="foreignkey"
     )
     op.drop_column("prospect_batches", "routing_selection_hash")
+    op.drop_column("prospect_batches", "routing_execution_generation")
     op.drop_column("prospect_batches", "routing_run_id")
     op.drop_constraint(
         "prospect_batches_discovery_task_id_fkey",
@@ -342,10 +361,18 @@ def downgrade() -> None:
     op.drop_column("import_processing_jobs", "routing_run_id")
     op.drop_column("import_processing_jobs", "job_type")
 
-    op.drop_index("ix_prospect_routes_run_contact", table_name="prospect_routes")
-    op.drop_index("ix_prospect_routes_run_score", table_name="prospect_routes")
-    op.drop_index("ix_prospect_routes_run_review", table_name="prospect_routes")
-    op.drop_index("ix_prospect_routes_run_tier", table_name="prospect_routes")
+    op.drop_index(
+        "ix_prospect_routes_run_generation_contact", table_name="prospect_routes"
+    )
+    op.drop_index(
+        "ix_prospect_routes_run_generation_score", table_name="prospect_routes"
+    )
+    op.drop_index(
+        "ix_prospect_routes_run_generation_review", table_name="prospect_routes"
+    )
+    op.drop_index(
+        "ix_prospect_routes_run_generation_tier", table_name="prospect_routes"
+    )
     op.drop_table("prospect_routes")
     op.drop_index(
         "ix_prospect_routing_runs_status_updated", table_name="prospect_routing_runs"

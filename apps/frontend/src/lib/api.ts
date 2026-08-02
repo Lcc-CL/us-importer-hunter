@@ -102,6 +102,8 @@ export interface ProspectRoutingRunResponse {
   status: ProspectRoutingRunStatus;
   rules_version: string;
   execution_generation: number;
+  current_execution_generation: number;
+  available_generations: number[];
   criteria: Record<string, unknown>;
   weights_snapshot: Record<string, unknown>;
   total_companies: number;
@@ -126,6 +128,7 @@ export interface ProspectRoutingRunResponse {
 export interface ProspectRouteResponse {
   route_id: string;
   routing_run_id: string;
+  execution_generation: number;
   company_id: string;
   company_name: string;
   pre_score: number;
@@ -148,6 +151,7 @@ export interface ProspectRouteResponse {
 
 export interface ProspectRouteListResponse {
   routing_run_id: string;
+  execution_generation: number;
   page: number;
   limit: number;
   total: number;
@@ -327,6 +331,7 @@ export interface ProspectBatchResponse {
   batch_id: string;
   discovery_task_id: string | null;
   routing_run_id: string | null;
+  routing_execution_generation: number | null;
   requested_count: number;
   effective_count: number;
   status: ProspectBatchStatus;

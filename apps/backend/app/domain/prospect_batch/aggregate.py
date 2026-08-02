@@ -316,19 +316,26 @@ class ProspectBatch:
         created_at: datetime,
         companies: list[ProspectBatchCompany],
         routing_run_id: UUID | None = None,
+        routing_execution_generation: int | None = None,
         routing_selection_hash: str | None = None,
     ) -> None:
         if (discovery_task_id is None) == (routing_run_id is None):
             raise DomainError("prospect batch requires exactly one source")
-        if routing_run_id is None and routing_selection_hash is not None:
-            raise DomainError("discovery prospect batches cannot have a routing selection")
-        if routing_run_id is not None and (
-            routing_selection_hash is None or len(routing_selection_hash) != 64
+        if routing_run_id is None and (
+            routing_execution_generation is not None or routing_selection_hash is not None
         ):
-            raise DomainError("routing prospect batches require a selection hash")
+            raise DomainError("discovery prospect batches cannot have routing provenance")
+        if routing_run_id is not None and (
+            routing_execution_generation is None
+            or routing_execution_generation < 1
+            or routing_selection_hash is None
+            or len(routing_selection_hash) != 64
+        ):
+            raise DomainError("routing prospect batches require generation and selection hash")
         self._id = id
         self._discovery_task_id = discovery_task_id
         self._routing_run_id = routing_run_id
+        self._routing_execution_generation = routing_execution_generation
         self._routing_selection_hash = routing_selection_hash
         self._requested_count = requested_count
         self._effective_count = effective_count
@@ -374,6 +381,7 @@ class ProspectBatch:
         cls,
         *,
         routing_run_id: UUID,
+        routing_execution_generation: int,
         routing_selection_hash: str,
         requested_count: int,
         companies: tuple[tuple[UUID, str], ...],
@@ -390,6 +398,7 @@ class ProspectBatch:
             id=uuid4(),
             discovery_task_id=None,
             routing_run_id=routing_run_id,
+            routing_execution_generation=routing_execution_generation,
             routing_selection_hash=routing_selection_hash,
             requested_count=requested_count,
             effective_count=len(companies),
@@ -488,6 +497,10 @@ class ProspectBatch:
     @property
     def routing_run_id(self) -> UUID | None:
         return self._routing_run_id
+
+    @property
+    def routing_execution_generation(self) -> int | None:
+        return self._routing_execution_generation
 
     @property
     def routing_selection_hash(self) -> str | None:

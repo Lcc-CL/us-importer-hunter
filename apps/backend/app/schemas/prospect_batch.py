@@ -90,6 +90,7 @@ class ProspectBatchResponse(BaseModel):
     batch_id: UUID
     discovery_task_id: UUID | None
     routing_run_id: UUID | None
+    routing_execution_generation: int | None
     requested_count: int
     effective_count: int
     status: str
@@ -109,6 +110,7 @@ class ProspectBatchResponse(BaseModel):
             batch_id=batch.id,
             discovery_task_id=batch.discovery_task_id,
             routing_run_id=batch.routing_run_id,
+            routing_execution_generation=batch.routing_execution_generation,
             requested_count=batch.requested_count,
             effective_count=batch.effective_count,
             status=batch.status.value,

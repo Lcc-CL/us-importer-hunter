@@ -276,6 +276,7 @@ class ProspectRoutingRun:
 class ProspectRoute:
     id: UUID
     routing_run_id: UUID
+    execution_generation: int
     company_id: UUID
     company_name: str
     pre_score: float
@@ -296,6 +297,8 @@ class ProspectRoute:
     updated_at: datetime
 
     def __post_init__(self) -> None:
+        if self.execution_generation < 1:
+            raise DomainError("prospect route execution generation must be positive")
         if not 0 <= self.pre_score <= 100:
             raise DomainError("pre-score must be within 0-100")
         if not self.company_name.strip():
@@ -315,6 +318,7 @@ class ProspectRoute:
         cls,
         *,
         routing_run_id: UUID,
+        execution_generation: int,
         company_id: UUID,
         company_name: str,
         pre_score: float,
@@ -337,6 +341,7 @@ class ProspectRoute:
         return cls(
             id=uuid4(),
             routing_run_id=routing_run_id,
+            execution_generation=execution_generation,
             company_id=company_id,
             company_name=company_name.strip(),
             pre_score=pre_score,

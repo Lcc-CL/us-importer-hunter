@@ -37,9 +37,10 @@ class ProspectBatchModel(Base):
         ),
         CheckConstraint(
             "(discovery_task_id IS NOT NULL AND routing_run_id IS NULL "
-            "AND routing_selection_hash IS NULL) OR "
+            "AND routing_execution_generation IS NULL AND routing_selection_hash IS NULL) OR "
             "(discovery_task_id IS NULL AND routing_run_id IS NOT NULL "
-            "AND routing_selection_hash IS NOT NULL)",
+            "AND routing_execution_generation IS NOT NULL "
+            "AND routing_execution_generation > 0 AND routing_selection_hash IS NOT NULL)",
             name="ck_prospect_batches_source",
         ),
         UniqueConstraint(
@@ -59,6 +60,7 @@ class ProspectBatchModel(Base):
     routing_run_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("prospect_routing_runs.id", ondelete="RESTRICT")
     )
+    routing_execution_generation: Mapped[int | None] = mapped_column(Integer)
     routing_selection_hash: Mapped[str | None] = mapped_column(String(64))
     requested_count: Mapped[int] = mapped_column(Integer)
     effective_count: Mapped[int] = mapped_column(Integer)

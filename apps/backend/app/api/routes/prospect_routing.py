@@ -63,8 +63,8 @@ async def get_prospect_routing_run(
     routing_run_id: UUID,
     workflow: ProspectRoutingQueryDep,
 ) -> ProspectRoutingRunResponse:
-    run, job = await workflow.get(routing_run_id)
-    return ProspectRoutingRunResponse.from_domain(run, job)
+    run, job, generations = await workflow.get(routing_run_id)
+    return ProspectRoutingRunResponse.from_domain(run, job, generations)
 
 
 @router.get(
@@ -75,6 +75,7 @@ async def get_prospect_routing_run(
 async def list_prospect_routes(
     routing_run_id: UUID,
     workflow: ProspectRoutingQueryDep,
+    generation: Annotated[int | None, Query(ge=1)] = None,
     tier: Annotated[ProspectTier | None, Query()] = None,
     review_status: Annotated[ProspectRouteReviewStatus | None, Query()] = None,
     minimum_score: Annotated[float | None, Query(ge=0, le=100)] = None,
@@ -86,6 +87,7 @@ async def list_prospect_routes(
 ) -> ProspectRouteListResponse:
     result = await workflow.list_routes(
         routing_run_id=routing_run_id,
+        generation=generation,
         tier=tier,
         review_status=review_status,
         minimum_score=minimum_score,

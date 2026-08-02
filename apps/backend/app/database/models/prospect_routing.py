@@ -94,6 +94,10 @@ class ProspectRouteModel(Base):
     __table_args__ = (
         CheckConstraint("pre_score >= 0 AND pre_score <= 100", name="ck_prospect_routes_score"),
         CheckConstraint(
+            "execution_generation > 0",
+            name="ck_prospect_routes_execution_generation",
+        ),
+        CheckConstraint(
             "recommended_tier IS NULL OR recommended_tier IN ('A','B','C','D')",
             name="ck_prospect_routes_recommended_tier",
         ),
@@ -112,13 +116,34 @@ class ProspectRouteModel(Base):
             "AND effective_tier IS NOT NULL)",
             name="ck_prospect_routes_blocked_tier",
         ),
-        UniqueConstraint("routing_run_id", "company_id", name="uq_prospect_routes_run_company"),
-        Index("ix_prospect_routes_run_tier", "routing_run_id", "effective_tier"),
-        Index("ix_prospect_routes_run_review", "routing_run_id", "review_status"),
-        Index("ix_prospect_routes_run_score", "routing_run_id", "pre_score"),
-        Index(
-            "ix_prospect_routes_run_contact",
+        UniqueConstraint(
             "routing_run_id",
+            "execution_generation",
+            "company_id",
+            name="uq_prospect_routes_run_generation_company",
+        ),
+        Index(
+            "ix_prospect_routes_run_generation_tier",
+            "routing_run_id",
+            "execution_generation",
+            "effective_tier",
+        ),
+        Index(
+            "ix_prospect_routes_run_generation_review",
+            "routing_run_id",
+            "execution_generation",
+            "review_status",
+        ),
+        Index(
+            "ix_prospect_routes_run_generation_score",
+            "routing_run_id",
+            "execution_generation",
+            "pre_score",
+        ),
+        Index(
+            "ix_prospect_routes_run_generation_contact",
+            "routing_run_id",
+            "execution_generation",
             "has_usable_contact",
             "preferred_role_category",
         ),
@@ -128,6 +153,7 @@ class ProspectRouteModel(Base):
     routing_run_id: Mapped[UUID] = mapped_column(
         ForeignKey("prospect_routing_runs.id", ondelete="CASCADE"), nullable=False
     )
+    execution_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     company_id: Mapped[UUID] = mapped_column(
         ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False
     )

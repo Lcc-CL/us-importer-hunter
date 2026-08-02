@@ -68,6 +68,7 @@ class ProspectRoutingMapper:
         return ProspectRouteModel(
             id=route.id,
             routing_run_id=route.routing_run_id,
+            execution_generation=route.execution_generation,
             company_id=route.company_id,
             company_name=route.company_name,
             pre_score=route.pre_score,
@@ -93,6 +94,7 @@ class ProspectRoutingMapper:
         return ProspectRoute(
             id=model.id,
             routing_run_id=model.routing_run_id,
+            execution_generation=model.execution_generation,
             company_id=model.company_id,
             company_name=model.company_name,
             pre_score=model.pre_score,

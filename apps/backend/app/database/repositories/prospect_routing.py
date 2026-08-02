@@ -3,7 +3,7 @@
 from collections import defaultdict
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.mappers.prospect_routing import ProspectRoutingMapper
@@ -66,19 +66,19 @@ class SqlAlchemyProspectRoutingRepository:
     async def save_run(self, run: ProspectRoutingRun) -> None:
         await self._session.merge(ProspectRoutingMapper.run_to_model(run))
 
-    async def replace_routes(
-        self,
-        routing_run_id: UUID,
-        routes: tuple[ProspectRoute, ...],
-    ) -> None:
-        await self._session.execute(
-            delete(ProspectRouteModel).where(
-                ProspectRouteModel.routing_run_id == routing_run_id
-            )
-        )
+    async def add_routes(self, routes: tuple[ProspectRoute, ...]) -> None:
         self._session.add_all(
             [ProspectRoutingMapper.route_to_model(route) for route in routes]
         )
+
+    async def list_available_generations(self, routing_run_id: UUID) -> tuple[int, ...]:
+        values = await self._session.scalars(
+            select(ProspectRouteModel.execution_generation)
+            .where(ProspectRouteModel.routing_run_id == routing_run_id)
+            .distinct()
+            .order_by(ProspectRouteModel.execution_generation)
+        )
+        return tuple(values)
 
     async def get_route(self, route_id: UUID) -> ProspectRoute | None:
         model = await self._session.get(ProspectRouteModel, route_id)
@@ -99,6 +99,7 @@ class SqlAlchemyProspectRoutingRepository:
         self,
         *,
         routing_run_id: UUID,
+        execution_generation: int,
         tier: ProspectTier | None,
         review_status: ProspectRouteReviewStatus | None,
         minimum_score: float | None,
@@ -108,7 +109,10 @@ class SqlAlchemyProspectRoutingRepository:
         offset: int,
         limit: int,
     ) -> tuple[list[ProspectRoute], int]:
-        filters = [ProspectRouteModel.routing_run_id == routing_run_id]
+        filters = [
+            ProspectRouteModel.routing_run_id == routing_run_id,
+            ProspectRouteModel.execution_generation == execution_generation,
+        ]
         if tier is not None:
             filters.append(ProspectRouteModel.effective_tier == tier.value)
         if review_status is not None:
@@ -145,6 +149,7 @@ class SqlAlchemyProspectRoutingRepository:
         self,
         *,
         routing_run_id: UUID,
+        execution_generation: int,
         company_ids: tuple[UUID, ...],
     ) -> list[ProspectRoute]:
         if not company_ids:
@@ -153,6 +158,7 @@ class SqlAlchemyProspectRoutingRepository:
             await self._session.scalars(
                 select(ProspectRouteModel).where(
                     ProspectRouteModel.routing_run_id == routing_run_id,
+                    ProspectRouteModel.execution_generation == execution_generation,
                     ProspectRouteModel.company_id.in_(company_ids),
                 )
             )

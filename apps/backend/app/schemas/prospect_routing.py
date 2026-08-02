@@ -82,6 +82,8 @@ class ProspectRoutingRunResponse(BaseModel):
     status: ProspectRoutingRunStatus
     rules_version: str
     execution_generation: int
+    current_execution_generation: int
+    available_generations: list[int]
     criteria: dict[str, object]
     weights_snapshot: dict[str, object]
     total_companies: int
@@ -107,6 +109,7 @@ class ProspectRoutingRunResponse(BaseModel):
         cls,
         run: ProspectRoutingRun,
         job: ImportProcessingJob | None,
+        available_generations: tuple[int, ...],
     ) -> Self:
         return cls(
             routing_run_id=run.id,
@@ -116,6 +119,8 @@ class ProspectRoutingRunResponse(BaseModel):
             status=run.status,
             rules_version=run.rules_version,
             execution_generation=run.execution_generation,
+            current_execution_generation=run.execution_generation,
+            available_generations=list(available_generations),
             criteria=run.criteria_json,
             weights_snapshot=run.weights_snapshot_json,
             total_companies=run.total_companies,
@@ -141,6 +146,7 @@ class ProspectRoutingRunResponse(BaseModel):
 class ProspectRouteResponse(BaseModel):
     route_id: UUID
     routing_run_id: UUID
+    execution_generation: int
     company_id: UUID
     company_name: str
     pre_score: float
@@ -165,6 +171,7 @@ class ProspectRouteResponse(BaseModel):
         return cls(
             route_id=route.id,
             routing_run_id=route.routing_run_id,
+            execution_generation=route.execution_generation,
             company_id=route.company_id,
             company_name=route.company_name,
             pre_score=route.pre_score,
@@ -188,6 +195,7 @@ class ProspectRouteResponse(BaseModel):
 
 class ProspectRouteListResponse(BaseModel):
     routing_run_id: UUID
+    execution_generation: int
     page: int
     limit: int
     total: int
@@ -197,6 +205,7 @@ class ProspectRouteListResponse(BaseModel):
     def from_page(cls, page: ProspectRoutePage) -> Self:
         return cls(
             routing_run_id=page.routing_run_id,
+            execution_generation=page.execution_generation,
             page=page.page,
             limit=page.limit,
             total=page.total,

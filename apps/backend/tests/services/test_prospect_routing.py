@@ -229,6 +229,7 @@ def test_route_review_confirm_override_exclude_and_conflicts_are_idempotent() ->
     scorer = DeterministicProspectRoutingScorer()
     route = scorer.score(
         routing_run_id=uuid4(),
+        execution_generation=1,
         criteria=criteria(),
         features=features(),
         today=TODAY,

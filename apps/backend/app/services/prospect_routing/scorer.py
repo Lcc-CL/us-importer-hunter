@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
+from uuid import UUID
 
 from app.domain.prospect_routing import (
     ProspectRoute,
@@ -186,7 +187,8 @@ class DeterministicProspectRoutingScorer:
     def score(
         self,
         *,
-        routing_run_id: Any,
+        routing_run_id: UUID,
+        execution_generation: int,
         criteria: ProspectRoutingCriteria,
         features: RoutingFeatureInput,
         today: date | None = None,
@@ -194,6 +196,7 @@ class DeterministicProspectRoutingScorer:
         result = self.evaluate(criteria=criteria, features=features, today=today)
         return ProspectRoute.create(
             routing_run_id=routing_run_id,
+            execution_generation=execution_generation,
             company_id=features.company_id,
             company_name=features.company_name,
             pre_score=result.pre_score,
