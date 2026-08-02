@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCircle2, FileCheck2, GitMerge, Play, Route, Upload } from "lucide-react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Ban, CheckCircle2, ExternalLink, FileCheck2, GitMerge, Play, RefreshCw, Route, ShieldCheck, Upload } from "lucide-react";
+
+import {
+  senderProfileServerSnapshot,
+  senderProfileSnapshot,
+  subscribeSenderProfile,
+} from "@/features/mvp-analysis/sender-profile";
+import type { ProspectSender } from "@/features/mvp-analysis/prospect-state";
 
 import {
   createBulkImportSession,
@@ -14,15 +21,25 @@ import {
   getImportEntityDecisions,
   getImportResolution,
   getProspectRoutes,
+  getProspectBatch,
+  getProspectBatchCompanies,
+  getProspectBatchExecution,
   getProspectRoutingRun,
+  resumeProspectBatchCompany,
+  retryProspectBatchCompany,
   reviewImportEntityDecision,
   reviewProspectRoute,
   startImportResolution,
+  startRoutedProspectBatch,
   type ImportEntityDecisionResponse,
   type ImportResolutionResponse,
   type ImportReviewAction,
   type ImportSessionResponse,
   type ProspectRouteResponse,
+  type ProspectBatchCompanyResponse,
+  type ProspectBatchExecutionResponse,
+  type ProspectBatchResponse,
+  type ProspectBatchSender,
   type ProspectRoutingRunResponse,
   type ProspectTier,
   type RawImportRowResponse,
@@ -32,13 +49,34 @@ import { useI18n } from "@/lib/i18n";
 
 const DEFAULT_SOURCE = "netease_foreign_trade";
 const PAGE_SIZE = 20;
+const ROUTING_RETRYABLE_ERRORS = new Set([
+  "WEBSITE_MISSING",
+  "WEBSITE_INVALID",
+  "RESEARCH_FAILED",
+  "RESEARCH_INCOMPLETE",
+  "SCORING_FAILED",
+  "SCORING_UNAVAILABLE",
+  "CONTACT_DISCOVERY_FAILED",
+  "CONTACT_NOT_FOUND",
+  "CONTACT_UNUSABLE",
+  "DECISION_MAKER_NOT_SELECTED",
+  "SENDER_PROFILE_MISSING",
+  "DRAFT_GENERATION_FAILED",
+  "DRAFT_NOT_GENERATED",
+  "PIPELINE_UNEXPECTED_ERROR",
+]);
 
 interface BulkImportPanelProps {
   initialSessionId?: string;
   initialRoutingRunId?: string;
+  initialBatchId?: string;
 }
 
-export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkImportPanelProps) {
+export function BulkImportPanel({
+  initialSessionId,
+  initialRoutingRunId,
+  initialBatchId,
+}: BulkImportPanelProps) {
   const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
   const [mappingText, setMappingText] = useState("");
@@ -64,9 +102,21 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
   const [routeTiers, setRouteTiers] = useState<Record<string, ProspectTier>>({});
   const [routeReasons, setRouteReasons] = useState<Record<string, string>>({});
   const [selectedACompanies, setSelectedACompanies] = useState<string[]>([]);
-  const [createdBatchId, setCreatedBatchId] = useState<string | null>(null);
+  const [createdBatchId, setCreatedBatchId] = useState<string | null>(
+    initialRoutingRunId ? (initialBatchId ?? null) : null,
+  );
+  const [routedBatch, setRoutedBatch] = useState<ProspectBatchResponse | null>(null);
+  const [batchExecution, setBatchExecution] =
+    useState<ProspectBatchExecutionResponse | null>(null);
+  const [batchCompanies, setBatchCompanies] = useState<ProspectBatchCompanyResponse[]>([]);
+  const [batchBusy, setBatchBusy] = useState(Boolean(initialRoutingRunId && initialBatchId));
   const [busy, setBusy] = useState(Boolean(initialSessionId));
   const [error, setError] = useState<string | null>(null);
+  const storedSender = useSyncExternalStore(
+    subscribeSenderProfile,
+    senderProfileSnapshot,
+    senderProfileServerSnapshot,
+  );
 
   const loadRows = useCallback(
     async (sessionId: string, nextPage: number, status: RawImportRowStatus | "") => {
@@ -151,6 +201,22 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
     return saved;
   }, []);
 
+  const loadRoutedBatchState = useCallback(async (batchId: string) => {
+    const [savedBatch, savedCompanies, savedExecution] = await Promise.all([
+      getProspectBatch(batchId),
+      getProspectBatchCompanies(batchId),
+      getProspectBatchExecution(batchId),
+    ]);
+    if (savedBatch.source_kind !== "prospect_routing") {
+      throw new Error("batch is not sourced from sales routing");
+    }
+    setCreatedBatchId(batchId);
+    setRoutedBatch(savedBatch);
+    setBatchCompanies(savedCompanies.companies);
+    setBatchExecution(savedExecution);
+    return savedExecution;
+  }, []);
+
   useEffect(() => {
     if (!initialSessionId) return;
     let active = true;
@@ -160,18 +226,32 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
         await loadResolutionState(initialSessionId as string, true);
         if (initialRoutingRunId) {
           await loadRoutingState(initialRoutingRunId);
+          if (initialBatchId) {
+            await loadRoutedBatchState(initialBatchId);
+          }
         }
       } catch (caught: unknown) {
         if (active) setError(getClientErrorDetails(caught).message);
       } finally {
-        if (active) setBusy(false);
+        if (active) {
+          setBusy(false);
+          setBatchBusy(false);
+        }
       }
     }
     void load();
     return () => {
       active = false;
     };
-  }, [initialRoutingRunId, initialSessionId, loadResolutionState, loadRoutingState, restore]);
+  }, [
+    initialBatchId,
+    initialRoutingRunId,
+    initialSessionId,
+    loadResolutionState,
+    loadRoutedBatchState,
+    loadRoutingState,
+    restore,
+  ]);
 
   useEffect(() => {
     if (!session || !["receiving", "processing"].includes(session.status)) return;
@@ -211,6 +291,22 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
     return () => window.clearInterval(timer);
   }, [loadRoutingState, routingRun]);
 
+  useEffect(() => {
+    if (
+      !createdBatchId ||
+      !batchExecution ||
+      !["pending", "leased", "running"].includes(batchExecution.status)
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadRoutedBatchState(createdBatchId).catch((caught: unknown) => {
+        setError(getClientErrorDetails(caught).message);
+      });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [batchExecution, createdBatchId, loadRoutedBatchState]);
+
   function persistSessionId(sessionId: string) {
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("import_session_id", sessionId);
@@ -221,6 +317,13 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
   function persistRoutingRunId(routingRunId: string) {
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("routing_run_id", routingRunId);
+    window.history.replaceState(null, "", currentUrl);
+  }
+
+  function persistBatchExecution(batchId: string, jobId?: string) {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("batch_id", batchId);
+    if (jobId) currentUrl.searchParams.set("job_id", jobId);
     window.history.replaceState(null, "", currentUrl);
   }
 
@@ -260,6 +363,9 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
       setRoutes([]);
       setSelectedACompanies([]);
       setCreatedBatchId(null);
+      setRoutedBatch(null);
+      setBatchCompanies([]);
+      setBatchExecution(null);
       persistSessionId(created.session_id);
       await loadRows(created.session_id, 1, "");
     } catch (caught: unknown) {
@@ -308,6 +414,9 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
     setRoutingBusy(true);
     setError(null);
     setCreatedBatchId(null);
+    setRoutedBatch(null);
+    setBatchCompanies([]);
+    setBatchExecution(null);
     try {
       const created = await createProspectRoutingRun(
         session.session_id,
@@ -376,10 +485,69 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
         selectedACompanies,
       );
       setCreatedBatchId(created.batch_id);
+      persistBatchExecution(created.batch_id);
+      await loadRoutedBatchState(created.batch_id);
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
     } finally {
       setRoutingBusy(false);
+    }
+  }
+
+  async function handleStartRoutedBatch() {
+    if (!createdBatchId || batchBusy) return;
+    if (!window.confirm(t("bulk.routingBatchStartConfirmation"))) return;
+    setBatchBusy(true);
+    setError(null);
+    try {
+      const started = await startRoutedProspectBatch(createdBatchId, {
+        confirmation: true,
+        sender: toBatchSender(storedSender),
+      });
+      persistBatchExecution(started.batch_id, started.job_id);
+      await loadRoutedBatchState(started.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
+  async function handleResumeRoutedCompany(companyId: string) {
+    if (!createdBatchId || batchBusy) return;
+    setBatchBusy(true);
+    setError(null);
+    try {
+      const resumed = await resumeProspectBatchCompany(
+        createdBatchId,
+        companyId,
+        toBatchSender(storedSender),
+      );
+      persistBatchExecution(resumed.batch_id, resumed.job_id);
+      await loadRoutedBatchState(resumed.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
+  async function handleRetryRoutedCompany(companyId: string) {
+    if (!createdBatchId || batchBusy) return;
+    setBatchBusy(true);
+    setError(null);
+    try {
+      const retried = await retryProspectBatchCompany(
+        createdBatchId,
+        companyId,
+        toBatchSender(storedSender),
+      );
+      persistBatchExecution(retried.batch_id, retried.job_id);
+      await loadRoutedBatchState(retried.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setBatchBusy(false);
     }
   }
 
@@ -421,6 +589,15 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
       )
       .map((route) => route.company_id),
   );
+  const routedBatchStatus = getRoutedBatchStatus(
+    routedBatch,
+    batchExecution,
+    batchCompanies,
+  );
+  const batchExecutionActive = Boolean(
+    batchExecution && ["pending", "leased", "running"].includes(batchExecution.status),
+  );
+  const draftCount = batchCompanies.filter((company) => company.draft_id !== null).length;
 
   return (
     <section
@@ -952,13 +1129,137 @@ export function BulkImportPanel({ initialSessionId, initialRoutingRunId }: BulkI
                     {t("bulk.routingBatchLimit")}
                   </span>
                 </div>
-                {createdBatchId ? (
-                  <p
-                    className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-sm font-medium text-emerald-900"
+                {createdBatchId && routedBatch ? (
+                  <div
+                    className="mt-4 rounded-2xl border border-emerald-200 bg-white p-4"
                     data-testid="prospect-routing-batch-created"
+                    id="prospect-routing-batch"
                   >
-                    {t("bulk.routingBatchCreated")} · {createdBatchId}
-                  </p>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">
+                          {t("bulk.routingBatchSource")} · generation {routedBatch.routing_execution_generation}
+                        </p>
+                        <p className="mt-1 font-mono text-xs text-slate-500">
+                          {createdBatchId}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900" data-testid="prospect-routing-batch-status">
+                          {t(`bulk.routingBatchStatus.${routedBatchStatus}`)}
+                        </p>
+                      </div>
+                      <button
+                        className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        data-testid="prospect-routing-batch-start"
+                        disabled={batchBusy || Boolean(batchExecution)}
+                        onClick={() => void handleStartRoutedBatch()}
+                        type="button"
+                      >
+                        <Play className="size-4" />
+                        {batchBusy || batchExecutionActive
+                          ? t("bulk.routingBatchStarting")
+                          : t("bulk.routingBatchStart")}
+                      </button>
+                    </div>
+
+                    <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+                      {t("bulk.routingBatchStartWarning")}
+                    </p>
+                    {!toBatchSender(storedSender) ? (
+                      <p className="mt-2 text-xs text-amber-800">
+                        {t("batch.senderMissing")}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
+                      <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-800">
+                        {batchExecution
+                          ? t("bulk.routingBatchStarted")
+                          : t("bulk.routingBatchCreatedOnly")}
+                      </span>
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-900">
+                        {t("bulk.routingBatchDraftCount", { count: draftCount })}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">
+                        {t("batch.emailNotSent")}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3" data-testid="prospect-routing-batch-companies">
+                      {batchCompanies.map((company) => (
+                        <article
+                          className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                          key={company.company_id}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold text-slate-900">
+                                {company.company_name}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {t(`batch.stage.${company.current_stage}`)}
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                              {t(`batch.companyStatus.${company.status}`)}
+                            </span>
+                          </div>
+                          {company.error_code ? (
+                            <p className="mt-2 text-xs text-amber-800">
+                              {company.error_code} · {company.error_summary}
+                            </p>
+                          ) : null}
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <a
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700"
+                              href={`/?${new URLSearchParams({
+                                company_id: company.company_id,
+                                batch_id: createdBatchId,
+                                ...(session ? { import_session_id: session.session_id } : {}),
+                                ...(routingRun ? { routing_run_id: routingRun.routing_run_id } : {}),
+                              }).toString()}`}
+                            >
+                              {t("batch.openWorkspace")} <ExternalLink className="size-3" />
+                            </a>
+                            {company.current_stage === "awaiting_evidence_review" && company.research_id ? (
+                              <>
+                                <a
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800"
+                                  data-testid="review-routing-batch-evidence"
+                                  href={`/?${new URLSearchParams({
+                                    batch_id: createdBatchId,
+                                    company_id: company.company_id,
+                                    research_id: company.research_id,
+                                    ...(session ? { import_session_id: session.session_id } : {}),
+                                    ...(routingRun ? { routing_run_id: routingRun.routing_run_id } : {}),
+                                  }).toString()}#research-panel`}
+                                >
+                                  <ShieldCheck className="size-3" /> {t("batch.reviewEvidence")}
+                                </a>
+                                <button
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 disabled:opacity-50"
+                                  data-testid="resume-routing-batch-company"
+                                  disabled={batchBusy || batchExecutionActive}
+                                  onClick={() => void handleResumeRoutedCompany(company.company_id)}
+                                  type="button"
+                                >
+                                  <CheckCircle2 className="size-3" /> {t("batch.resume")}
+                                </button>
+                              </>
+                            ) : null}
+                            {company.error_code && ROUTING_RETRYABLE_ERRORS.has(company.error_code) ? (
+                              <button
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                                disabled={batchBusy || batchExecutionActive}
+                                onClick={() => void handleRetryRoutedCompany(company.company_id)}
+                                type="button"
+                              >
+                                <RefreshCw className="size-3" /> {t("batch.retry")}
+                              </button>
+                            ) : null}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
               </div>
             ) : null}
@@ -1053,4 +1354,52 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function toBatchSender(stored: ProspectSender | null): ProspectBatchSender | undefined {
+  if (
+    !stored ||
+    !stored.name.trim() ||
+    !stored.company.trim() ||
+    !stored.valueProposition.trim()
+  ) {
+    return undefined;
+  }
+  return {
+    name: stored.name,
+    company: stored.company,
+    value_proposition: stored.valueProposition,
+  };
+}
+
+function getRoutedBatchStatus(
+  batch: ProspectBatchResponse | null,
+  execution: ProspectBatchExecutionResponse | null,
+  companies: ProspectBatchCompanyResponse[],
+):
+  | "not_started"
+  | "queued"
+  | "running"
+  | "awaiting_evidence_review"
+  | "needs_review"
+  | "completed"
+  | "partial_failed"
+  | "failed" {
+  if (!execution) return "not_started";
+  if (execution.status === "pending") return "queued";
+  if (["leased", "running"].includes(execution.status)) return "running";
+  if (
+    companies.some(
+      (company) => company.current_stage === "awaiting_evidence_review",
+    )
+  ) {
+    return "awaiting_evidence_review";
+  }
+  if (execution.status === "failed" || batch?.status === "failed") return "failed";
+  if (batch?.status === "completed") return "completed";
+  if (batch?.status === "partial_failed") return "partial_failed";
+  if (companies.some((company) => company.status === "needs_review")) {
+    return "needs_review";
+  }
+  return "queued";
 }

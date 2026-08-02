@@ -64,6 +64,7 @@ from app.workflows.prospect_batch import (
     ProspectBatchSubmissionWorkflow,
     ProspectBatchWorkflow,
     ProspectJobQueryWorkflow,
+    ProspectPipelineProviderConfiguration,
 )
 from app.workflows.prospect_routing import (
     ProspectRouteReviewWorkflow,
@@ -546,6 +547,7 @@ def get_prospect_batch_workflow(
         contact_ingestion=contact_ingestion,
         decision_maker=decision_maker,
         email_draft=email,
+        provider_configuration=_prospect_provider_configuration(settings),
     )
 
 
@@ -559,6 +561,7 @@ def get_prospect_batch_submission_workflow(
     return ProspectBatchSubmissionWorkflow(
         cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
         max_attempts=settings.prospect_job_max_attempts,
+        provider_configuration=_prospect_provider_configuration(settings),
     )
 
 
@@ -586,3 +589,33 @@ def get_prospect_job_query_workflow(
 
 
 ProspectJobQueryDep = Annotated[ProspectJobQueryWorkflow, Depends(get_prospect_job_query_workflow)]
+
+
+def _prospect_provider_configuration(
+    settings: Settings,
+) -> ProspectPipelineProviderConfiguration:
+    research_configured = {
+        "fake": True,
+        "openai": bool(
+            settings.openai_api_key.strip()
+            and settings.resolved_research_model.strip()
+        ),
+        "deepseek": bool(
+            settings.deepseek_api_key.strip()
+            and settings.deepseek_model.strip()
+            and settings.deepseek_base_url.strip()
+        ),
+    }[settings.research_extractor_provider]
+    email_configured = {
+        "fake": True,
+        "openai": bool(
+            settings.openai_api_key.strip() and settings.openai_model.strip()
+        ),
+    }[settings.email_generator_provider]
+    return ProspectPipelineProviderConfiguration(
+        app_env=settings.app_env,
+        research_provider=settings.research_extractor_provider,
+        email_provider=settings.email_generator_provider,
+        research_configured=research_configured,
+        email_configured=email_configured,
+    )

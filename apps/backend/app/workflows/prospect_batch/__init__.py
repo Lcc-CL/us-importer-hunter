@@ -13,8 +13,10 @@ from app.workflows.prospect_batch.workflow import (
     ProspectBatchSubmissionWorkflow,
     ProspectBatchWorkflow,
     ProspectCompanyBlockers,
+    ProspectPipelineProviderConfiguration,
     ResumeProspectCompanyCommand,
     RetryProspectCompanyCommand,
+    StartRoutingProspectBatchCommand,
 )
 
 __all__ = [
@@ -22,6 +24,7 @@ __all__ = [
     "EvidenceBlocker",
     "ProspectCompanyBlockers",
     "ProspectBatchQueryWorkflow",
+    "ProspectPipelineProviderConfiguration",
     "ProspectBatchSubmission",
     "ProspectBatchSubmissionWorkflow",
     "ProspectBatchWorkflow",
@@ -30,4 +33,5 @@ __all__ = [
     "ProspectJobRunner",
     "ResumeProspectCompanyCommand",
     "RetryProspectCompanyCommand",
+    "StartRoutingProspectBatchCommand",
 ]

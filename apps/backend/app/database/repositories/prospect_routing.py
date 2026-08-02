@@ -175,6 +175,7 @@ class SqlAlchemyProspectRoutingRepository:
                     select(
                         ImportEntityDecisionModel.candidate_entity_id,
                         ImportEntityDecisionModel.review_status,
+                        ImportEntityDecisionModel.id,
                         RawImportRowModel.id,
                         RawImportRowModel.row_number,
                         RawImportRowModel.raw_payload,
@@ -204,6 +205,7 @@ class SqlAlchemyProspectRoutingRepository:
         for (
             candidate_id,
             review_status,
+            decision_id,
             row_id,
             row_number,
             raw_payload,
@@ -218,6 +220,7 @@ class SqlAlchemyProspectRoutingRepository:
             seen_rows.add(row_key)
             rows_by_company[company_id].append(
                 RoutingSourceRow(
+                    import_entity_decision_id=UUID(str(decision_id)),
                     raw_import_row_id=UUID(str(row_id)),
                     row_number=int(row_number),
                     raw_payload=dict(raw_payload),

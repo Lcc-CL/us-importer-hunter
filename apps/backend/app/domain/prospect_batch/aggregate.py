@@ -9,6 +9,7 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.domain.clock import utcnow
@@ -44,6 +45,63 @@ class ProspectBatchStage(StrEnum):
     COMPLETED = "completed"
     NEEDS_REVIEW = "needs_review"
     FAILED = "failed"
+
+
+class ProspectBatchSourceKind(StrEnum):
+    DISCOVERY = "discovery"
+    PROSPECT_ROUTING = "prospect_routing"
+
+
+@dataclass(frozen=True)
+class DiscoveryBatchCompanySourceContext:
+    company_id: UUID
+    candidate_id: UUID
+    source: str
+    source_reference: str
+    candidate_website: str | None
+
+
+@dataclass(frozen=True)
+class DiscoveryProspectBatchSourceContext:
+    discovery_task_id: UUID
+    provider: str
+    task_status: str
+    companies: tuple[DiscoveryBatchCompanySourceContext, ...]
+
+    @property
+    def kind(self) -> ProspectBatchSourceKind:
+        return ProspectBatchSourceKind.DISCOVERY
+
+
+@dataclass(frozen=True)
+class RoutingBatchCompanySourceContext:
+    company_id: UUID
+    route_id: UUID
+    source_website: str | None
+    effective_tier: str | None
+    review_status: str
+    feature_snapshot: dict[str, Any]
+    reason_codes: tuple[str, ...]
+    warning_codes: tuple[str, ...]
+    raw_import_row_ids: tuple[UUID, ...]
+    import_entity_decision_ids: tuple[UUID, ...]
+
+
+@dataclass(frozen=True)
+class RoutingProspectBatchSourceContext:
+    routing_run_id: UUID
+    execution_generation: int
+    import_session_id: UUID
+    companies: tuple[RoutingBatchCompanySourceContext, ...]
+
+    @property
+    def kind(self) -> ProspectBatchSourceKind:
+        return ProspectBatchSourceKind.PROSPECT_ROUTING
+
+
+ProspectBatchSourceContext = (
+    DiscoveryProspectBatchSourceContext | RoutingProspectBatchSourceContext
+)
 
 
 TERMINAL_COMPANY_STATUSES = frozenset(
@@ -505,6 +563,14 @@ class ProspectBatch:
     @property
     def routing_selection_hash(self) -> str | None:
         return self._routing_selection_hash
+
+    @property
+    def source_kind(self) -> ProspectBatchSourceKind:
+        return (
+            ProspectBatchSourceKind.DISCOVERY
+            if self._discovery_task_id is not None
+            else ProspectBatchSourceKind.PROSPECT_ROUTING
+        )
 
     @property
     def requested_count(self) -> int:

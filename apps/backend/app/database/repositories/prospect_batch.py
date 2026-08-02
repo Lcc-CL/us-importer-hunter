@@ -71,3 +71,33 @@ class SqlAlchemyProspectBatchRepository:
         if exclude_batch_id is not None:
             query = query.where(ProspectBatchCompanyModel.batch_id != exclude_batch_id)
         return (await self._session.scalar(query)) is not None
+
+    async def has_completed_routing_pipeline(
+        self,
+        *,
+        routing_run_id: UUID,
+        routing_execution_generation: int,
+        company_id: UUID,
+        pipeline_version: str,
+        exclude_batch_id: UUID | None = None,
+    ) -> bool:
+        query = (
+            select(ProspectBatchCompanyModel.company_id)
+            .join(
+                ProspectBatchModel,
+                ProspectBatchModel.id == ProspectBatchCompanyModel.batch_id,
+            )
+            .where(
+                ProspectBatchModel.routing_run_id == routing_run_id,
+                ProspectBatchModel.routing_execution_generation
+                == routing_execution_generation,
+                ProspectBatchCompanyModel.company_id == company_id,
+                ProspectBatchCompanyModel.pipeline_version == pipeline_version,
+                ProspectBatchCompanyModel.status
+                == ProspectBatchCompanyStatus.COMPLETED.value,
+            )
+            .limit(1)
+        )
+        if exclude_batch_id is not None:
+            query = query.where(ProspectBatchCompanyModel.batch_id != exclude_batch_id)
+        return (await self._session.scalar(query)) is not None

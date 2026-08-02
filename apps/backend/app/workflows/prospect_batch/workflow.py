@@ -15,12 +15,19 @@ from app.domain.events import CompanyFactsChanged, ContactCandidateDiscovered
 from app.domain.exceptions import DuplicateOperation
 from app.domain.prospect_batch import (
     PIPELINE_VERSION,
+    DiscoveryBatchCompanySourceContext,
+    DiscoveryProspectBatchSourceContext,
     ProspectBatch,
     ProspectBatchCompany,
     ProspectBatchCompanyStatus,
+    ProspectBatchSourceContext,
+    ProspectBatchSourceKind,
     ProspectBatchStage,
+    RoutingBatchCompanySourceContext,
+    RoutingProspectBatchSourceContext,
 )
 from app.domain.prospect_job import ProspectJob
+from app.domain.prospect_routing import ProspectRouteReviewStatus, ProspectTier
 from app.domain.repositories import ProspectBatchUnitOfWork
 from app.domain.research import OutputLanguage, PromotionDecision, ResearchRun
 from app.domain.services import SenderProfile
@@ -32,6 +39,7 @@ from app.shared.exceptions import (
     ApplicationConflictError,
     EvidenceReviewIncompleteError,
     InvalidInputError,
+    ProviderUnavailableError,
     ResourceNotFoundError,
 )
 from app.workflows.contact_ingestion import ContactIngestionAction, ContactIngestionOutcome
@@ -72,6 +80,38 @@ class CreateProspectBatchCommand:
     company_ids: tuple[UUID, ...]
     limit: int = MAX_BATCH_COMPANIES
     sender: SenderProfile | None = None
+
+
+@dataclass(frozen=True)
+class StartRoutingProspectBatchCommand:
+    confirmation: bool
+    provider_mode: str = "configured"
+    note: str | None = None
+    sender: SenderProfile | None = None
+
+
+@dataclass(frozen=True)
+class ProspectPipelineProviderConfiguration:
+    app_env: str = "development"
+    research_provider: str = "fake"
+    email_provider: str = "fake"
+    research_configured: bool = True
+    email_configured: bool = True
+
+    def ensure_available(self, *, provider_mode: str) -> None:
+        if provider_mode != "configured":
+            raise InvalidInputError(
+                code="PROSPECT_PROVIDER_MODE_INVALID",
+                message="provider_mode must be configured",
+            )
+        if not self.research_configured or not self.email_configured:
+            raise ProviderUnavailableError("prospect pipeline provider is not configured")
+        if self.app_env == "production" and (
+            self.research_provider == "fake" or self.email_provider == "fake"
+        ):
+            raise ProviderUnavailableError(
+                "fake prospect pipeline providers are disabled in production"
+            )
 
 
 @dataclass(frozen=True)
@@ -160,9 +200,13 @@ class ProspectBatchSubmissionWorkflow:
         uow_factory: Callable[[], ProspectBatchUnitOfWork],
         *,
         max_attempts: int = 3,
+        provider_configuration: ProspectPipelineProviderConfiguration | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._max_attempts = max_attempts
+        self._provider_configuration = (
+            provider_configuration or ProspectPipelineProviderConfiguration()
+        )
 
     async def submit(
         self,
@@ -206,6 +250,70 @@ class ProspectBatchSubmissionWorkflow:
                 raise
             return reused
 
+    async def start_routing_batch(
+        self,
+        batch_id: UUID,
+        command: StartRoutingProspectBatchCommand,
+    ) -> ProspectBatchSubmission:
+        if not command.confirmation:
+            raise InvalidInputError(
+                code="ROUTING_BATCH_CONFIRMATION_REQUIRED",
+                message="explicit confirmation is required before deep processing",
+            )
+        self._provider_configuration.ensure_available(
+            provider_mode=command.provider_mode
+        )
+        try:
+            async with self._uow_factory() as uow:
+                batch = await uow.prospect_batches.get_by_id_for_update(batch_id)
+                if batch is None:
+                    raise ResourceNotFoundError(
+                        f"prospect batch not found: {batch_id}"
+                    )
+                source_context = await _load_batch_source_context(uow, batch)
+                if not isinstance(
+                    source_context, RoutingProspectBatchSourceContext
+                ):
+                    raise ApplicationConflictError(
+                        "only prospect-routing batches use the explicit start endpoint"
+                    )
+                _validate_routing_start(batch, source_context)
+                existing_job = await uow.prospect_jobs.get_latest_for_batch(batch.id)
+                if existing_job is not None:
+                    return ProspectBatchSubmission(
+                        batch=batch,
+                        job=existing_job,
+                        reused=True,
+                    )
+                if batch.status.value != "pending" or batch.started_at is not None:
+                    raise ApplicationConflictError(
+                        "prospect batch has already started"
+                    )
+                new_job = _new_execution_job(
+                    batch,
+                    source_context=source_context,
+                    sender=command.sender,
+                    max_attempts=self._max_attempts,
+                )
+                await uow.prospect_jobs.add(new_job)
+                await uow.commit()
+                return ProspectBatchSubmission(
+                    batch=batch,
+                    job=new_job,
+                    reused=False,
+                )
+        except DuplicateOperation:
+            async with self._uow_factory() as uow:
+                batch = await uow.prospect_batches.get_by_id(batch_id)
+                reused_job = await uow.prospect_jobs.get_latest_for_batch(batch_id)
+            if batch is None or reused_job is None:
+                raise
+            return ProspectBatchSubmission(
+                batch=batch,
+                job=reused_job,
+                reused=True,
+            )
+
     async def retry_company(
         self,
         batch_id: UUID,
@@ -216,6 +324,11 @@ class ProspectBatchSubmissionWorkflow:
             batch = await uow.prospect_batches.get_by_id_for_update(batch_id)
             if batch is None:
                 raise ResourceNotFoundError(f"prospect batch not found: {batch_id}")
+            source_context = await _load_batch_source_context(uow, batch)
+            if isinstance(source_context, RoutingProspectBatchSourceContext):
+                self._provider_configuration.ensure_available(
+                    provider_mode="configured"
+                )
             company = _batch_company(batch, company_id)
             if company.status not in {
                 ProspectBatchCompanyStatus.FAILED,
@@ -240,6 +353,7 @@ class ProspectBatchSubmissionWorkflow:
             batch.queue_for_execution()
             job = _new_execution_job(
                 batch,
+                source_context=source_context,
                 sender=command.sender,
                 max_attempts=self._max_attempts,
             )
@@ -258,6 +372,11 @@ class ProspectBatchSubmissionWorkflow:
             batch = await uow.prospect_batches.get_by_id_for_update(batch_id)
             if batch is None:
                 raise ResourceNotFoundError(f"prospect batch not found: {batch_id}")
+            source_context = await _load_batch_source_context(uow, batch)
+            if isinstance(source_context, RoutingProspectBatchSourceContext):
+                self._provider_configuration.ensure_available(
+                    provider_mode="configured"
+                )
             company = _batch_company(batch, company_id)
             if (
                 company.status is not ProspectBatchCompanyStatus.NEEDS_REVIEW
@@ -283,6 +402,7 @@ class ProspectBatchSubmissionWorkflow:
             batch.queue_for_execution()
             job = _new_execution_job(
                 batch,
+                source_context=source_context,
                 sender=command.sender,
                 max_attempts=self._max_attempts,
             )
@@ -303,6 +423,7 @@ class ProspectBatchWorkflow:
         contact_ingestion: ContactIngestionPort,
         decision_maker: DecisionMakerPort,
         email_draft: EmailDraftPort,
+        provider_configuration: ProspectPipelineProviderConfiguration | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._research = research
@@ -311,6 +432,9 @@ class ProspectBatchWorkflow:
         self._contact_ingestion = contact_ingestion
         self._decision_maker = decision_maker
         self._email_draft = email_draft
+        self._provider_configuration = (
+            provider_configuration or ProspectPipelineProviderConfiguration()
+        )
 
     async def create(
         self, discovery_task_id: UUID, command: CreateProspectBatchCommand
@@ -331,6 +455,11 @@ class ProspectBatchWorkflow:
         batch = await self._require_batch(batch_id)
         if not batch.has_active_companies:
             return batch
+        source_context = await self._source_context(batch)
+        if isinstance(source_context, RoutingProspectBatchSourceContext):
+            self._provider_configuration.ensure_available(
+                provider_mode="configured"
+            )
         await self._start_batch(batch.id)
         for batch_company in batch.companies:
             if batch_company.status in {
@@ -345,6 +474,7 @@ class ProspectBatchWorkflow:
                     await self._process_company(
                         batch.id,
                         batch_company.company_id,
+                        source_context,
                         sender,
                         heartbeat=heartbeat,
                     )
@@ -399,10 +529,16 @@ class ProspectBatchWorkflow:
         command: RetryProspectCompanyCommand,
     ) -> ProspectBatch:
         reuse_research_id: UUID | None = None
+        source_context: ProspectBatchSourceContext
         async with self._uow_factory() as uow:
             batch = await uow.prospect_batches.get_by_id_for_update(batch_id)
             if batch is None:
                 raise ResourceNotFoundError(f"prospect batch not found: {batch_id}")
+            source_context = await _load_batch_source_context(uow, batch)
+            if isinstance(source_context, RoutingProspectBatchSourceContext):
+                self._provider_configuration.ensure_available(
+                    provider_mode="configured"
+                )
             try:
                 company = batch.company(company_id)
             except Exception as exc:
@@ -444,7 +580,12 @@ class ProspectBatchWorkflow:
 
         try:
             if reuse_research_id is None:
-                await self._process_company(batch_id, company_id, command.sender)
+                await self._process_company(
+                    batch_id,
+                    company_id,
+                    source_context,
+                    command.sender,
+                )
             else:
                 run = await self._get_research(reuse_research_id)
                 if run is None:
@@ -538,13 +679,18 @@ class ProspectBatchWorkflow:
         self,
         batch_id: UUID,
         company_id: UUID,
+        source_context: ProspectBatchSourceContext,
         sender: SenderProfile | None,
         *,
         heartbeat: ProgressHeartbeat | None = None,
     ) -> None:
         await self._stage(batch_id, company_id, ProspectBatchStage.VALIDATING)
         await _notify(heartbeat)
-        preflight = await self._preflight(batch_id, company_id)
+        preflight = await self._preflight(
+            batch_id,
+            company_id,
+            source_context,
+        )
         if preflight is not None:
             await self._terminal(
                 batch_id,
@@ -900,47 +1046,86 @@ class ProspectBatchWorkflow:
             return None
         return decision.selected_contact_id
 
-    async def _preflight(self, batch_id: UUID, company_id: UUID) -> tuple[str, str] | None:
+    async def _preflight(
+        self,
+        batch_id: UUID,
+        company_id: UUID,
+        source_context: ProspectBatchSourceContext,
+    ) -> tuple[str, str] | None:
         async with self._uow_factory() as uow:
-            batch = await uow.prospect_batches.get_by_id(batch_id)
-            assert batch is not None
-            discovery_task_id = batch.discovery_task_id
-            if discovery_task_id is None:
-                return (
-                    "ROUTING_BATCH_NOT_STARTED",
-                    "routing-sourced batch requires a later explicit deep-processing start",
-                )
-            task = await uow.discovery_tasks.get_by_id(discovery_task_id)
             company = await uow.companies.get_by_id(company_id)
-            if task is None or company is None:
-                return "COMPANY_NOT_FOUND", "company or discovery task no longer exists"
-            candidate = next(
-                (item for item in task.candidates if item.company_id == company_id),
-                None,
-            )
-            if candidate is None:
-                return "SOURCE_EVIDENCE_MISSING", "company is not linked to this discovery task"
+            if company is None:
+                return "COMPANY_NOT_FOUND", "company no longer exists"
             if company.website is None:
-                if (candidate.website or "").strip():
+                source_website = (
+                    _discovery_source_company(source_context, company_id).candidate_website
+                    if isinstance(
+                        source_context, DiscoveryProspectBatchSourceContext
+                    )
+                    else _routing_source_company(
+                        source_context, company_id
+                    ).source_website
+                )
+                if (source_website or "").strip():
                     return "WEBSITE_INVALID", "the saved candidate website is not valid HTTP/HTTPS"
                 return "WEBSITE_MISSING", "the company has no website or domain"
-            source_reference = candidate.source_url or candidate.external_id
-            if source_reference is None or not any(
-                source.source == candidate.source and source.reference == source_reference
-                for source in company.sources
-            ):
-                return (
-                    "SOURCE_EVIDENCE_MISSING",
-                    "the discovery task source evidence is not present on the company",
-                )
-            if await uow.prospect_batches.has_completed_pipeline(
-                discovery_task_id=discovery_task_id,
-                company_id=company_id,
-                pipeline_version=PIPELINE_VERSION,
-                exclude_batch_id=batch_id,
-            ):
-                return "PIPELINE_ALREADY_COMPLETED", "this pipeline version already completed"
+            if isinstance(source_context, DiscoveryProspectBatchSourceContext):
+                candidate = _discovery_source_company(source_context, company_id)
+                if source_context.provider != "manual_csv" or source_context.task_status not in {
+                    "completed",
+                    "partial_failed",
+                }:
+                    return (
+                        "SOURCE_EVIDENCE_MISSING",
+                        "discovery source is not eligible for batch processing",
+                    )
+                if not any(
+                    source.source == candidate.source
+                    and source.reference == candidate.source_reference
+                    for source in company.sources
+                ):
+                    return (
+                        "SOURCE_EVIDENCE_MISSING",
+                        "the discovery task source evidence is not present on the company",
+                    )
+                if await uow.prospect_batches.has_completed_pipeline(
+                    discovery_task_id=source_context.discovery_task_id,
+                    company_id=company_id,
+                    pipeline_version=PIPELINE_VERSION,
+                    exclude_batch_id=batch_id,
+                ):
+                    return (
+                        "PIPELINE_ALREADY_COMPLETED",
+                        "this pipeline version already completed",
+                    )
+            else:
+                route_source = _routing_source_company(source_context, company_id)
+                if (
+                    not route_source.raw_import_row_ids
+                    or not route_source.import_entity_decision_ids
+                ):
+                    return (
+                        "SOURCE_EVIDENCE_MISSING",
+                        "routing source cannot be traced to import rows and entity decisions",
+                    )
+                if await uow.prospect_batches.has_completed_routing_pipeline(
+                    routing_run_id=source_context.routing_run_id,
+                    routing_execution_generation=source_context.execution_generation,
+                    company_id=company_id,
+                    pipeline_version=PIPELINE_VERSION,
+                    exclude_batch_id=batch_id,
+                ):
+                    return (
+                        "PIPELINE_ALREADY_COMPLETED",
+                        "this routing generation already completed this pipeline version",
+                    )
         return None
+
+    async def _source_context(
+        self, batch: ProspectBatch
+    ) -> ProspectBatchSourceContext:
+        async with self._uow_factory() as uow:
+            return await _load_batch_source_context(uow, batch)
 
     async def _start_batch(self, batch_id: UUID) -> None:
         async with self._uow_factory() as uow:
@@ -1100,6 +1285,194 @@ class ProspectBatchQueryWorkflow:
         )
 
 
+async def _load_batch_source_context(
+    uow: ProspectBatchUnitOfWork,
+    batch: ProspectBatch,
+) -> ProspectBatchSourceContext:
+    if batch.source_kind is ProspectBatchSourceKind.DISCOVERY:
+        discovery_task_id = batch.discovery_task_id
+        assert discovery_task_id is not None
+        task = await uow.discovery_tasks.get_by_id(discovery_task_id)
+        if task is None:
+            raise ResourceNotFoundError(
+                f"discovery task not found: {discovery_task_id}"
+            )
+        candidates = {
+            candidate.company_id: candidate
+            for candidate in task.candidates
+            if candidate.company_id is not None
+        }
+        discovery_company_contexts: list[DiscoveryBatchCompanySourceContext] = []
+        for batch_company in batch.companies:
+            candidate = candidates.get(batch_company.company_id)
+            if candidate is None:
+                raise ApplicationConflictError(
+                    "prospect batch company is not linked to its discovery source"
+                )
+            source_reference = candidate.source_url or candidate.external_id
+            if source_reference is None:
+                raise ApplicationConflictError(
+                    "discovery source is missing its evidence reference"
+                )
+            discovery_company_contexts.append(
+                DiscoveryBatchCompanySourceContext(
+                    company_id=batch_company.company_id,
+                    candidate_id=candidate.id,
+                    source=candidate.source,
+                    source_reference=source_reference,
+                    candidate_website=candidate.website,
+                )
+            )
+        return DiscoveryProspectBatchSourceContext(
+            discovery_task_id=discovery_task_id,
+            provider=task.provider,
+            task_status=task.status.value,
+            companies=tuple(discovery_company_contexts),
+        )
+
+    routing_run_id = batch.routing_run_id
+    execution_generation = batch.routing_execution_generation
+    assert routing_run_id is not None
+    assert execution_generation is not None
+    run = await uow.prospect_routing.get_run(routing_run_id)
+    if run is None:
+        raise ResourceNotFoundError(
+            f"prospect routing run not found: {routing_run_id}"
+        )
+    company_ids = tuple(company.company_id for company in batch.companies)
+    routes = await uow.prospect_routing.list_routes_for_companies(
+        routing_run_id=routing_run_id,
+        execution_generation=execution_generation,
+        company_ids=company_ids,
+    )
+    route_by_company = {route.company_id: route for route in routes}
+    source_by_company = {
+        source.company_id: source
+        for source in await uow.prospect_routing.list_source_companies(
+            run.import_session_id
+        )
+    }
+    routing_company_contexts: list[RoutingBatchCompanySourceContext] = []
+    for batch_company in batch.companies:
+        route = route_by_company.get(batch_company.company_id)
+        source = source_by_company.get(batch_company.company_id)
+        if route is None or source is None:
+            raise ApplicationConflictError(
+                "routing batch source provenance is incomplete"
+            )
+        routing_company_contexts.append(
+            RoutingBatchCompanySourceContext(
+                company_id=batch_company.company_id,
+                route_id=route.id,
+                source_website=source.website,
+                effective_tier=(
+                    route.effective_tier.value
+                    if route.effective_tier is not None
+                    else None
+                ),
+                review_status=route.review_status.value,
+                feature_snapshot=dict(route.feature_snapshot_json),
+                reason_codes=route.reason_codes,
+                warning_codes=route.warning_codes,
+                raw_import_row_ids=tuple(
+                    row.raw_import_row_id for row in source.rows
+                ),
+                import_entity_decision_ids=tuple(
+                    row.import_entity_decision_id for row in source.rows
+                ),
+            )
+        )
+    return RoutingProspectBatchSourceContext(
+        routing_run_id=routing_run_id,
+        execution_generation=execution_generation,
+        import_session_id=run.import_session_id,
+        companies=tuple(routing_company_contexts),
+    )
+
+
+def _validate_routing_start(
+    batch: ProspectBatch,
+    source_context: RoutingProspectBatchSourceContext,
+) -> None:
+    if batch.effective_count > MAX_BATCH_COMPANIES:
+        raise ApplicationConflictError(
+            "prospect batch exceeds the five-company processing limit"
+        )
+    if (
+        batch.routing_run_id != source_context.routing_run_id
+        or batch.routing_execution_generation
+        != source_context.execution_generation
+    ):
+        raise ApplicationConflictError(
+            "routing batch source generation does not match its saved provenance"
+        )
+    expected_company_ids = {company.company_id for company in batch.companies}
+    actual_company_ids = {company.company_id for company in source_context.companies}
+    if expected_company_ids != actual_company_ids:
+        raise ApplicationConflictError(
+            "routing batch companies do not match the saved source context"
+        )
+    for company in source_context.companies:
+        if (
+            company.effective_tier != ProspectTier.A.value
+            or company.review_status
+            not in {
+                ProspectRouteReviewStatus.CONFIRMED.value,
+                ProspectRouteReviewStatus.OVERRIDDEN.value,
+            }
+        ):
+            raise ApplicationConflictError(
+                "every routing batch company must be a confirmed effective-tier A"
+            )
+        if (
+            not company.feature_snapshot
+            or not company.reason_codes
+            or not company.raw_import_row_ids
+            or not company.import_entity_decision_ids
+        ):
+            raise ApplicationConflictError(
+                "routing batch source provenance is incomplete"
+            )
+
+
+def _discovery_source_company(
+    source_context: DiscoveryProspectBatchSourceContext,
+    company_id: UUID,
+) -> DiscoveryBatchCompanySourceContext:
+    source = next(
+        (
+            company
+            for company in source_context.companies
+            if company.company_id == company_id
+        ),
+        None,
+    )
+    if source is None:
+        raise ApplicationConflictError(
+            "company is not present in the discovery source context"
+        )
+    return source
+
+
+def _routing_source_company(
+    source_context: RoutingProspectBatchSourceContext,
+    company_id: UUID,
+) -> RoutingBatchCompanySourceContext:
+    source = next(
+        (
+            company
+            for company in source_context.companies
+            if company.company_id == company_id
+        ),
+        None,
+    )
+    if source is None:
+        raise ApplicationConflictError(
+            "company is not present in the routing source context"
+        )
+    return source
+
+
 def _pending_claim_count(run: ResearchRun) -> int:
     reviewed_positions = {promotion.claim_position for promotion in run.promotions}
     return sum(claim.position not in reviewed_positions for claim in run.claims)
@@ -1185,6 +1558,23 @@ def _business_key(discovery_task_id: UUID, company_ids: tuple[UUID, ...]) -> str
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _routing_business_key(
+    source_context: RoutingProspectBatchSourceContext,
+    company_ids: tuple[UUID, ...],
+) -> str:
+    canonical = json.dumps(
+        {
+            "routing_run_id": str(source_context.routing_run_id),
+            "execution_generation": source_context.execution_generation,
+            "company_ids": sorted(str(company_id) for company_id in company_ids),
+            "pipeline_version": PIPELINE_VERSION,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def _request_key_hash(idempotency_key: str | None) -> str | None:
     if idempotency_key is None:
         return None
@@ -1228,18 +1618,19 @@ async def _find_reused_submission(
 def _new_execution_job(
     batch: ProspectBatch,
     *,
+    source_context: ProspectBatchSourceContext,
     sender: SenderProfile | None,
     max_attempts: int,
 ) -> ProspectJob:
-    discovery_task_id = batch.discovery_task_id
-    if discovery_task_id is None:
-        raise ApplicationConflictError(
-            "routing-sourced batch cannot start Research during D5c"
-        )
     company_ids = tuple(company.company_id for company in batch.companies)
+    business_key = (
+        _business_key(source_context.discovery_task_id, company_ids)
+        if isinstance(source_context, DiscoveryProspectBatchSourceContext)
+        else _routing_business_key(source_context, company_ids)
+    )
     return ProspectJob.create(
         batch_id=batch.id,
-        business_key=_business_key(discovery_task_id, company_ids),
+        business_key=business_key,
         request_key_hash=None,
         sender=sender,
         max_attempts=max_attempts,

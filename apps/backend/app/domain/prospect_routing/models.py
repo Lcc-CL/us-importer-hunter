@@ -425,6 +425,7 @@ class RoutingContactSnapshot:
 
 @dataclass(frozen=True)
 class RoutingSourceRow:
+    import_entity_decision_id: UUID
     raw_import_row_id: UUID
     row_number: int
     raw_payload: dict[str, Any]
