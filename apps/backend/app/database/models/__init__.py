@@ -56,6 +56,11 @@ from app.database.models.research import (
     ResearchRunModel,
 )
 from app.database.models.task import TaskAttemptModel, TaskModel
+from app.database.models.umail_export import (
+    SuppressionEntryModel,
+    UmailExportBatchModel,
+    UmailExportRowModel,
+)
 
 __all__ = [
     "CompanyAliasModel",
@@ -103,4 +108,7 @@ __all__ = [
     "ResearchRunModel",
     "TaskAttemptModel",
     "TaskModel",
+    "SuppressionEntryModel",
+    "UmailExportBatchModel",
+    "UmailExportRowModel",
 ]

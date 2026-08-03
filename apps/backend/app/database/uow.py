@@ -35,6 +35,7 @@ from app.database.repositories import (
     SqlAlchemyProspectRoutingRepository,
     SqlAlchemyResearchRunRepository,
     SqlAlchemyTaskRepository,
+    SqlAlchemyUmailExportRepository,
 )
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
@@ -54,6 +55,7 @@ from app.domain.repositories import (
     ProspectRoutingRepository,
     ResearchRunRepository,
     TaskRepository,
+    UmailExportRepository,
 )
 
 
@@ -73,6 +75,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     import_resolution: ImportResolutionRepository
     import_processing_jobs: ImportProcessingJobRepository
     prospect_routing: ProspectRoutingRepository
+    umail_exports: UmailExportRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -91,6 +94,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self.import_resolution = SqlAlchemyImportResolutionRepository(self._session)
         self.import_processing_jobs = SqlAlchemyImportProcessingJobRepository(self._session)
         self.prospect_routing = SqlAlchemyProspectRoutingRepository(self._session)
+        self.umail_exports = SqlAlchemyUmailExportRepository(self._session)
         self.import_evidence = SqlAlchemyImportEvidenceRepository(self._session)
         self.import_evidence_promotions = SqlAlchemyImportEvidencePromotionRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)

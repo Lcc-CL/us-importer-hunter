@@ -54,6 +54,12 @@ from app.domain.prospect_routing import (
 )
 from app.domain.research import ResearchRun
 from app.domain.task import Task
+from app.domain.umail_export import (
+    SuppressionEntry,
+    UmailExportBatch,
+    UmailExportCompanyCandidate,
+    UmailExportRow,
+)
 from app.domain.values import CompanyName, IdempotencyKey
 
 
@@ -413,6 +419,48 @@ class ProspectRoutingRepository(Protocol):
     ) -> tuple[RoutingSourceCompany, ...]: ...
 
 
+class UmailExportRepository(Protocol):
+    async def get_suppression(self, entry_id: UUID) -> SuppressionEntry | None: ...
+
+    async def get_suppression_for_update(
+        self, entry_id: UUID
+    ) -> SuppressionEntry | None: ...
+
+    async def add_suppression(self, entry: SuppressionEntry) -> None: ...
+
+    async def save_suppression(self, entry: SuppressionEntry) -> None: ...
+
+    async def list_suppressions(
+        self, *, active: bool | None, offset: int, limit: int
+    ) -> tuple[list[SuppressionEntry], int]: ...
+
+    async def list_active_suppressions(self) -> list[SuppressionEntry]: ...
+
+    async def find_batch_by_selection_hash(
+        self, selection_hash: str
+    ) -> UmailExportBatch | None: ...
+
+    async def get_batch(self, batch_id: UUID) -> UmailExportBatch | None: ...
+
+    async def get_batch_for_update(self, batch_id: UUID) -> UmailExportBatch | None: ...
+
+    async def add_batch(
+        self, batch: UmailExportBatch, rows: tuple[UmailExportRow, ...]
+    ) -> None: ...
+
+    async def save_batch(self, batch: UmailExportBatch) -> None: ...
+
+    async def list_rows(self, batch_id: UUID) -> list[UmailExportRow]: ...
+
+    async def load_b_candidates(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        company_ids: tuple[UUID, ...],
+    ) -> tuple[UmailExportCompanyCandidate, ...]: ...
+
+
 class ResearchRunRepository(Protocol):
     """Persistence for research runs (v0.2). A run is an audit record of what
     a website claimed and what a human decided — never company state."""
@@ -612,6 +660,26 @@ class ImportResolutionUnitOfWork(Protocol):
     prospect_batches: ProspectBatchRepository
 
     async def __aenter__(self) -> "ImportResolutionUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class UmailExportUnitOfWork(Protocol):
+    prospect_routing: ProspectRoutingRepository
+    umail_exports: UmailExportRepository
+
+    async def __aenter__(self) -> "UmailExportUnitOfWork": ...
 
     async def __aexit__(
         self,

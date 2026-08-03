@@ -46,6 +46,7 @@ import {
   type RawImportRowStatus,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { UmailExportPanel } from "./umail-export-panel";
 
 const DEFAULT_SOURCE = "netease_foreign_trade";
 const PAGE_SIZE = 20;
@@ -70,12 +71,14 @@ interface BulkImportPanelProps {
   initialSessionId?: string;
   initialRoutingRunId?: string;
   initialBatchId?: string;
+  initialUmailExportBatchId?: string;
 }
 
 export function BulkImportPanel({
   initialSessionId,
   initialRoutingRunId,
   initialBatchId,
+  initialUmailExportBatchId,
 }: BulkImportPanelProps) {
   const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
@@ -311,12 +314,16 @@ export function BulkImportPanel({
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("import_session_id", sessionId);
     currentUrl.searchParams.delete("routing_run_id");
+    currentUrl.searchParams.delete("batch_id");
+    currentUrl.searchParams.delete("umail_export_batch_id");
     window.history.replaceState(null, "", currentUrl);
   }
 
   function persistRoutingRunId(routingRunId: string) {
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("routing_run_id", routingRunId);
+    currentUrl.searchParams.delete("batch_id");
+    currentUrl.searchParams.delete("umail_export_batch_id");
     window.history.replaceState(null, "", currentUrl);
   }
 
@@ -1110,6 +1117,14 @@ export function BulkImportPanel({
                     </table>
                   </div>
                 ) : null}
+
+                <UmailExportPanel
+                  campaign={campaignName}
+                  initialBatchId={initialUmailExportBatchId}
+                  key={routingRun.routing_run_id}
+                  routes={routes}
+                  routingRunId={routingRun.routing_run_id}
+                />
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <button

@@ -20,6 +20,7 @@ from app.domain.repositories import (
     DiscoveryTaskUnitOfWork,
     ImportResolutionUnitOfWork,
     ProspectBatchUnitOfWork,
+    UmailExportUnitOfWork,
     UnitOfWork,
 )
 from app.domain.services import (
@@ -77,6 +78,7 @@ from app.workflows.research import (
     ResearchLimits,
     ResearchWorkflow,
 )
+from app.workflows.umail_export import SuppressionWorkflow, UmailExportWorkflow
 
 
 def get_request_settings(request: Request) -> Settings:
@@ -230,6 +232,28 @@ def get_prospect_routing_batch_workflow(
 ProspectRoutingBatchDep = Annotated[
     ProspectRoutingBatchWorkflow,
     Depends(get_prospect_routing_batch_workflow),
+]
+
+
+def get_suppression_workflow(uow_factory: UowFactoryDep) -> SuppressionWorkflow:
+    return SuppressionWorkflow(
+        cast(Callable[[], UmailExportUnitOfWork], uow_factory)
+    )
+
+
+SuppressionWorkflowDep = Annotated[
+    SuppressionWorkflow, Depends(get_suppression_workflow)
+]
+
+
+def get_umail_export_workflow(uow_factory: UowFactoryDep) -> UmailExportWorkflow:
+    return UmailExportWorkflow(
+        cast(Callable[[], UmailExportUnitOfWork], uow_factory)
+    )
+
+
+UmailExportWorkflowDep = Annotated[
+    UmailExportWorkflow, Depends(get_umail_export_workflow)
 ]
 
 

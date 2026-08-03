@@ -78,6 +78,31 @@ workflows:
     limits: { companies_per_prospect_batch: 5, worker_concurrency: 1 }
     status: implemented
 
+  umail_export:
+    package: app.workflows.umail_export
+    description: >
+      D5d2a synchronous, deterministic CSV-export workflow for the current
+      ProspectRoutingRun generation. Only effective-tier B routes with confirmed
+      or overridden human review are eligible. It selects at most two contacts per
+      company with named contacts before department fallbacks, snapshots Company,
+      Contact, email, route and pre-score facts into immutable rows, then applies
+      active email/domain/company suppression, invalid-email checks and batch-local
+      email deduplication. CSV contract v1 uses a fixed column order, UTF-8 BOM,
+      RFC-compatible quoting and formula-injection protection. Repeated downloads
+      are regenerated from persisted rows and verified against the stored SHA-256.
+      It never calls Umail or any external provider, creates no Outreach or Outcome,
+      and never marks a prospect sent or contacted.
+    steps:
+      - { id: validate_b_routes, policy: confirmed_or_overridden_effective_b }
+      - { id: select_contacts, service: deterministic_umail_contact_selector, max_per_company: 2 }
+      - { id: apply_suppression, aggregate: suppression_entry }
+      - { id: persist_preview, aggregates: [umail_export_batch, umail_export_row] }
+      - { id: render_csv, contract: umail-export-contract-v1 }
+    row_statuses: [ready, suppressed, invalid, duplicate]
+    execution: sync_http
+    limits: { companies: 500, ready_contacts: 1000 }
+    status: implemented
+
   discovery_task:
     package: app.workflows.discovery_task
     description: >

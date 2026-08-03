@@ -62,6 +62,7 @@ interface MvpAnalysisPageProps {
   initialTaskId?: string;
   initialBatchId?: string;
   initialResearchId?: string;
+  initialUmailExportBatchId?: string;
 }
 
 function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
@@ -78,6 +79,7 @@ export function MvpAnalysisPage({
   initialTaskId,
   initialBatchId,
   initialResearchId,
+  initialUmailExportBatchId,
 }: MvpAnalysisPageProps) {
   const { t, lang, setLang } = useI18n();
   const [analysis, setAnalysis] = useState<ProspectAnalysisResponse | null>(null);
@@ -430,6 +432,7 @@ export function MvpAnalysisPage({
           initialBatchId={initialBatchId}
           initialRoutingRunId={initialRoutingRunId}
           initialSessionId={initialImportSessionId}
+          initialUmailExportBatchId={initialUmailExportBatchId}
         />
 
         <DiscoveryTaskPanel
