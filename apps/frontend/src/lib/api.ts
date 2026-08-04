@@ -165,6 +165,79 @@ export interface ProspectRoutingBatchCreateResponse {
   processing_started: false;
 }
 
+export type UmailExportRowStatus = "ready" | "suppressed" | "invalid" | "duplicate";
+export type UmailExportBatchStatus = "prepared" | "downloaded";
+
+export interface SuppressionEntryResponse {
+  suppression_id: string;
+  email: string | null;
+  domain: string | null;
+  company: string | null;
+  active: boolean;
+  reason: string;
+  source: string;
+  created_by: string;
+  deactivated_by: string | null;
+  deactivated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SuppressionEntryListResponse {
+  page: number;
+  limit: number;
+  total: number;
+  entries: SuppressionEntryResponse[];
+}
+
+export interface UmailExportRowResponse {
+  row_id: string;
+  position: number;
+  company_id: string;
+  contact_id: string | null;
+  company_name: string;
+  company_website: string | null;
+  contact_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  contact_title: string | null;
+  contact_role: string | null;
+  contact_seniority: string | null;
+  is_department_contact: boolean;
+  email: string | null;
+  phone: string | null;
+  country: string | null;
+  route: "B";
+  route_review_status: "confirmed" | "overridden";
+  pre_score: number;
+  route_reasons: string[];
+  status: UmailExportRowStatus;
+  exclusion_reason: string | null;
+  row_fingerprint: string;
+}
+
+export interface UmailExportBatchResponse {
+  batch_id: string;
+  routing_run_id: string;
+  execution_generation: number;
+  campaign: string;
+  mapping_version: string;
+  selection_hash: string;
+  status: UmailExportBatchStatus;
+  total_rows: number;
+  ready_count: number;
+  suppressed_count: number;
+  invalid_count: number;
+  duplicate_count: number;
+  content_sha256: string;
+  downloaded_at: string | null;
+  created_at: string;
+  updated_at: string;
+  reused: boolean;
+  sent: false;
+  rows: UmailExportRowResponse[];
+}
+
 export interface ImportSessionResponse {
   session_id: string;
   source: string;
@@ -1005,12 +1078,21 @@ export function getProspectRoutingRun(
   );
 }
 
-export function getProspectRoutes(
+export async function getProspectRoutes(
   routingRunId: string,
 ): Promise<ProspectRouteListResponse> {
-  return requestJson<ProspectRouteListResponse>(
+  const first = await requestJson<ProspectRouteListResponse>(
     `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/routes?page=1&limit=200`,
   );
+  const routes = [...first.routes];
+  const pageCount = Math.ceil(first.total / first.limit);
+  for (let page = 2; page <= pageCount; page += 1) {
+    const next = await requestJson<ProspectRouteListResponse>(
+      `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/routes?page=${page}&limit=200`,
+    );
+    routes.push(...next.routes);
+  }
+  return { ...first, routes };
 }
 
 export function reviewProspectRoute(
@@ -1047,6 +1129,94 @@ export function createRoutedProspectBatch(
       body: JSON.stringify({ company_ids: companyIds }),
     },
   );
+}
+
+export function createSuppression(options: {
+  email?: string;
+  domain?: string;
+  company?: string;
+  reason: string;
+}): Promise<SuppressionEntryResponse> {
+  return requestJson<SuppressionEntryResponse>("/suppressions", {
+    method: "POST",
+    body: JSON.stringify({
+      email: options.email?.trim() || null,
+      domain: options.domain?.trim() || null,
+      company: options.company?.trim() || null,
+      reason: options.reason.trim(),
+      source: "manual",
+      created_by: "local_reviewer",
+    }),
+  });
+}
+
+export function getSuppressions(active?: boolean): Promise<SuppressionEntryListResponse> {
+  const params = new URLSearchParams({ page: "1", limit: "200" });
+  if (active !== undefined) params.set("active", String(active));
+  return requestJson<SuppressionEntryListResponse>(`/suppressions?${params.toString()}`);
+}
+
+export function deactivateSuppression(
+  suppressionId: string,
+): Promise<SuppressionEntryResponse> {
+  return requestJson<SuppressionEntryResponse>(
+    `/suppressions/${encodeURIComponent(suppressionId)}/deactivate`,
+    {
+      method: "POST",
+      body: JSON.stringify({ deactivated_by: "local_reviewer" }),
+    },
+  );
+}
+
+export function createUmailExportBatch(
+  routingRunId: string,
+  companyIds: string[],
+  campaign: string,
+): Promise<UmailExportBatchResponse> {
+  return requestJson<UmailExportBatchResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/umail-export-batches`,
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds, campaign: campaign.trim() }),
+    },
+  );
+}
+
+export function getUmailExportBatch(batchId: string): Promise<UmailExportBatchResponse> {
+  return requestJson<UmailExportBatchResponse>(
+    `/umail-export-batches/${encodeURIComponent(batchId)}`,
+  );
+}
+
+export async function downloadUmailExportCsv(
+  batchId: string,
+): Promise<{ blob: Blob; filename: string }> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_V1_URL}/umail-export-batches/${encodeURIComponent(batchId)}/download`,
+      { cache: "no-store" },
+    );
+  } catch {
+    throw new ApiNetworkError(
+      "Unable to reach the API. Confirm the backend is running on the configured URL.",
+    );
+  }
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    const fallback: ApiErrorPayload = {
+      code: "umail_export_download_failed",
+      message: `The API returned HTTP ${response.status}.`,
+      request_id: response.headers.get("X-Request-ID") ?? "not_available",
+    };
+    throw new ApiError(
+      response.status,
+      isApiErrorPayload(payload) ? payload : fallback,
+    );
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? `umail-export-${batchId}.csv`;
+  return { blob: await response.blob(), filename };
 }
 
 export function createDiscoveryTask(prompt: string): Promise<DiscoveryTaskResponse> {

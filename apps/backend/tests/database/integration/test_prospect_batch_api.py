@@ -7,6 +7,7 @@ from typing import cast
 from uuid import UUID
 
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.api.deps import (
@@ -14,6 +15,8 @@ from app.api.deps import (
     get_uow_factory,
 )
 from app.core.config import Settings
+from app.database.models.company import CompanyModel
+from app.database.models.task import TaskModel
 from app.database.session import create_session_factory
 from app.database.uow import SqlAlchemyUnitOfWork
 from app.domain.clock import utcnow
@@ -754,3 +757,12 @@ async def test_postgres_skip_locked_allows_only_one_concurrent_worker_claim(
         coordinator_b.claim(owner="concurrent-b"),
     )
     assert sum(job is not None for job in claims) == 1
+
+    # This concurrency test deliberately uses independent committed sessions
+    # instead of the per-test savepoint fixture. Remove only its own fixture
+    # records so later integration tests still start from an isolated database.
+    async with engine.begin() as connection:
+        await connection.execute(delete(TaskModel).where(TaskModel.id == UUID(task_id)))
+        await connection.execute(
+            delete(CompanyModel).where(CompanyModel.id == UUID(company_id))
+        )
