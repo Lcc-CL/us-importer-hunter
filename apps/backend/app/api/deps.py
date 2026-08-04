@@ -21,6 +21,7 @@ from app.domain.repositories import (
     ImportResolutionUnitOfWork,
     ProspectBatchUnitOfWork,
     UmailExportUnitOfWork,
+    UmailFeedbackUnitOfWork,
     UnitOfWork,
 )
 from app.domain.services import (
@@ -79,6 +80,7 @@ from app.workflows.research import (
     ResearchWorkflow,
 )
 from app.workflows.umail_export import SuppressionWorkflow, UmailExportWorkflow
+from app.workflows.umail_feedback import UmailResultImportWorkflow
 
 
 def get_request_settings(request: Request) -> Settings:
@@ -254,6 +256,19 @@ def get_umail_export_workflow(uow_factory: UowFactoryDep) -> UmailExportWorkflow
 
 UmailExportWorkflowDep = Annotated[
     UmailExportWorkflow, Depends(get_umail_export_workflow)
+]
+
+
+def get_umail_result_import_workflow(
+    uow_factory: UowFactoryDep,
+) -> UmailResultImportWorkflow:
+    return UmailResultImportWorkflow(
+        cast(Callable[[], UmailFeedbackUnitOfWork], uow_factory)
+    )
+
+
+UmailResultImportWorkflowDep = Annotated[
+    UmailResultImportWorkflow, Depends(get_umail_result_import_workflow)
 ]
 
 

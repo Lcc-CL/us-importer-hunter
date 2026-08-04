@@ -112,6 +112,9 @@ EXPECTED_TABLES = {
     "suppression_entries",
     "umail_export_batches",
     "umail_export_rows",
+    "umail_result_imports",
+    "umail_result_rows",
+    "contact_engagement_events",
     "companies",
     "company_aliases",
     "company_sources",
@@ -149,6 +152,8 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
         "country",
         "route_reasons",
     } <= export_row_columns
+    result_row_columns = asyncio.run(_column_names(migration_db_url, "umail_result_rows"))
+    assert {"matched_export_row_id", "match_method", "row_fingerprint"} <= result_row_columns
 
     run_alembic(["downgrade", "base"], MIGRATION_DB)
     tables_after_downgrade = asyncio.run(_table_names(migration_db_url))
@@ -169,6 +174,9 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
         "country",
         "route_reasons",
     } <= export_row_columns_again
+    assert {"matched_export_row_id", "match_method", "row_fingerprint"} <= asyncio.run(
+        _column_names(migration_db_url, "umail_result_rows")
+    )
 
 
 def test_d5a1_downgrade_preserves_existing_core_data(migration_db_url: str) -> None:

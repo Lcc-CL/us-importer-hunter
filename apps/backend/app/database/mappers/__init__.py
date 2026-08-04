@@ -25,6 +25,7 @@ from app.database.mappers.prospect_routing import ProspectRoutingMapper
 from app.database.mappers.research import ResearchRunMapper
 from app.database.mappers.task import TaskMapper
 from app.database.mappers.umail_export import UmailExportMapper
+from app.database.mappers.umail_feedback import UmailFeedbackMapper
 
 __all__ = [
     "BulkImportMapper",
@@ -44,4 +45,5 @@ __all__ = [
     "ResearchRunMapper",
     "TaskMapper",
     "UmailExportMapper",
+    "UmailFeedbackMapper",
 ]

@@ -11,6 +11,7 @@ export default async function Home({
     routing_run_id?: string | string[];
     research_id?: string | string[];
     umail_export_batch_id?: string | string[];
+    umail_result_import_id?: string | string[];
   }>;
 }) {
   const params = await searchParams;
@@ -21,6 +22,7 @@ export default async function Home({
   const routingRunId = params.routing_run_id;
   const researchId = params.research_id;
   const umailExportBatchId = params.umail_export_batch_id;
+  const umailResultImportId = params.umail_result_import_id;
   return (
     <MvpAnalysisPage
       initialCompanyId={typeof companyId === "string" ? companyId : undefined}
@@ -35,6 +37,9 @@ export default async function Home({
       initialTaskId={typeof taskId === "string" ? taskId : undefined}
       initialUmailExportBatchId={
         typeof umailExportBatchId === "string" ? umailExportBatchId : undefined
+      }
+      initialUmailResultImportId={
+        typeof umailResultImportId === "string" ? umailResultImportId : undefined
       }
     />
   );

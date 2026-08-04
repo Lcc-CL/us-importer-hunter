@@ -13,6 +13,7 @@ from app.api.routes import (
     prospect_routing,
     research,
     umail_export,
+    umail_feedback,
 )
 
 api_router = APIRouter()
@@ -26,3 +27,4 @@ api_router.include_router(discovery_tasks.router)
 api_router.include_router(prospect_batches.router)
 api_router.include_router(prospect_routing.router)
 api_router.include_router(umail_export.router)
+api_router.include_router(umail_feedback.router)
