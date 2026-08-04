@@ -30,6 +30,7 @@ from app.database.repositories.prospect_routing import SqlAlchemyProspectRouting
 from app.database.repositories.research import SqlAlchemyResearchRunRepository
 from app.database.repositories.task import SqlAlchemyTaskRepository
 from app.database.repositories.umail_export import SqlAlchemyUmailExportRepository
+from app.database.repositories.umail_feedback import SqlAlchemyUmailFeedbackRepository
 
 __all__ = [
     "SqlAlchemyBulkImportRepository",
@@ -49,4 +50,5 @@ __all__ = [
     "SqlAlchemyResearchRunRepository",
     "SqlAlchemyTaskRepository",
     "SqlAlchemyUmailExportRepository",
+    "SqlAlchemyUmailFeedbackRepository",
 ]

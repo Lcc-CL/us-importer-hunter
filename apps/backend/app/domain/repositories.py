@@ -60,6 +60,13 @@ from app.domain.umail_export import (
     UmailExportCompanyCandidate,
     UmailExportRow,
 )
+from app.domain.umail_feedback import (
+    ContactEngagementEvent,
+    FeedbackExportSnapshot,
+    UmailResultImport,
+    UmailResultMatchStatus,
+    UmailResultRow,
+)
 from app.domain.values import CompanyName, IdempotencyKey
 
 
@@ -461,6 +468,59 @@ class UmailExportRepository(Protocol):
     ) -> tuple[UmailExportCompanyCandidate, ...]: ...
 
 
+class UmailFeedbackRepository(Protocol):
+    async def find_import_by_file_hash(
+        self, file_sha256: str
+    ) -> UmailResultImport | None: ...
+
+    async def get_import(self, result_import_id: UUID) -> UmailResultImport | None: ...
+
+    async def get_import_for_update(
+        self, result_import_id: UUID
+    ) -> UmailResultImport | None: ...
+
+    async def add_import(
+        self,
+        result_import: UmailResultImport,
+        rows: tuple[UmailResultRow, ...],
+    ) -> None: ...
+
+    async def save_import(self, result_import: UmailResultImport) -> None: ...
+
+    async def list_rows(
+        self,
+        *,
+        result_import_id: UUID,
+        match_status: UmailResultMatchStatus | None,
+        event_type: str | None,
+        campaign: str | None,
+        suppression_impact: bool | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[UmailResultRow], int]: ...
+
+    async def list_rows_for_apply(
+        self, result_import_id: UUID
+    ) -> list[UmailResultRow]: ...
+
+    async def load_export_snapshots(
+        self,
+        *,
+        export_row_ids: tuple[UUID, ...],
+        emails: tuple[str, ...],
+    ) -> tuple[FeedbackExportSnapshot, ...]: ...
+
+    async def existing_event_fingerprints(
+        self, fingerprints: tuple[str, ...]
+    ) -> set[str]: ...
+
+    async def add_events(self, events: tuple[ContactEngagementEvent, ...]) -> None: ...
+
+    async def list_events(
+        self, result_import_id: UUID
+    ) -> list[ContactEngagementEvent]: ...
+
+
 class ResearchRunRepository(Protocol):
     """Persistence for research runs (v0.2). A run is an audit record of what
     a website claimed and what a human decided — never company state."""
@@ -680,6 +740,26 @@ class UmailExportUnitOfWork(Protocol):
     umail_exports: UmailExportRepository
 
     async def __aenter__(self) -> "UmailExportUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class UmailFeedbackUnitOfWork(Protocol):
+    umail_feedback: UmailFeedbackRepository
+    umail_exports: UmailExportRepository
+
+    async def __aenter__(self) -> "UmailFeedbackUnitOfWork": ...
 
     async def __aexit__(
         self,

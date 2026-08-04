@@ -103,6 +103,33 @@ workflows:
     limits: { companies: 500, ready_contacts: 1000 }
     status: implemented
 
+  umail_feedback:
+    package: app.workflows.umail_feedback
+    description: >
+      D5d2b synchronous two-phase intake for offline Umail result CSV files.
+      Upload parses a versioned field mapping, persists every source row, and
+      deterministically matches immutable UmailExportRow snapshots by exact row
+      ID, batch plus email, campaign plus email, or a unique 180-day email
+      window. It stops ambiguous, unmatched, invalid and duplicate rows at the
+      review boundary. Explicit apply appends immutable ContactEngagementEvent
+      records and creates email Suppression entries only for hard bounce,
+      unsubscribe and complaint events. It never mutates export snapshots,
+      Outreach, Draft, Outcome, Opportunity, Pre-Score or A/B/C/D routing, and
+      invokes no Umail API, provider, LLM or email delivery path.
+    steps:
+      - { id: parse_csv, contract: umail-result-import-contract-v1 }
+      - { id: match_export_snapshot, service: deterministic_umail_result_matcher }
+      - { id: persist_preview, aggregates: [umail_result_import, umail_result_row] }
+      - { id: review_import, human_review: required }
+      - { id: append_engagement, aggregate: contact_engagement_event }
+      - { id: apply_suppression, aggregate: suppression_entry, conditional: hard_bounce_unsubscribe_or_complaint }
+    import_statuses: [uploaded, parsed, ready_for_review, applied, partial_applied, failed]
+    match_statuses: [matched, unmatched, ambiguous, invalid, duplicate]
+    event_types: [sent, delivered, hard_bounced, soft_bounced, bounce_unknown, unsubscribed, complained, replied, opened, clicked]
+    execution: sync_http
+    limits: { max_bytes: 20971520, max_rows: 20000, matching_window_days: 180 }
+    status: implemented
+
   discovery_task:
     package: app.workflows.discovery_task
     description: >

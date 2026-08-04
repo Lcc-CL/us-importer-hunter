@@ -47,6 +47,7 @@ import {
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { UmailExportPanel } from "./umail-export-panel";
+import { UmailFeedbackPanel } from "./umail-feedback-panel";
 
 const DEFAULT_SOURCE = "netease_foreign_trade";
 const PAGE_SIZE = 20;
@@ -72,6 +73,7 @@ interface BulkImportPanelProps {
   initialRoutingRunId?: string;
   initialBatchId?: string;
   initialUmailExportBatchId?: string;
+  initialUmailResultImportId?: string;
 }
 
 export function BulkImportPanel({
@@ -79,6 +81,7 @@ export function BulkImportPanel({
   initialRoutingRunId,
   initialBatchId,
   initialUmailExportBatchId,
+  initialUmailResultImportId,
 }: BulkImportPanelProps) {
   const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
@@ -678,6 +681,8 @@ export function BulkImportPanel({
           {error}
         </p>
       ) : null}
+
+      <UmailFeedbackPanel initialImportId={initialUmailResultImportId} />
 
       {session ? (
         <div className="border-t border-slate-200 px-5 py-6 sm:px-7" data-testid="bulk-import-result">

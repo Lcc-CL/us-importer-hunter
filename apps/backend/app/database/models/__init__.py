@@ -61,6 +61,11 @@ from app.database.models.umail_export import (
     UmailExportBatchModel,
     UmailExportRowModel,
 )
+from app.database.models.umail_feedback import (
+    ContactEngagementEventModel,
+    UmailResultImportModel,
+    UmailResultRowModel,
+)
 
 __all__ = [
     "CompanyAliasModel",
@@ -111,4 +116,7 @@ __all__ = [
     "SuppressionEntryModel",
     "UmailExportBatchModel",
     "UmailExportRowModel",
+    "ContactEngagementEventModel",
+    "UmailResultImportModel",
+    "UmailResultRowModel",
 ]

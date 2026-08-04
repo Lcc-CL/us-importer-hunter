@@ -238,6 +238,109 @@ export interface UmailExportBatchResponse {
   rows: UmailExportRowResponse[];
 }
 
+export type UmailResultImportStatus =
+  | "uploaded"
+  | "parsed"
+  | "ready_for_review"
+  | "applied"
+  | "partial_applied"
+  | "failed";
+export type UmailResultMatchStatus =
+  | "matched"
+  | "unmatched"
+  | "ambiguous"
+  | "invalid"
+  | "duplicate";
+export type ContactEngagementEventType =
+  | "sent"
+  | "delivered"
+  | "hard_bounced"
+  | "soft_bounced"
+  | "bounce_unknown"
+  | "unsubscribed"
+  | "complained"
+  | "replied"
+  | "opened"
+  | "clicked";
+
+export interface UmailResultImportResponse {
+  result_import_id: string;
+  source_filename: string;
+  file_sha256: string;
+  mapping_version: string;
+  mapping_snapshot: Record<string, string>;
+  status: UmailResultImportStatus;
+  input_row_count: number;
+  matched_count: number;
+  unmatched_count: number;
+  ambiguous_count: number;
+  invalid_count: number;
+  duplicate_count: number;
+  projected_event_count: number;
+  projected_suppression_count: number;
+  applied_event_count: number;
+  suppression_created_count: number;
+  created_by: string;
+  created_at: string;
+  applied_at: string | null;
+  error_summary: string | null;
+  reused: boolean;
+  system_sent_email: false;
+}
+
+export interface UmailResultRowResponse {
+  result_row_id: string;
+  row_number: number;
+  export_batch_id: string | null;
+  export_row_id: string | null;
+  normalized_email: string | null;
+  campaign: string | null;
+  canonical_event_type: ContactEngagementEventType | null;
+  occurred_at: string | null;
+  bounce_type: string | null;
+  message_id: string | null;
+  match_status: UmailResultMatchStatus;
+  matched_export_row_id: string | null;
+  match_method: string | null;
+  error_codes: string[];
+  row_fingerprint: string;
+  suppression_impact: boolean;
+}
+
+export interface UmailResultRowListResponse {
+  result_import_id: string;
+  page: number;
+  limit: number;
+  total: number;
+  rows: UmailResultRowResponse[];
+}
+
+export interface EngagementRateStatisticsResponse {
+  total_events: number;
+  event_counts: Record<ContactEngagementEventType, number>;
+  delivered_rate: number;
+  reply_rate: number;
+  hard_bounce_rate: number;
+  unsubscribe_rate: number;
+  complaint_rate: number;
+}
+
+export interface CompanyEngagementStatisticsResponse {
+  company_id: string;
+  company_name: string;
+  event_counts: Record<ContactEngagementEventType, number>;
+}
+
+export interface UmailFeedbackStatisticsResponse {
+  result_import_id: string;
+  total_result_rows: number;
+  matched_rate: number;
+  rates: EngagementRateStatisticsResponse;
+  campaign_statistics: Record<string, Record<ContactEngagementEventType, number>>;
+  route_statistics: Record<string, Record<ContactEngagementEventType, number>>;
+  company_statistics: CompanyEngagementStatisticsResponse[];
+}
+
 export interface ImportSessionResponse {
   session_id: string;
   source: string;
@@ -1217,6 +1320,74 @@ export async function downloadUmailExportCsv(
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? `umail-export-${batchId}.csv`;
   return { blob: await response.blob(), filename };
+}
+
+export function uploadUmailResultImport(
+  file: File,
+  mapping?: Record<string, string>,
+): Promise<UmailResultImportResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("created_by", "local_reviewer");
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  return requestForm<UmailResultImportResponse>(
+    "/umail-result-imports",
+    form,
+    "umail_result_upload_failed",
+  );
+}
+
+export function getUmailResultImport(
+  resultImportId: string,
+): Promise<UmailResultImportResponse> {
+  return requestJson<UmailResultImportResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}`,
+  );
+}
+
+export function getUmailResultRows(
+  resultImportId: string,
+  options: {
+    page?: number;
+    limit?: number;
+    matchStatus?: UmailResultMatchStatus;
+    eventType?: ContactEngagementEventType;
+    campaign?: string;
+    suppressionImpact?: boolean;
+  } = {},
+): Promise<UmailResultRowListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    limit: String(options.limit ?? 50),
+  });
+  if (options.matchStatus) params.set("match_status", options.matchStatus);
+  if (options.eventType) params.set("event_type", options.eventType);
+  if (options.campaign?.trim()) params.set("campaign", options.campaign.trim());
+  if (options.suppressionImpact !== undefined) {
+    params.set("suppression_impact", String(options.suppressionImpact));
+  }
+  return requestJson<UmailResultRowListResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}/rows?${params.toString()}`,
+  );
+}
+
+export function applyUmailResultImport(
+  resultImportId: string,
+): Promise<UmailResultImportResponse> {
+  return requestJson<UmailResultImportResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}/apply`,
+    { method: "POST", body: JSON.stringify({ confirmed: true }) },
+  );
+}
+
+export function getUmailFeedbackStatistics(
+  resultImportId: string,
+): Promise<UmailFeedbackStatisticsResponse> {
+  return requestJson<UmailFeedbackStatisticsResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}/statistics`,
+  );
 }
 
 export function createDiscoveryTask(prompt: string): Promise<DiscoveryTaskResponse> {
