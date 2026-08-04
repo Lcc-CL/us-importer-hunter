@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "d5d2a1b2c3d4"
 down_revision: str | None = "d5c1f2e3a4b6"
@@ -150,14 +151,23 @@ def upgrade() -> None:
         sa.Column("company_name", sa.String(length=200), nullable=False),
         sa.Column("company_website", sa.String(length=2048), nullable=True),
         sa.Column("contact_name", sa.String(length=200), nullable=True),
+        sa.Column("first_name", sa.String(length=200), nullable=True),
+        sa.Column("last_name", sa.String(length=200), nullable=True),
         sa.Column("contact_title", sa.String(length=200), nullable=True),
         sa.Column("contact_role", sa.String(length=40), nullable=True),
         sa.Column("contact_seniority", sa.String(length=40), nullable=True),
         sa.Column("is_department_contact", sa.Boolean(), nullable=False),
         sa.Column("email", sa.String(length=320), nullable=True),
+        sa.Column("phone", sa.String(length=320), nullable=True),
+        sa.Column("country", sa.String(length=100), nullable=True),
         sa.Column("route", sa.String(length=1), nullable=False),
         sa.Column("route_review_status", sa.String(length=20), nullable=False),
         sa.Column("pre_score", sa.Float(), nullable=False),
+        sa.Column(
+            "route_reasons",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+        ),
         sa.Column("status", sa.String(length=20), nullable=False),
         sa.Column("exclusion_reason", sa.Text(), nullable=True),
         sa.Column("row_fingerprint", sa.String(length=64), nullable=False),

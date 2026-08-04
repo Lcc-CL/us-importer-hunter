@@ -141,6 +141,14 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     draft_columns = asyncio.run(_column_names(migration_db_url, "email_drafts"))
     assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns
     assert "status" not in draft_columns
+    export_row_columns = asyncio.run(_column_names(migration_db_url, "umail_export_rows"))
+    assert {
+        "first_name",
+        "last_name",
+        "phone",
+        "country",
+        "route_reasons",
+    } <= export_row_columns
 
     run_alembic(["downgrade", "base"], MIGRATION_DB)
     tables_after_downgrade = asyncio.run(_table_names(migration_db_url))
@@ -151,6 +159,16 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     assert EXPECTED_TABLES <= tables_again
     draft_columns_again = asyncio.run(_column_names(migration_db_url, "email_drafts"))
     assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns_again
+    export_row_columns_again = asyncio.run(
+        _column_names(migration_db_url, "umail_export_rows")
+    )
+    assert {
+        "first_name",
+        "last_name",
+        "phone",
+        "country",
+        "route_reasons",
+    } <= export_row_columns_again
 
 
 def test_d5a1_downgrade_preserves_existing_core_data(migration_db_url: str) -> None:

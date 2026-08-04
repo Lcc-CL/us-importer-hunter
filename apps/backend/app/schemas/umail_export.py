@@ -112,14 +112,19 @@ class UmailExportRowResponse(BaseModel):
     company_name: str
     company_website: str | None
     contact_name: str | None
+    first_name: str | None
+    last_name: str | None
     contact_title: str | None
     contact_role: str | None
     contact_seniority: str | None
     is_department_contact: bool
     email: str | None
+    phone: str | None
+    country: str | None
     route: str
     route_review_status: str
     pre_score: float
+    route_reasons: list[str]
     status: UmailExportRowStatus
     exclusion_reason: str | None
     row_fingerprint: str
@@ -134,14 +139,19 @@ class UmailExportRowResponse(BaseModel):
             company_name=row.company_name,
             company_website=row.company_website,
             contact_name=row.contact_name,
+            first_name=row.first_name,
+            last_name=row.last_name,
             contact_title=row.contact_title,
             contact_role=row.contact_role,
             contact_seniority=row.contact_seniority,
             is_department_contact=row.is_department_contact,
             email=row.email,
+            phone=row.phone,
+            country=row.country,
             route=row.route.value,
             route_review_status=row.route_review_status.value,
             pre_score=row.pre_score,
+            route_reasons=list(row.route_reasons),
             status=row.status,
             exclusion_reason=row.exclusion_reason,
             row_fingerprint=row.row_fingerprint,

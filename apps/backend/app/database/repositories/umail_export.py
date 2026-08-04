@@ -24,6 +24,7 @@ from app.domain.umail_export import (
     UmailExportCompanyCandidate,
     UmailExportContactCandidate,
     UmailExportEmailCandidate,
+    UmailExportPhoneCandidate,
     UmailExportRow,
 )
 
@@ -37,6 +38,7 @@ class _ContactAccumulator:
     seniority: str
     is_department_contact: bool
     emails: list[UmailExportEmailCandidate] = field(default_factory=list)
+    phones: list[UmailExportPhoneCandidate] = field(default_factory=list)
 
 
 class SqlAlchemyUmailExportRepository:
@@ -170,6 +172,7 @@ class SqlAlchemyUmailExportRepository:
                         CompanyContactModel.role_category,
                         CompanyContactModel.seniority,
                         CompanyContactModel.is_department_contact,
+                        ContactChannelModel.channel_type,
                         ContactChannelModel.normalized_value,
                         ContactChannelModel.display_value,
                         ContactChannelModel.verification_status,
@@ -179,7 +182,7 @@ class SqlAlchemyUmailExportRepository:
                         ContactChannelModel,
                         and_(
                             ContactChannelModel.contact_id == ContactModel.id,
-                            ContactChannelModel.channel_type == "email",
+                            ContactChannelModel.channel_type.in_(("email", "phone")),
                         ),
                     )
                     .where(
@@ -192,6 +195,7 @@ class SqlAlchemyUmailExportRepository:
                         CompanyContactModel.is_department_contact,
                         ContactModel.normalized_name,
                         ContactModel.id,
+                        ContactChannelModel.channel_type,
                         ContactChannelModel.normalized_value,
                     )
                 )
@@ -207,6 +211,7 @@ class SqlAlchemyUmailExportRepository:
             role_category,
             seniority,
             is_department_contact,
+            channel_type,
             normalized_email,
             display_email,
             verification_status,
@@ -223,9 +228,17 @@ class SqlAlchemyUmailExportRepository:
                     is_department_contact=is_department_contact,
                 )
                 company_contacts[contact_id] = accumulator
-            if normalized_email is not None:
+            if normalized_email is not None and channel_type == "email":
                 accumulator.emails.append(
                     UmailExportEmailCandidate(
+                        normalized_value=normalized_email,
+                        display_value=display_email,
+                        verification_status=verification_status,
+                    )
+                )
+            elif normalized_email is not None and channel_type == "phone":
+                accumulator.phones.append(
+                    UmailExportPhoneCandidate(
                         normalized_value=normalized_email,
                         display_value=display_email,
                         verification_status=verification_status,
@@ -244,6 +257,7 @@ class SqlAlchemyUmailExportRepository:
                     seniority=value.seniority,
                     is_department_contact=value.is_department_contact,
                     emails=tuple(value.emails),
+                    phones=tuple(value.phones),
                 )
                 for value in company_contacts.values()
             )
@@ -252,7 +266,9 @@ class SqlAlchemyUmailExportRepository:
                     company_id=company.id,
                     company_name=company.name,
                     company_website=company.website,
+                    country=None,
                     pre_score=route.pre_score,
+                    route_reasons=tuple(route.reason_codes),
                     effective_tier=(
                         ProspectTier(route.effective_tier) if route.effective_tier else None
                     ),

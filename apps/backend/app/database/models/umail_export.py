@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -168,14 +169,19 @@ class UmailExportRowModel(Base):
     company_name: Mapped[str] = mapped_column(String(200), nullable=False)
     company_website: Mapped[str | None] = mapped_column(String(2048))
     contact_name: Mapped[str | None] = mapped_column(String(200))
+    first_name: Mapped[str | None] = mapped_column(String(200))
+    last_name: Mapped[str | None] = mapped_column(String(200))
     contact_title: Mapped[str | None] = mapped_column(String(200))
     contact_role: Mapped[str | None] = mapped_column(String(40))
     contact_seniority: Mapped[str | None] = mapped_column(String(40))
     is_department_contact: Mapped[bool] = mapped_column(Boolean, nullable=False)
     email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(320))
+    country: Mapped[str | None] = mapped_column(String(100))
     route: Mapped[str] = mapped_column(String(1), nullable=False)
     route_review_status: Mapped[str] = mapped_column(String(20), nullable=False)
     pre_score: Mapped[float] = mapped_column(Float, nullable=False)
+    route_reasons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     exclusion_reason: Mapped[str | None] = mapped_column(Text)
     row_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)

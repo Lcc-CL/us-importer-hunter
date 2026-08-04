@@ -223,14 +223,19 @@ class UmailExportRow:
     company_name: str
     company_website: str | None
     contact_name: str | None
+    first_name: str | None
+    last_name: str | None
     contact_title: str | None
     contact_role: str | None
     contact_seniority: str | None
     is_department_contact: bool
     email: str | None
+    phone: str | None
+    country: str | None
     route: ProspectTier
     route_review_status: ProspectRouteReviewStatus
     pre_score: float
+    route_reasons: tuple[str, ...]
     status: UmailExportRowStatus
     exclusion_reason: str | None
     row_fingerprint: str
@@ -248,6 +253,8 @@ class UmailExportRow:
             raise DomainError("Umail export rows require human-confirmed routing")
         if not 0 <= self.pre_score <= 100:
             raise DomainError("export pre-score must be within 0-100")
+        if not self.route_reasons:
+            raise DomainError("export row requires route reasons")
         if len(self.row_fingerprint) != 64:
             raise DomainError("row fingerprint must be a SHA-256 hex digest")
         if self.status is UmailExportRowStatus.READY and not self.email:
@@ -266,13 +273,18 @@ class UmailExportRow:
         company_name: str,
         company_website: str | None,
         contact_name: str | None,
+        first_name: str | None,
+        last_name: str | None,
         contact_title: str | None,
         contact_role: str | None,
         contact_seniority: str | None,
         is_department_contact: bool,
         email: str | None,
+        phone: str | None,
+        country: str | None,
         route_review_status: ProspectRouteReviewStatus,
         pre_score: float,
+        route_reasons: tuple[str, ...],
         status: UmailExportRowStatus,
         exclusion_reason: str | None,
     ) -> "UmailExportRow":
@@ -282,14 +294,19 @@ class UmailExportRow:
             "company_name": company_name,
             "company_website": company_website,
             "contact_name": contact_name,
+            "first_name": first_name,
+            "last_name": last_name,
             "contact_title": contact_title,
             "contact_role": contact_role,
             "contact_seniority": contact_seniority,
             "is_department_contact": is_department_contact,
             "email": email,
+            "phone": phone,
+            "country": country,
             "route": ProspectTier.B.value,
             "route_review_status": route_review_status.value,
             "pre_score": pre_score,
+            "route_reasons": route_reasons,
             "status": status.value,
             "exclusion_reason": exclusion_reason,
         }
@@ -305,14 +322,19 @@ class UmailExportRow:
             company_name=company_name,
             company_website=company_website,
             contact_name=contact_name,
+            first_name=first_name,
+            last_name=last_name,
             contact_title=contact_title,
             contact_role=contact_role,
             contact_seniority=contact_seniority,
             is_department_contact=is_department_contact,
             email=email,
+            phone=phone,
+            country=country,
             route=ProspectTier.B,
             route_review_status=route_review_status,
             pre_score=pre_score,
+            route_reasons=route_reasons,
             status=status,
             exclusion_reason=exclusion_reason,
             row_fingerprint=fingerprint,
@@ -328,6 +350,13 @@ class UmailExportEmailCandidate:
 
 
 @dataclass(frozen=True)
+class UmailExportPhoneCandidate:
+    normalized_value: str
+    display_value: str
+    verification_status: str
+
+
+@dataclass(frozen=True)
 class UmailExportContactCandidate:
     contact_id: UUID
     name: str
@@ -336,6 +365,7 @@ class UmailExportContactCandidate:
     seniority: str
     is_department_contact: bool
     emails: tuple[UmailExportEmailCandidate, ...]
+    phones: tuple[UmailExportPhoneCandidate, ...]
 
 
 @dataclass(frozen=True)
@@ -343,7 +373,9 @@ class UmailExportCompanyCandidate:
     company_id: UUID
     company_name: str
     company_website: str | None
+    country: str | None
     pre_score: float
+    route_reasons: tuple[str, ...]
     effective_tier: ProspectTier | None
     review_status: ProspectRouteReviewStatus
     contacts: tuple[UmailExportContactCandidate, ...]

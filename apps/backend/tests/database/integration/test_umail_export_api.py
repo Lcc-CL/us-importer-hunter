@@ -1,10 +1,13 @@
 """D5d2a PostgreSQL API closure for B-route export and suppression."""
 
+import csv
+import io
+import json
 from typing import cast
 
 from sqlalchemy import func, select, update
 
-from app.database.models.contact import ContactChannelModel
+from app.database.models.contact import ContactChannelModel, ContactModel
 from app.database.models.import_resolution import CompanyContactModel
 from app.database.models.outreach import OutcomeModel, OutreachModel
 from app.database.models.umail_export import UmailExportBatchModel, UmailExportRowModel
@@ -94,9 +97,15 @@ async def test_b_export_preview_suppression_download_and_no_send(
                 for company_id, contact_id, email in channel_rows
             }
             ready_email = channels[company_ids[0]][1]
+            ready_contact_id = channels[company_ids[0]][0]
             suppressed_email = channels[company_ids[1]][1]
             invalid_contact_id = channels[company_ids[2]][0]
             duplicate_contact_id = channels[company_ids[3]][0]
+            await session.execute(
+                update(ContactModel)
+                .where(ContactModel.id == ready_contact_id)
+                .values(name="Alice Buyer", normalized_name="alice buyer")
+            )
             await session.execute(
                 update(ContactChannelModel)
                 .where(
@@ -160,6 +169,20 @@ async def test_b_export_preview_suppression_download_and_no_send(
         assert first_download.headers["x-email-sent"] == "false"
         assert ready_email.encode() in first_download.content
         assert suppressed_email.encode() not in first_download.content
+        csv_rows = list(
+            csv.DictReader(io.StringIO(first_download.content.decode("utf-8-sig")))
+        )
+        ready_rows = [row for row in payload["rows"] if row["status"] == "ready"]
+        assert len(csv_rows) == len(ready_rows) == 1
+        assert [row["export_batch_id"] for row in csv_rows] == [payload["batch_id"]]
+        assert [row["export_row_id"] for row in csv_rows] == [
+            row["row_id"] for row in ready_rows
+        ]
+        assert csv_rows[0]["first_name"] == "Alice"
+        assert csv_rows[0]["last_name"] == "Buyer"
+        assert csv_rows[0]["phone"] == ""
+        assert csv_rows[0]["country"] == ""
+        assert json.loads(csv_rows[0]["route_reasons"]) == ready_rows[0]["route_reasons"]
 
         async with uow_factory() as uow:
             session = uow._session
@@ -176,6 +199,19 @@ async def test_b_export_preview_suppression_download_and_no_send(
             assert int(
                 await session.scalar(select(func.count()).select_from(UmailExportRowModel)) or 0
             ) == 4
+            persisted_ready_rows = list(
+                await session.scalars(
+                    select(UmailExportRowModel)
+                    .where(
+                        UmailExportRowModel.batch_id == payload["batch_id"],
+                        UmailExportRowModel.status == "ready",
+                    )
+                    .order_by(UmailExportRowModel.position)
+                )
+            )
+            assert [str(row.id) for row in persisted_ready_rows] == [
+                row["export_row_id"] for row in csv_rows
+            ]
 
         deactivated = await client.post(
             f"/api/v1/suppressions/{suppression.json()['suppression_id']}/deactivate",

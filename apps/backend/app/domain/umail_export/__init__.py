@@ -8,6 +8,7 @@ from app.domain.umail_export.models import (
     UmailExportCompanyCandidate,
     UmailExportContactCandidate,
     UmailExportEmailCandidate,
+    UmailExportPhoneCandidate,
     UmailExportRow,
     UmailExportRowStatus,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "UmailExportCompanyCandidate",
     "UmailExportContactCandidate",
     "UmailExportEmailCandidate",
+    "UmailExportPhoneCandidate",
     "UmailExportRow",
     "UmailExportRowStatus",
 ]

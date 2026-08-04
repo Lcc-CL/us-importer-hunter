@@ -1,6 +1,6 @@
 # D5d2a Umail CSV Export & Suppression Report
 
-Date: 2026-08-02  
+Date: 2026-08-03
 Branch: `feat/umail-export-suppression-foundation`
 
 ## 1. 实现结论
@@ -92,8 +92,18 @@ D5d2a 已完成。系统现在可以从当前 ProspectRoutingRun generation 中�
 
 - 功能分支：`feat/umail-export-suppression-foundation`。
 - Commit message：`feat(umail): add auditable B-prospect CSV export and suppression`。
+- Contract 修复 Commit message：`fix(umail): preserve export identifiers in CSV contract`。
 - PR 标题：`feat(umail): add B-prospect export and suppression workflow`。
-- PR 在本报告随最终单一 Commit 推送后创建，保持 OPEN，不执行合并。
+- PR：[#9](https://github.com/Lcc-CL/us-importer-hunter/pull/9)，修复完成前保持 OPEN，不提前合并。
+- 最终 PR diff 包含 32 个正式项目文件。
+
+### 仓库卫生审计
+
+- 已执行 `git diff --name-only origin/main...HEAD`、`git status --short` 和 `git ls-files`。
+- 截图中的 `/private/tmp/uih-d5c-d5d1-smoke.YMgp2b/smoke.py` 从未进入 PR、Commit 或 Git 索引，不需要删除机器上的本地文件。
+- PR diff 不包含 dump、临时 CSV、测试截图、Playwright 生成物、cache、数据库备份或绝对本机路径。
+- dump 继续位于既有 Git 忽略目录；未扩大 `.gitignore`，避免误伤正式 smoke 测试和项目脚本。
+- 新增仓库卫生测试，阻止精确文件名 `smoke.py`、`.dump` 和 `/private/tmp` 路径被追踪。
 
 ## 9. D5d2a 技术选型和理由
 
@@ -123,8 +133,8 @@ D5d2a 已完成。系统现在可以从当前 ProspectRoutingRun generation 中�
 
 ### UmailExportRow
 
-- Company/Contact/Email 快照。
-- effective route、route review status、pre-score 快照。
+- Company/Contact/Email、first/last name、phone、country 快照。
+- effective route、route review status、pre-score、route reasons 快照。
 - personal/department contact 标识。
 - ready/suppressed/invalid/duplicate 和排除原因。
 - 稳定 position 与内容型 row fingerprint。
@@ -159,25 +169,34 @@ Contract：`umail-export-contract-v1`。
 
 固定列顺序：
 
-1. `company_name`
-2. `company_website`
-3. `contact_name`
-4. `contact_title`
-5. `contact_role`
-6. `contact_seniority`
-7. `email`
-8. `campaign`
-9. `route`
-10. `pre_score`
+1. `email`
+2. `first_name`
+3. `last_name`
+4. `company`
+5. `job_title`
+6. `role`
+7. `website`
+8. `phone`
+9. `country`
+10. `prospect_score`
+11. `route_reasons`
+12. `campaign`
+13. `export_batch_id`
+14. `export_row_id`
 
 规则：
 
 - 仅 ready row 进入 CSV；其他状态只在审计预览保留。
+- `export_batch_id` 和 `export_row_id` 直接读取已持久化的不可变 ExportRow 快照；下载不查询最新 Contact 或 Company 字段。
+- `first_name` / `last_name` 在创建 ExportRow 时确定性拆分并持久化；`phone` / `country` 缺失时输出空字符串。
+- `route_reasons` 是持久化 reason code 快照的紧凑 JSON 数组，顺序稳定且可解析。
 - UTF-8 BOM 编码。
 - CRLF 行结束符。
 - Python CSV writer 处理引号、逗号和换行。
 - 以 `= + - @ tab CR` 开始的文本添加前导单引号，防止 formula injection。
 - 重复下载从持久化 rows 重建；内容 hash 必须等于 Batch `content_sha256`，否则拒绝下载。
+
+PR #9 尚未合并，因此直接修订 `umail-export-contract-v1` 和同一 D5d2a Migration，避免为尚未发布、尚无兼容消费者的错误 Contract 创建无意义 V2。任何已经进入 `main` 的历史 Migration 均未修改。
 
 ## 14. API
 
@@ -213,13 +232,13 @@ Contract：`umail-export-contract-v1`。
 | SQL statements | 14 | 固定批量查询，无 N+1 |
 | CSV bytes | 130,062 | 记录值 |
 
-样本分类：ready 750、suppressed 100、invalid 100、duplicate 50。
+样本分类：ready 750、suppressed 100、invalid 100、duplicate 50。Contract 修订后再次运行同一定向性能测试，1 passed in 2.46 s，全部性能和 SQL 上限断言继续通过。
 
 ## 17. 测试门禁
 
-- Backend `pytest`：1188 passed。
+- Backend `pytest`：1189 passed。
 - Backend Ruff：通过。
-- Backend strict mypy：399 source files 通过。
+- Backend strict mypy：400 source files 通过。
 - Migration scratch PostgreSQL upgrade/downgrade/upgrade：通过。
 - `alembic current / heads / check`：通过，单一 head。
 - D5d2a PostgreSQL API：通过。
@@ -227,6 +246,7 @@ Contract：`umail-export-contract-v1`。
 - Frontend ESLint：0 errors；保留 5 个与本任务无关的既有 warning。
 - Frontend production build + TypeScript：通过。
 - Playwright Chromium 定向：1 passed，覆盖刷新恢复、四种状态、Suppression 创建/停用、B 选择、CSV 下载和 no-send 文案。
+- CSV Contract 测试覆盖持久化 batch/row ID、每个 ready row 与数据库 ID 一致、first/last name 拆分、phone/country 空值、稳定 JSON route reasons、重复下载 ID/顺序/hash 一致，以及不创建发送状态、Outcome 或 Outreach 变更。
 - 修复了既有并发 ProspectBatch 测试使用独立 committed sessions 后未清理自身 fixture 的隔离问题；未修改产品逻辑。
 
 ## 18. 安全检查

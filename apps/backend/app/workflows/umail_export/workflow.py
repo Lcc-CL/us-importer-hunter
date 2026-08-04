@@ -24,6 +24,7 @@ from app.domain.umail_export import (
     UmailExportCompanyCandidate,
     UmailExportContactCandidate,
     UmailExportEmailCandidate,
+    UmailExportPhoneCandidate,
     UmailExportRow,
     UmailExportRowStatus,
 )
@@ -37,16 +38,20 @@ from app.shared.exceptions import (
 UmailUowFactory = Callable[[], UmailExportUnitOfWork]
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 CSV_COLUMNS = (
-    "company_name",
-    "company_website",
-    "contact_name",
-    "contact_title",
-    "contact_role",
-    "contact_seniority",
     "email",
+    "first_name",
+    "last_name",
+    "company",
+    "job_title",
+    "role",
+    "website",
+    "phone",
+    "country",
+    "prospect_score",
+    "route_reasons",
     "campaign",
-    "route",
-    "pre_score",
+    "export_batch_id",
+    "export_row_id",
 )
 ROLE_PRIORITY = {
     "procurement": 0,
@@ -321,16 +326,20 @@ def render_umail_csv(rows: tuple[UmailExportRow, ...], *, campaign: str) -> byte
             continue
         writer.writerow(
             (
+                _formula_safe(row.email or ""),
+                _formula_safe(row.first_name or ""),
+                _formula_safe(row.last_name or ""),
                 _formula_safe(row.company_name),
-                _formula_safe(row.company_website or ""),
-                _formula_safe(row.contact_name or ""),
                 _formula_safe(row.contact_title or ""),
                 _formula_safe(row.contact_role or ""),
-                _formula_safe(row.contact_seniority or ""),
-                _formula_safe(row.email or ""),
-                _formula_safe(campaign),
-                row.route.value,
+                _formula_safe(row.company_website or ""),
+                _formula_safe(row.phone or ""),
+                _formula_safe(row.country or ""),
                 f"{row.pre_score:.2f}",
+                _formula_safe(_stable_route_reasons(row.route_reasons)),
+                _formula_safe(campaign),
+                str(row.batch_id),
+                str(row.id),
             )
         )
     return codecs.BOM_UTF8 + buffer.getvalue().encode("utf-8")
@@ -437,6 +446,8 @@ def _new_row(
     status: UmailExportRowStatus,
     reason: str | None,
 ) -> UmailExportRow:
+    first_name, last_name = _split_contact_name(contact.name if contact else None)
+    phone = _select_phone(contact.phones) if contact else None
     return UmailExportRow.create(
         batch_id=batch_id,
         position=position,
@@ -445,13 +456,18 @@ def _new_row(
         company_name=company.company_name,
         company_website=company.company_website,
         contact_name=contact.name if contact else None,
+        first_name=first_name,
+        last_name=last_name,
         contact_title=contact.title if contact else None,
         contact_role=contact.role_category if contact else None,
         contact_seniority=contact.seniority if contact else None,
         is_department_contact=contact.is_department_contact if contact else False,
         email=email,
+        phone=phone,
+        country=company.country,
         route_review_status=company.review_status,
         pre_score=company.pre_score,
+        route_reasons=company.route_reasons,
         status=status,
         exclusion_reason=reason,
     )
@@ -487,6 +503,32 @@ def _select_email(
     )
 
 
+def _select_phone(phones: tuple[UmailExportPhoneCandidate, ...]) -> str | None:
+    if not phones:
+        return None
+    selected = min(
+        phones,
+        key=lambda phone: (
+            VERIFICATION_PRIORITY.get(phone.verification_status, 99),
+            phone.normalized_value,
+        ),
+    )
+    return selected.display_value.strip() or selected.normalized_value
+
+
+def _split_contact_name(value: str | None) -> tuple[str | None, str | None]:
+    if value is None:
+        return None, None
+    parts = value.strip().split(maxsplit=1)
+    if not parts:
+        return None, None
+    return parts[0], parts[1] if len(parts) == 2 else None
+
+
+def _stable_route_reasons(reasons: tuple[str, ...]) -> str:
+    return json.dumps(list(reasons), ensure_ascii=False, separators=(",", ":"))
+
+
 def _selection_hash(
     *,
     routing_run_id: UUID,
@@ -505,7 +547,9 @@ def _selection_hash(
                 "company_id": str(company.company_id),
                 "company_name": company.company_name,
                 "website": company.company_website,
+                "country": company.country,
                 "pre_score": company.pre_score,
+                "route_reasons": company.route_reasons,
                 "tier": company.effective_tier.value if company.effective_tier else None,
                 "review": company.review_status.value,
                 "contacts": [
@@ -522,6 +566,14 @@ def _selection_hash(
                                 "verification": email.verification_status,
                             }
                             for email in contact.emails
+                        ],
+                        "phones": [
+                            {
+                                "value": phone.normalized_value,
+                                "display": phone.display_value,
+                                "verification": phone.verification_status,
+                            }
+                            for phone in contact.phones
                         ],
                     }
                     for contact in company.contacts
