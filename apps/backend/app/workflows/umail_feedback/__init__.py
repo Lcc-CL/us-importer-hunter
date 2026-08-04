@@ -6,6 +6,7 @@ from app.workflows.umail_feedback.workflow import (
     UmailFeedbackStatistics,
     UmailResultApplyOutcome,
     UmailResultImportWorkflow,
+    UmailResultMatchEstimate,
     UmailResultRowPage,
     UmailResultSubmission,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "UmailFeedbackStatistics",
     "UmailResultApplyOutcome",
     "UmailResultImportWorkflow",
+    "UmailResultMatchEstimate",
     "UmailResultRowPage",
     "UmailResultSubmission",
 ]

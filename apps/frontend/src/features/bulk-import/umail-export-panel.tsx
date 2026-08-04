@@ -22,6 +22,7 @@ interface UmailExportPanelProps {
   routes: ProspectRouteResponse[];
   campaign: string;
   initialBatchId?: string;
+  onBatchChange?: (batch: UmailExportBatchResponse) => void;
 }
 
 type SuppressionTarget = "email" | "domain" | "company";
@@ -31,6 +32,7 @@ export function UmailExportPanel({
   routes,
   campaign,
   initialBatchId,
+  onBatchChange,
 }: UmailExportPanelProps) {
   const { t } = useI18n();
   const eligibleRoutes = useMemo(
@@ -75,7 +77,10 @@ export function UmailExportPanel({
     async function restore() {
       try {
         await loadSuppressions();
-        if (initialBatchId) await loadBatch(initialBatchId);
+        if (initialBatchId) {
+          const restored = await loadBatch(initialBatchId);
+          onBatchChange?.(restored);
+        }
       } catch (caught: unknown) {
         if (active) setError(getClientErrorDetails(caught).message);
       } finally {
@@ -86,7 +91,7 @@ export function UmailExportPanel({
     return () => {
       active = false;
     };
-  }, [initialBatchId, loadBatch, loadSuppressions]);
+  }, [initialBatchId, loadBatch, loadSuppressions, onBatchChange]);
 
   function toggleCompany(companyId: string) {
     setSelectedCompanies((current) =>
@@ -117,6 +122,7 @@ export function UmailExportPanel({
         campaign,
       );
       setBatch(created);
+      onBatchChange?.(created);
       persistBatchId(created.batch_id);
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);

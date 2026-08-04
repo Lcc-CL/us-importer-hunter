@@ -29,6 +29,7 @@ ALLOWED_LOGICAL_FIELDS = frozenset(
         "external_company_id",
         "website",
         "address",
+        "country",
         "company_type",
         "phone",
         "contact_name",
@@ -41,6 +42,9 @@ ALLOWED_LOGICAL_FIELDS = frozenset(
         "supplier",
         "origin_country",
         "shipment_date",
+        "quantity",
+        "weight",
+        "amount",
         "pol",
         "pod",
     }

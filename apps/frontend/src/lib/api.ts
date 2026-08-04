@@ -366,6 +366,63 @@ export interface ImportSessionCreateResponse extends ImportSessionResponse {
   reused_existing: boolean;
 }
 
+export interface NetEasePreflightResponse {
+  file_type: "csv" | "xlsx";
+  file_size_bytes: number;
+  file_sha256: string;
+  encoding: string;
+  sheets: string[];
+  selected_sheet: string;
+  total_rows: number;
+  analyzed_rows: number;
+  inferred_data_type: "company" | "contact" | "shipment" | "mixed" | "unknown";
+  mapping_profile: "netease-foreign-trade-v1";
+  suggested_mapping: Record<string, string>;
+  mapping_confidence: Record<string, string>;
+  manual_mapping_applied: boolean;
+  unknown_fields: string[];
+  missing_required_fields: string[];
+  duplicate_columns: string[];
+  empty_rows: number;
+  invalid_rows: number;
+  estimated_company_count: number;
+  estimated_contact_count: number;
+  estimated_trade_record_count: number;
+  coverage: Record<string, number>;
+  estimated_high_confidence_reviews: number;
+  estimated_medium_confidence_reviews: number;
+  no_business_side_effects: true;
+  real_data_gate: "enabled" | "blocked";
+}
+
+export interface UmailPreflightResponse {
+  file_type: "csv";
+  file_size_bytes: number;
+  file_sha256: string;
+  encoding: string;
+  total_rows: number;
+  mapping_profile: "umail-result-preflight-v1";
+  suggested_mapping: Record<string, string>;
+  mapping_confidence: Record<string, string>;
+  manual_mapping_applied: boolean;
+  unknown_fields: string[];
+  missing_required_fields: string[];
+  duplicate_columns: string[];
+  event_type_distribution: Record<string, number>;
+  time_format_distribution: Record<string, number>;
+  bounce_type_distribution: Record<string, number>;
+  coverage: Record<string, number>;
+  estimated_strong_id_matches: number;
+  estimated_email_fallback_matches: number;
+  estimated_ambiguous_rows: number;
+  unsupported_event_count: number;
+  missing_occurred_at_count: number;
+  invalid_rows: number;
+  match_estimate_basis: "file_identifiers_only" | "database_snapshot";
+  no_business_side_effects: true;
+  real_data_gate: "enabled" | "blocked";
+}
+
 export interface RawImportRowResponse {
   id: string;
   row_number: number;
@@ -1060,6 +1117,7 @@ export function createBulkImportSession(
   file: File,
   source: string,
   mapping?: Record<string, string>,
+  options: { realData?: boolean; mappingConfirmed?: boolean } = {},
 ): Promise<ImportSessionCreateResponse> {
   const form = new FormData();
   form.append("file", file);
@@ -1067,10 +1125,28 @@ export function createBulkImportSession(
   if (mapping && Object.keys(mapping).length > 0) {
     form.append("mapping", JSON.stringify(mapping));
   }
+  form.append("real_data", String(options.realData ?? false));
+  form.append("mapping_confirmed", String(options.mappingConfirmed ?? false));
   return requestForm<ImportSessionCreateResponse>(
     "/import-sessions",
     form,
     "bulk_import_upload_failed",
+  );
+}
+
+export function preflightNetEaseImport(
+  file: File,
+  mapping?: Record<string, string>,
+): Promise<NetEasePreflightResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  return requestForm<NetEasePreflightResponse>(
+    "/acceptance/netease-preflight",
+    form,
+    "acceptance_netease_preflight_failed",
   );
 }
 
@@ -1325,6 +1401,7 @@ export async function downloadUmailExportCsv(
 export function uploadUmailResultImport(
   file: File,
   mapping?: Record<string, string>,
+  options: { realData?: boolean; mappingConfirmed?: boolean } = {},
 ): Promise<UmailResultImportResponse> {
   const form = new FormData();
   form.append("file", file);
@@ -1332,10 +1409,28 @@ export function uploadUmailResultImport(
   if (mapping && Object.keys(mapping).length > 0) {
     form.append("mapping", JSON.stringify(mapping));
   }
+  form.append("real_data", String(options.realData ?? false));
+  form.append("mapping_confirmed", String(options.mappingConfirmed ?? false));
   return requestForm<UmailResultImportResponse>(
     "/umail-result-imports",
     form,
     "umail_result_upload_failed",
+  );
+}
+
+export function preflightUmailResult(
+  file: File,
+  mapping?: Record<string, string>,
+): Promise<UmailPreflightResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  return requestForm<UmailPreflightResponse>(
+    "/acceptance/umail-result-preflight",
+    form,
+    "acceptance_umail_preflight_failed",
   );
 }
 
@@ -1375,10 +1470,11 @@ export function getUmailResultRows(
 
 export function applyUmailResultImport(
   resultImportId: string,
+  realData = false,
 ): Promise<UmailResultImportResponse> {
   return requestJson<UmailResultImportResponse>(
     `/umail-result-imports/${encodeURIComponent(resultImportId)}/apply`,
-    { method: "POST", body: JSON.stringify({ confirmed: true }) },
+    { method: "POST", body: JSON.stringify({ confirmed: true, real_data: realData }) },
   );
 }
 

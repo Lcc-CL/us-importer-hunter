@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
-from app.api.deps import UmailResultImportWorkflowDep
+from app.api.deps import SettingsDep, UmailResultImportWorkflowDep
 from app.domain.umail_feedback import ContactEngagementEventType, UmailResultMatchStatus
 from app.schemas.mvp import ApiErrorResponse
 from app.schemas.umail_feedback import (
@@ -44,9 +44,12 @@ CSV_CONTENT_TYPES = {
 async def upload_umail_result_import(
     response: Response,
     workflow: UmailResultImportWorkflowDep,
+    settings: SettingsDep,
     file: Annotated[UploadFile, File(description="Offline Umail result CSV")],
     mapping: Annotated[str | None, Form()] = None,
     created_by: Annotated[str, Form()] = "local_reviewer",
+    real_data: Annotated[bool, Form()] = False,
+    mapping_confirmed: Annotated[bool, Form()] = False,
 ) -> UmailResultImportResponse:
     filename = PurePath(file.filename or "").name
     if not filename.lower().endswith(".csv"):
@@ -59,11 +62,23 @@ async def upload_umail_result_import(
             code="umail_result_file_type_invalid",
             message="Umail result feedback only accepts CSV content types",
         )
+    parsed_mapping = _parse_mapping(mapping)
+    if real_data:
+        if not mapping_confirmed or not parsed_mapping:
+            raise InvalidInputError(
+                code="real_data_mapping_confirmation_required",
+                message="Real-data result import requires an explicit confirmed mapping",
+            )
+        if not settings.real_data_acknowledged:
+            raise InvalidInputError(
+                code="real_data_acknowledgement_required",
+                message="Real-data result import is blocked by the local safety acknowledgement",
+            )
     try:
         submission = await workflow.upload(
             file=file.file,
             source_filename=filename,
-            mapping=_parse_mapping(mapping),
+            mapping=parsed_mapping,
             created_by=created_by,
         )
     except FeedbackCsvValidationError as exc:
@@ -120,9 +135,15 @@ async def list_umail_result_rows(
 )
 async def apply_umail_result_import(
     result_import_id: UUID,
-    _payload: UmailResultApplyRequest,
+    payload: UmailResultApplyRequest,
     workflow: UmailResultImportWorkflowDep,
+    settings: SettingsDep,
 ) -> UmailResultImportResponse:
+    if payload.real_data and not settings.real_data_acknowledged:
+        raise InvalidInputError(
+            code="real_data_acknowledgement_required",
+            message="Real-data result apply is blocked by the local safety acknowledgement",
+        )
     outcome = await workflow.apply(result_import_id)
     return UmailResultImportResponse.from_apply(outcome)
 

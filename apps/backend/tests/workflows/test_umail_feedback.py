@@ -165,6 +165,18 @@ async def test_preview_has_no_side_effects_and_apply_is_idempotent() -> None:
         f"{snapshot.export_row_id},hard_bounce,2026-08-02T12:00:00Z,,m3\n"
     ).encode()
 
+    estimate = await workflow.estimate_matches(
+        file=io.BytesIO(csv_content),
+        mapping={},
+    )
+    assert estimate.strong_id_matches == 3
+    assert estimate.email_fallback_matches == 0
+    assert estimate.ambiguous_rows == 0
+    assert uow.umail_feedback.result_import is None
+    assert uow.umail_feedback.rows == ()
+    assert uow.umail_feedback.events == []
+    assert uow.umail_exports.suppressions == []
+
     submission = await workflow.upload(
         file=io.BytesIO(csv_content),
         source_filename="feedback.csv",

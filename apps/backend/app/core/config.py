@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     import_job_retry_delay_seconds: int = 5
     import_job_max_attempts: int = 3
 
+    # Local-only acknowledgement before a user may persist real uploaded data.
+    # Preflight remains available while this is false because it has no side effects.
+    real_data_acknowledged: bool = False
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:

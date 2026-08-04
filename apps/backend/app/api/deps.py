@@ -30,6 +30,7 @@ from app.domain.services import (
     ImportEvidenceProjectionReader,
     OpportunityScoringService,
 )
+from app.services.acceptance import RealDataPreflightService
 from app.services.contact import DeterministicDecisionMakerSelectionService
 from app.services.contact_discovery_runner import WebsiteContactDiscoveryService
 from app.services.email import FakeEmailDraftGenerator, OpenAIEmailDraftGenerator
@@ -89,6 +90,16 @@ def get_request_settings(request: Request) -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(get_request_settings)]
+
+
+def get_acceptance_preflight_service() -> RealDataPreflightService:
+    return RealDataPreflightService()
+
+
+AcceptancePreflightDep = Annotated[
+    RealDataPreflightService,
+    Depends(get_acceptance_preflight_service),
+]
 
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:

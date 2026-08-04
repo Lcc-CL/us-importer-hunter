@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
-from app.api.deps import BulkImportQueryDep, BulkImportWorkflowDep
+from app.api.deps import BulkImportQueryDep, BulkImportWorkflowDep, SettingsDep
 from app.domain.bulk_import import RawImportRowStatus
 from app.schemas.bulk_import import (
     ImportSessionCreateResponse,
@@ -49,9 +49,12 @@ CSV_CONTENT_TYPES = {
 async def create_import_session(
     response: Response,
     workflow: BulkImportWorkflowDep,
+    settings: SettingsDep,
     file: Annotated[UploadFile, File(description="CSV, maximum 20 MB / 20,000 rows")],
     source: Annotated[str, Form()] = "netease_foreign_trade",
     mapping: Annotated[str | None, Form()] = None,
+    real_data: Annotated[bool, Form()] = False,
+    mapping_confirmed: Annotated[bool, Form()] = False,
 ) -> ImportSessionCreateResponse:
     filename = PurePath(file.filename or "").name
     if not filename.lower().endswith(".csv"):
@@ -65,6 +68,12 @@ async def create_import_session(
             message="D5a1 only accepts CSV content types",
         )
     parsed_mapping = _parse_mapping(mapping)
+    _require_real_data_acknowledgement(
+        real_data=real_data,
+        mapping_confirmed=mapping_confirmed,
+        mapping=parsed_mapping,
+        acknowledged=settings.real_data_acknowledged,
+    )
     try:
         outcome = await workflow.upload(
             file=file.file,
@@ -141,3 +150,24 @@ def _parse_mapping(value: str | None) -> dict[str, str]:
             message="mapping must contain non-empty string keys and column names",
         )
     return {key.strip(): column for key, column in decoded.items()}
+
+
+def _require_real_data_acknowledgement(
+    *,
+    real_data: bool,
+    mapping_confirmed: bool,
+    mapping: dict[str, str],
+    acknowledged: bool,
+) -> None:
+    if not real_data:
+        return
+    if not mapping_confirmed or not mapping:
+        raise InvalidInputError(
+            code="real_data_mapping_confirmation_required",
+            message="Real-data import requires an explicit confirmed mapping",
+        )
+    if not acknowledged:
+        raise InvalidInputError(
+            code="real_data_acknowledgement_required",
+            message="Real-data import is blocked by the local safety acknowledgement",
+        )
