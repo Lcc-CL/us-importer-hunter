@@ -77,6 +77,13 @@ class UmailResultApplyOutcome:
 
 
 @dataclass(frozen=True)
+class UmailResultMatchEstimate:
+    strong_id_matches: int
+    email_fallback_matches: int
+    ambiguous_rows: int
+
+
+@dataclass(frozen=True)
 class UmailResultRowPage:
     page: int
     limit: int
@@ -138,6 +145,54 @@ class UmailResultImportWorkflow:
     ) -> None:
         self._uow_factory = uow_factory
         self._csv_intake = csv_intake or UmailResultCsvIntake()
+
+    async def estimate_matches(
+        self,
+        *,
+        file: BinaryIO,
+        mapping: dict[str, str],
+    ) -> UmailResultMatchEstimate:
+        """Read current immutable export snapshots without creating feedback rows."""
+        parsed_file = self._csv_intake.parse(file, mapping=mapping)
+        parsed_rows = _parse_rows(parsed_file)
+        export_row_ids = tuple(
+            dict.fromkeys(
+                row.export_row_id for row in parsed_rows if row.export_row_id is not None
+            )
+        )
+        emails = tuple(
+            dict.fromkeys(
+                row.normalized_email
+                for row in parsed_rows
+                if row.normalized_email is not None
+            )
+        )
+        async with self._uow_factory() as uow:
+            snapshots = await uow.umail_feedback.load_export_snapshots(
+                export_row_ids=export_row_ids,
+                emails=emails,
+            )
+        matched_rows = _match_rows(
+            result_import_id=uuid4(),
+            parsed_rows=parsed_rows,
+            snapshots=snapshots,
+        )
+        return UmailResultMatchEstimate(
+            strong_id_matches=sum(
+                row.match_status is UmailResultMatchStatus.MATCHED
+                and row.match_method == "export_row_id"
+                for row in matched_rows
+            ),
+            email_fallback_matches=sum(
+                row.match_status is UmailResultMatchStatus.MATCHED
+                and row.match_method != "export_row_id"
+                for row in matched_rows
+            ),
+            ambiguous_rows=sum(
+                row.match_status is UmailResultMatchStatus.AMBIGUOUS
+                for row in matched_rows
+            ),
+        )
 
     async def upload(
         self,

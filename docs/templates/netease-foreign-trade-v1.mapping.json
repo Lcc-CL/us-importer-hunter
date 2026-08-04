@@ -1,0 +1,23 @@
+{
+  "company_name": "company_name",
+  "external_company_id": "company_id",
+  "website": "website",
+  "address": "address",
+  "country": "country",
+  "company_type": "company_type",
+  "phone": "phone",
+  "contact_name": "contact_name",
+  "contact_title": "title",
+  "contact_email": "email",
+  "contact_phone": "contact_phone",
+  "contact_linkedin": "linkedin",
+  "hs_code": "hs_code",
+  "product_description": "product",
+  "origin_country": "origin_country",
+  "shipment_date": "shipment_date",
+  "quantity": "quantity",
+  "weight": "weight",
+  "amount": "amount",
+  "pol": "pol",
+  "pod": "pod"
+}

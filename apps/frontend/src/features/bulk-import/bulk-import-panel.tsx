@@ -1,7 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { Ban, CheckCircle2, ExternalLink, FileCheck2, GitMerge, Play, RefreshCw, Route, ShieldCheck, Upload } from "lucide-react";
+import {
+  Ban,
+  CheckCircle2,
+  ExternalLink,
+  FileCheck2,
+  FileSearch,
+  GitMerge,
+  Play,
+  RefreshCw,
+  Route,
+  ShieldCheck,
+  Upload,
+} from "lucide-react";
 
 import {
   senderProfileServerSnapshot,
@@ -25,6 +37,7 @@ import {
   getProspectBatchCompanies,
   getProspectBatchExecution,
   getProspectRoutingRun,
+  preflightNetEaseImport,
   resumeProspectBatchCompany,
   retryProspectBatchCompany,
   reviewImportEntityDecision,
@@ -35,6 +48,7 @@ import {
   type ImportResolutionResponse,
   type ImportReviewAction,
   type ImportSessionResponse,
+  type NetEasePreflightResponse,
   type ProspectRouteResponse,
   type ProspectBatchCompanyResponse,
   type ProspectBatchExecutionResponse,
@@ -44,6 +58,8 @@ import {
   type ProspectTier,
   type RawImportRowResponse,
   type RawImportRowStatus,
+  type UmailExportBatchResponse,
+  type UmailResultImportResponse,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { UmailExportPanel } from "./umail-export-panel";
@@ -74,6 +90,7 @@ interface BulkImportPanelProps {
   initialBatchId?: string;
   initialUmailExportBatchId?: string;
   initialUmailResultImportId?: string;
+  initialRealDataMode?: boolean;
 }
 
 export function BulkImportPanel({
@@ -82,10 +99,15 @@ export function BulkImportPanel({
   initialBatchId,
   initialUmailExportBatchId,
   initialUmailResultImportId,
+  initialRealDataMode = false,
 }: BulkImportPanelProps) {
   const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
   const [mappingText, setMappingText] = useState("");
+  const [preflight, setPreflight] = useState<NetEasePreflightResponse | null>(null);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
+  const [realDataMode, setRealDataMode] = useState(initialRealDataMode);
   const [session, setSession] = useState<ImportSessionResponse | null>(null);
   const [rows, setRows] = useState<RawImportRowResponse[]>([]);
   const [rowTotal, setRowTotal] = useState(0);
@@ -118,6 +140,9 @@ export function BulkImportPanel({
   const [batchBusy, setBatchBusy] = useState(Boolean(initialRoutingRunId && initialBatchId));
   const [busy, setBusy] = useState(Boolean(initialSessionId));
   const [error, setError] = useState<string | null>(null);
+  const [umailExportBatch, setUmailExportBatch] =
+    useState<UmailExportBatchResponse | null>(null);
+  const [umailResult, setUmailResult] = useState<UmailResultImportResponse | null>(null);
   const storedSender = useSyncExternalStore(
     subscribeSenderProfile,
     senderProfileSnapshot,
@@ -337,25 +362,72 @@ export function BulkImportPanel({
     window.history.replaceState(null, "", currentUrl);
   }
 
+  function updateRealDataMode(enabled: boolean) {
+    setRealDataMode(enabled);
+    setMappingConfirmed(false);
+    const currentUrl = new URL(window.location.href);
+    if (enabled) currentUrl.searchParams.set("real_data", "1");
+    else currentUrl.searchParams.delete("real_data");
+    window.history.replaceState(null, "", currentUrl);
+  }
+
+  function parseMapping(): Record<string, string> | undefined {
+    if (!mappingText.trim()) return undefined;
+    const decoded: unknown = JSON.parse(mappingText);
+    if (
+      typeof decoded !== "object" ||
+      decoded === null ||
+      Array.isArray(decoded) ||
+      !Object.entries(decoded).every(
+        ([key, value]) => key.trim() && typeof value === "string" && value.trim(),
+      )
+    ) {
+      throw new Error("invalid mapping");
+    }
+    return decoded as Record<string, string>;
+  }
+
+  async function handlePreflight() {
+    if (!file || preflightBusy || busy) return;
+    let mapping: Record<string, string> | undefined;
+    try {
+      mapping = parseMapping();
+    } catch {
+      setError(t("bulk.mappingInvalid"));
+      return;
+    }
+    setPreflightBusy(true);
+    setError(null);
+    setMappingConfirmed(false);
+    try {
+      const inspected = await preflightNetEaseImport(file, mapping);
+      setPreflight(inspected);
+      setMappingText(JSON.stringify(inspected.suggested_mapping, null, 2));
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setPreflightBusy(false);
+    }
+  }
+
   async function handleUpload() {
     if (!file || busy) return;
     setBusy(true);
     setError(null);
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setError(t("acceptance.xlsxImportPending"));
+      setBusy(false);
+      return;
+    }
+    if (realDataMode && (!preflight || !mappingConfirmed)) {
+      setError(t("acceptance.confirmMappingRequired"));
+      setBusy(false);
+      return;
+    }
     let mapping: Record<string, string> | undefined;
     if (mappingText.trim()) {
       try {
-        const decoded: unknown = JSON.parse(mappingText);
-        if (
-          typeof decoded !== "object" ||
-          decoded === null ||
-          Array.isArray(decoded) ||
-          !Object.entries(decoded).every(
-            ([key, value]) => key.trim() && typeof value === "string" && value.trim(),
-          )
-        ) {
-          throw new Error("invalid mapping");
-        }
-        mapping = decoded as Record<string, string>;
+        mapping = parseMapping();
       } catch {
         setError(t("bulk.mappingInvalid"));
         setBusy(false);
@@ -363,7 +435,10 @@ export function BulkImportPanel({
       }
     }
     try {
-      const created = await createBulkImportSession(file, DEFAULT_SOURCE, mapping);
+      const created = await createBulkImportSession(file, DEFAULT_SOURCE, mapping, {
+        realData: realDataMode,
+        mappingConfirmed,
+      });
       setSession(created);
       setPage(1);
       setRowStatus("");
@@ -608,6 +683,35 @@ export function BulkImportPanel({
     batchExecution && ["pending", "leased", "running"].includes(batchExecution.status),
   );
   const draftCount = batchCompanies.filter((company) => company.draft_id !== null).length;
+  const acceptanceSteps = [
+    [t("acceptance.step1"), Boolean(preflight)],
+    [t("acceptance.step2"), mappingConfirmed],
+    [t("acceptance.step3"), Boolean(session)],
+    [
+      t("acceptance.step4"),
+      Boolean(resolution && ["completed", "partial_failed"].includes(resolution.resolution_status)),
+    ],
+    [t("acceptance.step5"), Boolean(routingRun)],
+    [
+      t("acceptance.step6"),
+      Boolean(
+        routedBatch ||
+          routes.some(
+            (route) =>
+              route.effective_tier === "B" &&
+              ["confirmed", "overridden"].includes(route.review_status),
+          ),
+      ),
+    ],
+    [t("acceptance.step7"), Boolean(umailExportBatch || initialUmailExportBatchId)],
+    [t("acceptance.step8"), Boolean(umailResult)],
+    [t("acceptance.step9"), Boolean(umailResult?.status.includes("applied"))],
+    [t("acceptance.step10"), false],
+  ] as const;
+  const currentStep = Math.min(
+    acceptanceSteps.findIndex(([, complete]) => !complete) + 1 || 10,
+    10,
+  );
 
   return (
     <section
@@ -624,17 +728,66 @@ export function BulkImportPanel({
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
           {t("bulk.intro")}
         </p>
+        <div className="mt-4 rounded-2xl border border-indigo-200 bg-white/90 p-4" data-testid="acceptance-step-nav">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
+                {t("acceptance.kicker")}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {t("acceptance.currentStep", { step: currentStep })}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className={realDataMode ? "rounded-full bg-emerald-100 px-3 py-1 text-emerald-900" : "rounded-full bg-slate-100 px-3 py-1 text-slate-700"}>
+                {realDataMode ? t("acceptance.realData") : t("acceptance.syntheticData")}
+              </span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+                {t("acceptance.providerNotCalled")}
+              </span>
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-900">
+                {t("acceptance.noSend")}
+              </span>
+            </div>
+          </div>
+          <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            {acceptanceSteps.map(([label, complete], index) => (
+              <li
+                className={complete ? "rounded-xl border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900" : index + 1 === currentStep ? "rounded-xl border border-indigo-300 bg-indigo-50 p-2 text-xs font-semibold text-indigo-900" : "rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500"}
+                key={label}
+              >
+                {index + 1}. {label}
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-xs text-slate-600">
+            {t("acceptance.entitySummary", {
+              rows: session?.total_rows ?? 0,
+              companies: resolution
+                ? resolution.companies_created + resolution.companies_reused
+                : 0,
+              contacts: resolution
+                ? resolution.contacts_created + resolution.contacts_reused
+                : 0,
+              routes: routingRun?.total_companies ?? 0,
+            })}
+          </p>
+        </div>
       </div>
 
       <div className="grid gap-4 p-5 sm:p-7 lg:grid-cols-2">
         <label className="block text-sm font-medium text-slate-800">
           {t("bulk.file")}
           <input
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-indigo-900"
             data-testid="bulk-import-file"
             disabled={busy}
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              setPreflight(null);
+              setMappingConfirmed(false);
+            }}
             type="file"
           />
         </label>
@@ -646,22 +799,52 @@ export function BulkImportPanel({
             value={DEFAULT_SOURCE}
           />
         </label>
+        <label className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-slate-700 lg:col-span-2">
+          <input
+            checked={realDataMode}
+            className="mt-1"
+            data-testid="acceptance-real-data-mode"
+            onChange={(event) => updateRealDataMode(event.target.checked)}
+            type="checkbox"
+          />
+          <span>{t("acceptance.realDataToggle")}</span>
+        </label>
         <label className="block text-sm font-medium text-slate-800 lg:col-span-2">
           {t("bulk.mapping")}
           <textarea
             className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
             data-testid="bulk-import-mapping"
             disabled={busy}
-            onChange={(event) => setMappingText(event.target.value)}
+            onChange={(event) => {
+              setMappingText(event.target.value);
+              setPreflight(null);
+              setMappingConfirmed(false);
+            }}
             placeholder={'{"company_name":"公司名称","contact_email":"邮箱"}'}
             value={mappingText}
           />
         </label>
         <div className="flex flex-wrap items-center gap-3 lg:col-span-2">
           <button
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-5 text-sm font-semibold text-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="netease-preflight"
+            disabled={busy || preflightBusy || !file}
+            onClick={() => void handlePreflight()}
+            type="button"
+          >
+            <FileSearch className="size-4" />
+            {preflightBusy ? t("acceptance.preflighting") : t("acceptance.preflight")}
+          </button>
+          <button
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
             data-testid="bulk-import-upload"
-            disabled={busy || !file}
+            disabled={
+              busy ||
+              preflightBusy ||
+              !file ||
+              file.name.toLowerCase().endsWith(".xlsx") ||
+              (realDataMode && (!preflight || !mappingConfirmed))
+            }
             onClick={handleUpload}
             type="button"
           >
@@ -670,6 +853,58 @@ export function BulkImportPanel({
           </button>
           <span className="text-xs text-slate-500">{t("bulk.limits")}</span>
         </div>
+        {preflight ? (
+          <div className="rounded-2xl border border-indigo-200 bg-slate-50 p-4 lg:col-span-2" data-testid="netease-preflight-result">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-900">
+                {preflight.mapping_profile} · {preflight.file_type.toUpperCase()} · {preflight.inferred_data_type}
+              </p>
+              <span className={preflight.real_data_gate === "enabled" ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-900" : "rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-900"}>
+                {preflight.real_data_gate === "enabled"
+                  ? t("acceptance.gateEnabled")
+                  : t("acceptance.gateBlocked")}
+              </span>
+            </div>
+            <p className="mt-2 break-all font-mono text-[10px] text-slate-500">
+              SHA-256 {preflight.file_sha256}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+              {[
+                [t("acceptance.rows"), preflight.total_rows],
+                [t("acceptance.companies"), preflight.estimated_company_count],
+                [t("acceptance.contacts"), preflight.estimated_contact_count],
+                [t("acceptance.tradeRecords"), preflight.estimated_trade_record_count],
+                [t("acceptance.invalidRows"), preflight.invalid_rows],
+                [t("acceptance.highConfidence"), preflight.estimated_high_confidence_reviews],
+                [t("acceptance.mediumConfidence"), preflight.estimated_medium_confidence_reviews],
+              ].map(([label, value]) => (
+                <div className="rounded-xl bg-white p-2" key={String(label)}>
+                  <p className="text-[11px] text-slate-500">{label}</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-950">{value}</p>
+                </div>
+              ))}
+            </div>
+            {preflight.missing_required_fields.length || preflight.duplicate_columns.length ? (
+              <p className="mt-3 text-xs text-rose-700">
+                {t("acceptance.blockers")}: {[
+                  ...preflight.missing_required_fields,
+                  ...preflight.duplicate_columns,
+                ].join(" · ")}
+              </p>
+            ) : null}
+            <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+              <input
+                checked={mappingConfirmed}
+                className="mt-1"
+                data-testid="netease-mapping-confirmed"
+                disabled={preflight.missing_required_fields.length > 0 || preflight.duplicate_columns.length > 0}
+                onChange={(event) => setMappingConfirmed(event.target.checked)}
+                type="checkbox"
+              />
+              <span>{t("acceptance.confirmMapping")}</span>
+            </label>
+          </div>
+        ) : null}
       </div>
 
       <p className="mx-5 mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 sm:mx-7">
@@ -682,7 +917,11 @@ export function BulkImportPanel({
         </p>
       ) : null}
 
-      <UmailFeedbackPanel initialImportId={initialUmailResultImportId} />
+      <UmailFeedbackPanel
+        initialImportId={initialUmailResultImportId}
+        onImportChange={setUmailResult}
+        realDataMode={realDataMode}
+      />
 
       {session ? (
         <div className="border-t border-slate-200 px-5 py-6 sm:px-7" data-testid="bulk-import-result">
@@ -1129,6 +1368,7 @@ export function BulkImportPanel({
                   key={routingRun.routing_run_id}
                   routes={routes}
                   routingRunId={routingRun.routing_run_id}
+                  onBatchChange={setUmailExportBatch}
                 />
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">

@@ -23,6 +23,7 @@ from app.workflows.umail_feedback import (
 
 class UmailResultApplyRequest(BaseModel):
     confirmed: Literal[True]
+    real_data: bool = False
 
 
 class UmailResultImportResponse(BaseModel):
