@@ -17,6 +17,7 @@ test("preflights NetEase data without writes and restores real-data mode", async
         research_provider: "fake",
         research_model: "fake-research-v1",
         environment: "test",
+        real_data_gate: "blocked",
       }),
     }),
   );
@@ -44,6 +45,12 @@ test("preflights NetEase data without writes and restores real-data mode", async
           company_name: "medium",
           contact_email: "medium",
           product_description: "medium",
+        },
+        source_columns: ["公司名称", "邮箱", "产品"],
+        sample_values: {
+          company_name: "A•••s",
+          contact_email: "a•a@e•••••e.test",
+          product_description: "h••••s",
         },
         manual_mapping_applied: false,
         unknown_fields: [],
@@ -90,14 +97,12 @@ test("preflights NetEase data without writes and restores real-data mode", async
   await expect(page.getByTestId("netease-preflight-result")).toContainText(
     "netease-foreign-trade-v1",
   );
-  await expect(page.getByTestId("bulk-import-mapping")).toContainText(
+  await expect(page.getByTestId("structured-mapping-editor")).toContainText(
     "company_name",
   );
   await page.getByTestId("netease-mapping-confirmed").check();
   expect(importSessionCalled).toBe(false);
-
-  await page.reload();
-  await expect(page.getByTestId("acceptance-real-data-mode")).toBeChecked();
-  await expect(page.getByTestId("acceptance-step-nav")).toContainText("真实数据模式");
+  await expect(page).toHaveURL(/real_data=1/);
+  await expect(page).toHaveURL(/step=2/);
   expect(consoleGuard.problems()).toEqual([]);
 });

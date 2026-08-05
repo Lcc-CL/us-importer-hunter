@@ -48,6 +48,7 @@ class BulkImportWorkflow:
         original_filename: str,
         source: str,
         mapping: Mapping[str, str],
+        expected_file_sha256: str | None = None,
     ) -> BulkImportOutcome:
         normalized_source = self._normalize_source(source)
         safe_filename = PurePath(original_filename).name.strip()
@@ -59,6 +60,8 @@ class BulkImportWorkflow:
             file,
             mapping=mapping,
         )
+        if expected_file_sha256 and preflight.file_sha256 != expected_file_sha256:
+            raise ValueError("file changed after preflight")
         existing = await self._find_existing(
             source=normalized_source,
             file_sha256=preflight.file_sha256,

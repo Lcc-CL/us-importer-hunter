@@ -37,3 +37,4 @@ class RuntimeStatusResponse(BaseModel):
     research_provider: Literal["fake", "openai", "deepseek"]
     research_model: str
     environment: str
+    real_data_gate: Literal["enabled", "blocked"]

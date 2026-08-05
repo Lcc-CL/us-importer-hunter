@@ -71,6 +71,7 @@ async function stubApi(page: Page) {
         research_provider: "fake",
         research_model: "fake-research-v1",
         environment: "test",
+        real_data_gate: "blocked",
       }),
     }),
   );
@@ -292,7 +293,7 @@ test("restores B export preview, manages suppression, and downloads CSV without 
   const consoleGuard = attachConsoleGuard(page);
   const state = await stubApi(page);
   await page.goto(
-    `/?import_session_id=${SESSION_ID}&routing_run_id=${ROUTING_RUN_ID}&umail_export_batch_id=${BATCH_ID}`,
+    `/?step=7&import_session_id=${SESSION_ID}&routing_run_id=${ROUTING_RUN_ID}&umail_export_batch_id=${BATCH_ID}`,
   );
 
   await expect(page.getByTestId("umail-export-panel")).toBeVisible();

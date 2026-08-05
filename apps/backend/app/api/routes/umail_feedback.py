@@ -50,6 +50,7 @@ async def upload_umail_result_import(
     created_by: Annotated[str, Form()] = "local_reviewer",
     real_data: Annotated[bool, Form()] = False,
     mapping_confirmed: Annotated[bool, Form()] = False,
+    expected_file_sha256: Annotated[str | None, Form()] = None,
 ) -> UmailResultImportResponse:
     filename = PurePath(file.filename or "").name
     if not filename.lower().endswith(".csv"):
@@ -74,12 +75,18 @@ async def upload_umail_result_import(
                 code="real_data_acknowledgement_required",
                 message="Real-data result import is blocked by the local safety acknowledgement",
             )
+        if expected_file_sha256 is None or len(expected_file_sha256) != 64:
+            raise InvalidInputError(
+                code="real_data_preflight_hash_required",
+                message="Real-data result import requires the SHA-256 from the latest preflight",
+            )
     try:
         submission = await workflow.upload(
             file=file.file,
             source_filename=filename,
             mapping=parsed_mapping,
             created_by=created_by,
+            expected_file_sha256=expected_file_sha256,
         )
     except FeedbackCsvValidationError as exc:
         raise InvalidInputError(code=exc.code, message=str(exc)) from exc

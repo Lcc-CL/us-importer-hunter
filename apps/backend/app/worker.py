@@ -21,6 +21,8 @@ from app.api.deps import (
     get_research_workflow,
 )
 from app.core.config import get_settings
+from app.core.redis import create_redis_client
+from app.core.worker_health import WORKER_HEARTBEAT_KEY, WORKER_HEARTBEAT_TTL_SECONDS
 from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.session import create_engine, create_session_factory
 from app.database.uow import SqlAlchemyUnitOfWork
@@ -45,6 +47,7 @@ async def run_worker() -> None:
     configure_logging(settings.log_level)
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
+    redis = create_redis_client(settings.redis_url)
 
     def uow_factory() -> UnitOfWork:
         return SqlAlchemyUnitOfWork(session_factory)
@@ -107,6 +110,11 @@ async def run_worker() -> None:
 
     try:
         while not stop.is_set():
+            await redis.set(
+                WORKER_HEARTBEAT_KEY,
+                owner,
+                ex=WORKER_HEARTBEAT_TTL_SECONDS,
+            )
             import_worked = await import_runner.run_once(owner=owner)
             prospect_worked = await runner.run_once(owner=owner)
             worked = import_worked or prospect_worked
@@ -120,6 +128,7 @@ async def run_worker() -> None:
             except TimeoutError:
                 pass
     finally:
+        await redis.aclose()
         await engine.dispose()
 
 

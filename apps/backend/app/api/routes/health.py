@@ -1,4 +1,4 @@
-"""Health endpoints: liveness (no dependencies) and readiness (DB + Redis)."""
+"""Health endpoints: liveness, readiness, and safe runtime metadata."""
 
 import logging
 
@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.api.deps import DbSessionDep, RedisDep, SettingsDep
+from app.core.worker_health import WORKER_HEARTBEAT_KEY
 from app.schemas.health import (
     DependencyStatus,
     HealthResponse,
@@ -44,12 +45,13 @@ async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
             else "fake-research-v1"
         ),
         environment=settings.app_env,
+        real_data_gate="enabled" if settings.real_data_acknowledged else "blocked",
     )
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)
 async def readiness(session: DbSessionDep, redis: RedisDep) -> ReadinessResponse:
-    """Readiness probe — verifies PostgreSQL and Redis connectivity."""
+    """Readiness probe — verifies PostgreSQL, Redis, and worker heartbeat."""
     dependencies: list[DependencyStatus] = []
 
     try:
@@ -58,16 +60,48 @@ async def readiness(session: DbSessionDep, redis: RedisDep) -> ReadinessResponse
     except Exception as exc:  # noqa: BLE001 — report, don't crash the probe
         logger.warning("Postgres readiness check failed: %s", exc)
         dependencies.append(
-            DependencyStatus(name="postgres", healthy=False, detail=str(exc))
+            DependencyStatus(
+                name="postgres",
+                healthy=False,
+                detail="database connection check failed",
+            )
         )
 
+    redis_healthy = False
     try:
         await redis.ping()
+        redis_healthy = True
         dependencies.append(DependencyStatus(name="redis", healthy=True))
     except Exception as exc:  # noqa: BLE001
         logger.warning("Redis readiness check failed: %s", exc)
         dependencies.append(
-            DependencyStatus(name="redis", healthy=False, detail=str(exc))
+            DependencyStatus(
+                name="redis",
+                healthy=False,
+                detail="cache connection check failed",
+            )
+        )
+
+    if redis_healthy:
+        try:
+            worker_alive = bool(await redis.exists(WORKER_HEARTBEAT_KEY))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Worker readiness check failed: %s", exc)
+            worker_alive = False
+        dependencies.append(
+            DependencyStatus(
+                name="worker",
+                healthy=worker_alive,
+                detail=None if worker_alive else "worker heartbeat missing or expired",
+            )
+        )
+    else:
+        dependencies.append(
+            DependencyStatus(
+                name="worker",
+                healthy=False,
+                detail="worker status unavailable because Redis is unavailable",
+            )
         )
 
     all_healthy = all(dep.healthy for dep in dependencies)

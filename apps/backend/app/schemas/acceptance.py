@@ -20,6 +20,8 @@ class NetEasePreflightResponse(BaseModel):
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    source_columns: list[str]
+    sample_values: dict[str, str]
     manual_mapping_applied: bool
     unknown_fields: list[str]
     missing_required_fields: list[str]
@@ -40,6 +42,7 @@ class NetEasePreflightResponse(BaseModel):
         payload = dict(report.__dict__)
         payload.update(
             sheets=list(report.sheets),
+            source_columns=list(report.source_columns),
             unknown_fields=list(report.unknown_fields),
             missing_required_fields=list(report.missing_required_fields),
             duplicate_columns=list(report.duplicate_columns),
@@ -58,6 +61,8 @@ class UmailPreflightResponse(BaseModel):
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    source_columns: list[str]
+    sample_values: dict[str, str]
     manual_mapping_applied: bool
     unknown_fields: list[str]
     missing_required_fields: list[str]
@@ -80,6 +85,7 @@ class UmailPreflightResponse(BaseModel):
     def from_report(cls, report: UmailPreflightReport, *, gate_enabled: bool) -> Self:
         payload = dict(report.__dict__)
         payload.update(
+            source_columns=list(report.source_columns),
             unknown_fields=list(report.unknown_fields),
             missing_required_fields=list(report.missing_required_fields),
             duplicate_columns=list(report.duplicate_columns),

@@ -8,6 +8,13 @@ const COMPLETED_COMPANY_ID = "33333333-3333-4333-8333-333333333333";
 const REVIEW_COMPANY_ID = "44444444-4444-4444-8444-444444444444";
 const JOB_ID = "55555555-5555-4555-8555-555555555550";
 
+async function openDiscoveryExperiment(page: Page): Promise<void> {
+  const entry = page.getByTestId("discovery-experiment-entry");
+  if ((await entry.getAttribute("open")) === null) {
+    await entry.locator("summary").click();
+  }
+}
+
 const task = {
   task_id: TASK_ID,
   original_prompt: "帮我找 2 家北美五金进口商",
@@ -197,6 +204,7 @@ async function stubBatchApi(page: Page) {
         research_provider: "fake",
         research_model: "fake-research-v1",
         environment: "test",
+        real_data_gate: "blocked",
       }),
     }),
   );
@@ -287,6 +295,7 @@ test("D2 selection, results, filters, and refresh recovery", async ({ page }) =>
   const guard = attachConsoleGuard(page);
   const captured = await stubBatchApi(page);
   await page.goto(`/?task_id=${TASK_ID}`);
+  await openDiscoveryExperiment(page);
 
   const panel = page.getByTestId("prospect-batch-panel");
   await expect(panel).toBeVisible();
@@ -335,6 +344,7 @@ test("D2 selection, results, filters, and refresh recovery", async ({ page }) =>
 
   await expect(page).toHaveURL(new RegExp(`batch_id=${BATCH_ID}`));
   await page.reload({ waitUntil: "networkidle" });
+  await openDiscoveryExperiment(page);
   const restored = page.getByTestId("prospect-batch-result");
   await expect(restored).toBeVisible();
   await expect(page.getByText("Atlas Hardware").first()).toBeVisible();
@@ -362,6 +372,7 @@ test("historical D2 batch without a job record still restores", async ({ page })
   );
 
   await page.goto(`/?task_id=${TASK_ID}&batch_id=${BATCH_ID}`);
+  await openDiscoveryExperiment(page);
   const panel = page.getByTestId("prospect-batch-panel");
   await expect(panel.getByTestId("prospect-batch-result")).toBeVisible();
   await expect(panel.getByTestId("batch-execution-status")).toContainText("历史批次");
@@ -431,6 +442,7 @@ test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ 
         research_provider: "fake",
         research_model: "fake-research-v1",
         environment: "test",
+        real_data_gate: "blocked",
       }),
     }),
   );
@@ -649,6 +661,7 @@ test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ 
   });
 
   await page.goto(`/?task_id=${TASK_ID}&batch_id=${BATCH_ID}`);
+  await openDiscoveryExperiment(page);
   const panel = page.getByTestId("prospect-batch-panel");
   await expect(panel.getByTestId("batch-company-needs_review")).toBeVisible();
   await panel.getByTestId("resume-batch-company").click();
@@ -661,6 +674,7 @@ test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ 
   await page.getByTestId("research-confirm").click();
   await expect(page.getByTestId("batch-evidence-review-complete")).toBeVisible();
   await page.getByRole("link", { name: "返回批量结果" }).click();
+  await openDiscoveryExperiment(page);
 
   await expect(panel.getByTestId("batch-company-needs_review")).toBeVisible();
   await panel.getByTestId("resume-batch-company").click();
@@ -669,6 +683,7 @@ test("D2b reviews evidence, resumes at scoring, and survives refresh", async ({ 
   await expect(page.getByText("没有发送邮件").last()).toBeVisible();
 
   await page.reload({ waitUntil: "networkidle" });
+  await openDiscoveryExperiment(page);
   await expect(page.getByTestId("batch-company-completed")).toHaveCount(2);
   await expect(page.getByText("Freight support for Harbor Supply")).toBeVisible();
   expect(guard.duplicateKeyWarnings()).toEqual([]);

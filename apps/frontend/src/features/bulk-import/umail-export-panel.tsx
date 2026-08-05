@@ -16,6 +16,7 @@ import {
   type UmailExportBatchResponse,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import type { AcceptanceHealthState } from "@/features/mvp-analysis/components/provider-badge";
 
 interface UmailExportPanelProps {
   routingRunId: string;
@@ -23,6 +24,7 @@ interface UmailExportPanelProps {
   campaign: string;
   initialBatchId?: string;
   onBatchChange?: (batch: UmailExportBatchResponse) => void;
+  health: AcceptanceHealthState;
 }
 
 type SuppressionTarget = "email" | "domain" | "company";
@@ -33,6 +35,7 @@ export function UmailExportPanel({
   campaign,
   initialBatchId,
   onBatchChange,
+  health,
 }: UmailExportPanelProps) {
   const { t } = useI18n();
   const eligibleRoutes = useMemo(
@@ -108,7 +111,7 @@ export function UmailExportPanel({
   }
 
   async function handlePrepare() {
-    if (busy || !effectiveSelectedCompanies.length) return;
+    if (busy || !health.backend || !health.postgres || !effectiveSelectedCompanies.length) return;
     if (!campaign.trim()) {
       setError(t("bulk.umailCampaignRequired"));
       return;
@@ -132,7 +135,7 @@ export function UmailExportPanel({
   }
 
   async function handleDownload() {
-    if (!batch || busy) return;
+    if (!batch || busy || !health.backend) return;
     setBusy(true);
     setError(null);
     try {
@@ -152,7 +155,7 @@ export function UmailExportPanel({
   }
 
   async function handleCreateSuppression() {
-    if (busy || !targetValue.trim() || !suppressionReason.trim()) return;
+    if (busy || !health.backend || !health.postgres || !targetValue.trim() || !suppressionReason.trim()) return;
     setBusy(true);
     setError(null);
     try {
@@ -171,7 +174,7 @@ export function UmailExportPanel({
   }
 
   async function handleDeactivate(suppressionId: string) {
-    if (busy) return;
+    if (busy || !health.backend || !health.postgres) return;
     setBusy(true);
     setError(null);
     try {
@@ -259,7 +262,7 @@ export function UmailExportPanel({
           <button
             className="mt-3 w-full rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             data-testid="umail-export-prepare"
-            disabled={busy || !effectiveSelectedCompanies.length}
+            disabled={!health.backend || !health.postgres || busy || !effectiveSelectedCompanies.length}
             onClick={() => void handlePrepare()}
             type="button"
           >
@@ -299,7 +302,7 @@ export function UmailExportPanel({
           <button
             className="mt-2 inline-flex items-center gap-1 rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 disabled:opacity-40"
             data-testid="suppression-create"
-            disabled={busy || !targetValue.trim() || !suppressionReason.trim()}
+            disabled={!health.backend || !health.postgres || busy || !targetValue.trim() || !suppressionReason.trim()}
             onClick={() => void handleCreateSuppression()}
             type="button"
           >
@@ -320,7 +323,7 @@ export function UmailExportPanel({
                     <button
                       aria-label={`${t("bulk.umailSuppressionDeactivate")} ${target}`}
                       className="text-rose-700 disabled:opacity-40"
-                      disabled={busy}
+                      disabled={!health.backend || !health.postgres || busy}
                       onClick={() => void handleDeactivate(entry.suppression_id)}
                       type="button"
                     >
@@ -349,7 +352,7 @@ export function UmailExportPanel({
             <button
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
               data-testid="umail-export-download"
-              disabled={busy}
+              disabled={!health.backend || busy}
               onClick={() => void handleDownload()}
               type="button"
             >
