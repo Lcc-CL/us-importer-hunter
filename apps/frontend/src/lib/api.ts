@@ -1,10 +1,9 @@
-/** Typed client for the three browser-facing MVP endpoints (ADR-0024). */
+/** Typed client for the browser-facing MVP endpoints (ADR-0024). */
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
-
-const API_V1_URL = `${API_BASE_URL}/api/v1`;
+// Browser requests are always same-origin. The Next.js route handler resolves
+// the private backend address at runtime, so container-only hostnames and stale
+// NEXT_PUBLIC build values can never leak into the browser bundle.
+const API_V1_URL = "/api/v1";
 
 export type OverallStatus = "COMPLETED" | "PARTIAL" | "REJECTED" | "FAILED";
 
@@ -379,6 +378,8 @@ export interface NetEasePreflightResponse {
   mapping_profile: "netease-foreign-trade-v1";
   suggested_mapping: Record<string, string>;
   mapping_confidence: Record<string, string>;
+  source_columns: string[];
+  sample_values: Record<string, string>;
   manual_mapping_applied: boolean;
   unknown_fields: string[];
   missing_required_fields: string[];
@@ -404,6 +405,8 @@ export interface UmailPreflightResponse {
   mapping_profile: "umail-result-preflight-v1";
   suggested_mapping: Record<string, string>;
   mapping_confidence: Record<string, string>;
+  source_columns: string[];
+  sample_values: Record<string, string>;
   manual_mapping_applied: boolean;
   unknown_fields: string[];
   missing_required_fields: string[];
@@ -934,6 +937,24 @@ export interface RuntimeStatusResponse {
   research_provider: "fake" | "openai" | "deepseek";
   research_model: string;
   environment: string;
+  real_data_gate: "enabled" | "blocked";
+}
+
+export interface HealthResponse {
+  status: "ok";
+  app: string;
+  environment: string;
+}
+
+export interface DependencyStatusResponse {
+  name: "postgres" | "redis" | "worker" | string;
+  healthy: boolean;
+  detail: string | null;
+}
+
+export interface ReadinessResponse {
+  status: "ready" | "degraded";
+  dependencies: DependencyStatusResponse[];
 }
 
 export type EvidenceFlowStatus = "completed" | "partial" | "needs_review";
@@ -1043,6 +1064,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${API_V1_URL}${path}`, {
       ...init,
       cache: "no-store",
+      signal: init?.signal ?? AbortSignal.timeout(8_000),
       headers: {
         "Content-Type": "application/json",
         ...init?.headers,
@@ -1087,6 +1109,7 @@ async function requestForm<T>(
       method: "POST",
       body: form,
       cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
     });
   } catch {
     throw new ApiNetworkError(
@@ -1113,11 +1136,27 @@ export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return requestJson<RuntimeStatusResponse>("/health/runtime");
 }
 
+export function getHealthStatus(): Promise<HealthResponse> {
+  return requestJson<HealthResponse>("/health");
+}
+
+export function getReadinessStatus(): Promise<ReadinessResponse> {
+  return requestJson<ReadinessResponse>("/health/ready");
+}
+
+export function getSafeApiRequestTarget(): string {
+  return "/api/v1 (same origin)";
+}
+
 export function createBulkImportSession(
   file: File,
   source: string,
   mapping?: Record<string, string>,
-  options: { realData?: boolean; mappingConfirmed?: boolean } = {},
+  options: {
+    realData?: boolean;
+    mappingConfirmed?: boolean;
+    expectedFileSha256?: string;
+  } = {},
 ): Promise<ImportSessionCreateResponse> {
   const form = new FormData();
   form.append("file", file);
@@ -1127,6 +1166,9 @@ export function createBulkImportSession(
   }
   form.append("real_data", String(options.realData ?? false));
   form.append("mapping_confirmed", String(options.mappingConfirmed ?? false));
+  if (options.expectedFileSha256) {
+    form.append("expected_file_sha256", options.expectedFileSha256);
+  }
   return requestForm<ImportSessionCreateResponse>(
     "/import-sessions",
     form,
@@ -1401,7 +1443,11 @@ export async function downloadUmailExportCsv(
 export function uploadUmailResultImport(
   file: File,
   mapping?: Record<string, string>,
-  options: { realData?: boolean; mappingConfirmed?: boolean } = {},
+  options: {
+    realData?: boolean;
+    mappingConfirmed?: boolean;
+    expectedFileSha256?: string;
+  } = {},
 ): Promise<UmailResultImportResponse> {
   const form = new FormData();
   form.append("file", file);
@@ -1411,6 +1457,9 @@ export function uploadUmailResultImport(
   }
   form.append("real_data", String(options.realData ?? false));
   form.append("mapping_confirmed", String(options.mappingConfirmed ?? false));
+  if (options.expectedFileSha256) {
+    form.append("expected_file_sha256", options.expectedFileSha256);
+  }
   return requestForm<UmailResultImportResponse>(
     "/umail-result-imports",
     form,

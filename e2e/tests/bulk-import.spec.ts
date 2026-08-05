@@ -7,6 +7,10 @@ test("bulk import entity resolution review survives refresh", async ({
 }) => {
   const guard = attachConsoleGuard(page);
   await page.goto("/");
+  await expect(page.getByTestId("runtime-status-card")).toHaveAttribute(
+    "data-health-phase",
+    "healthy",
+  );
 
   const panel = page.getByTestId("bulk-import-panel");
   await expect(
@@ -26,11 +30,15 @@ test("bulk import entity resolution review survives refresh", async ({
       ].join("\n"),
     ),
   });
-  await panel
-    .getByTestId("bulk-import-mapping")
-    .fill(
-      '{"company_name":"公司名称","external_company_id":"外部ID","website":"官网","address":"地址","company_type":"公司类型","contact_name":"联系人","contact_email":"邮箱","contact_title":"职位","product_description":"产品","hs_code":"HS","shipment_date":"日期","origin_country":"来源国","pol":"POL","pod":"POD"}',
-    );
+  await panel.getByTestId("netease-preflight").click();
+  await expect(panel.getByTestId("structured-mapping-editor")).toBeVisible();
+  await panel.getByText("高级 JSON 编辑").click();
+  await panel.getByTestId("mapping-json-editor").fill(
+    '{"company_name":"公司名称","external_company_id":"外部ID","website":"官网","address":"地址","company_type":"公司类型","contact_name":"联系人","contact_email":"邮箱","contact_title":"职位","product_description":"产品","hs_code":"HS","shipment_date":"日期","origin_country":"来源国","pol":"POL","pod":"POD"}',
+  );
+  await panel.getByTestId("mapping-json-apply").click();
+  await panel.getByTestId("netease-preflight-again").click();
+  await panel.getByTestId("netease-mapping-confirmed").check();
   await panel.getByTestId("bulk-import-upload").click();
 
   const result = panel.getByTestId("bulk-import-result");
@@ -40,6 +48,7 @@ test("bulk import entity resolution review survives refresh", async ({
   ).toBeVisible();
   await expect(page).toHaveURL(/import_session_id=[0-9a-f-]{36}/);
 
+  await panel.getByTestId("acceptance-step-4").click();
   await panel.getByTestId("import-resolution-start").click();
   const resolution = panel.getByTestId("import-resolution-result");
   await expect(resolution.getByText("实体归并完成")).toBeVisible();
@@ -53,7 +62,6 @@ test("bulk import entity resolution review survives refresh", async ({
   await page.reload({ waitUntil: "networkidle" });
   const restored = page.getByTestId("bulk-import-result");
   await expect(restored.getByText("导入完成，部分行无效")).toBeVisible();
-  await expect(restored.getByTestId("bulk-import-rows").locator("tr")).toHaveCount(3);
   const restoredResolution = restored.getByTestId("import-resolution-result");
   await expect(restoredResolution.getByText("实体归并完成")).toBeVisible();
   await expect(restored.getByTestId("import-resolution-reviews")).toBeVisible();
@@ -66,6 +74,7 @@ test("bulk import entity resolution review survives refresh", async ({
     }),
   ).toBeVisible();
 
+  await page.getByTestId("acceptance-step-5").click();
   await restored.getByTestId("prospect-routing-products").fill("hardware");
   await restored.getByTestId("prospect-routing-hs").fill("8205");
   await restored.getByTestId("prospect-routing-origins").fill("China");
@@ -77,6 +86,7 @@ test("bulk import entity resolution review survives refresh", async ({
   const routing = restored.getByTestId("prospect-routing-result");
   await expect(routing.getByText("路由完成")).toBeVisible();
   await expect(page).toHaveURL(/routing_run_id=[0-9a-f-]{36}/);
+  await page.getByTestId("acceptance-step-6").click();
   await expect(restored.getByTestId("prospect-routing-routes")).toBeVisible();
 
   await page.reload({ waitUntil: "networkidle" });
@@ -91,7 +101,7 @@ test("bulk import entity resolution review survives refresh", async ({
     .check();
   await page.getByTestId("prospect-routing-create-batch").click();
   await expect(page.getByTestId("prospect-routing-batch-created")).toContainText(
-    "已创建深度处理批次，尚未启动 Research 或邮件生成。",
+    "Batch 已创建，深度处理尚未启动",
   );
 
   expect(guard.duplicateKeyWarnings()).toEqual([]);

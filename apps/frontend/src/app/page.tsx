@@ -13,6 +13,7 @@ export default async function Home({
     umail_export_batch_id?: string | string[];
     umail_result_import_id?: string | string[];
     real_data?: string | string[];
+    step?: string | string[];
   }>;
 }) {
   const params = await searchParams;
@@ -25,6 +26,7 @@ export default async function Home({
   const umailExportBatchId = params.umail_export_batch_id;
   const umailResultImportId = params.umail_result_import_id;
   const realData = params.real_data;
+  const step = params.step;
   return (
     <MvpAnalysisPage
       initialCompanyId={typeof companyId === "string" ? companyId : undefined}
@@ -44,6 +46,7 @@ export default async function Home({
         typeof umailResultImportId === "string" ? umailResultImportId : undefined
       }
       initialRealDataMode={realData === "1"}
+      initialStep={typeof step === "string" ? Number(step) : undefined}
     />
   );
 }

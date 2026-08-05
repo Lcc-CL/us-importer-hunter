@@ -36,6 +36,7 @@ async function stubRoutingBatchApi(page: Page) {
         research_provider: "fake",
         research_model: "fake-research-v1",
         environment: "test",
+        real_data_gate: "blocked",
       }),
     }),
   );
@@ -324,7 +325,7 @@ test("routing batch explicit start, review gate, resume, and refresh recovery", 
   const guard = attachConsoleGuard(page);
   const captured = await stubRoutingBatchApi(page);
   await page.goto(
-    `/?import_session_id=${SESSION_ID}&routing_run_id=${ROUTING_RUN_ID}&batch_id=${BATCH_ID}`,
+    `/?step=6&import_session_id=${SESSION_ID}&routing_run_id=${ROUTING_RUN_ID}&batch_id=${BATCH_ID}`,
   );
 
   const batch = page.getByTestId("prospect-routing-batch-created");

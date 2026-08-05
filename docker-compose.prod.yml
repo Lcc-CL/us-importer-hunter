@@ -2,8 +2,8 @@
 #   browser → frontend (public) → backend (private network only) → postgres/redis
 #
 # The backend publishes no host port: it is reachable only on the compose
-# network, exactly like Zeabur's private networking. The frontend proxies the
-# allow-listed /api/v1/* paths to it via BACKEND_INTERNAL_URL (next.config.ts).
+# network, exactly like Zeabur's private networking. A runtime Next Route
+# Handler proxies allow-listed /api/v1/* paths via BACKEND_INTERNAL_URL.
 #
 # Usage (local rehearsal):
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up --build
@@ -75,9 +75,6 @@ services:
       context: ./apps/frontend
       target: prod
       args:
-        # Empty on purpose: the browser talks same-origin; the server-side
-        # proxy (BACKEND_INTERNAL_URL) reaches the backend privately.
-        NEXT_PUBLIC_API_BASE_URL: ""
         NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-true}
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000

@@ -19,6 +19,11 @@ import {
   type UmailResultRowResponse,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import type { AcceptanceHealthState } from "@/features/mvp-analysis/components/provider-badge";
+import {
+  StructuredMappingEditor,
+  type MappingGroupDefinition,
+} from "./structured-mapping-editor";
 
 const PAGE_SIZE = 50;
 const EVENT_TYPES: ContactEngagementEventType[] = [
@@ -41,20 +46,70 @@ const MATCH_STATUSES: UmailResultMatchStatus[] = [
   "duplicate",
 ];
 
+const UMAIL_MAPPING_GROUPS: MappingGroupDefinition[] = [
+  {
+    labelZh: "强关联 ID",
+    labelEn: "Strong identifiers",
+    fields: [
+      { key: "export_batch_id", labelZh: "导出批次 ID", labelEn: "Export batch ID" },
+      { key: "export_row_id", labelZh: "导出行 ID", labelEn: "Export row ID" },
+      { key: "message_id", labelZh: "邮件消息 ID", labelEn: "Message ID" },
+    ],
+  },
+  {
+    labelZh: "邮箱和 Campaign",
+    labelEn: "Email and campaign",
+    fields: [
+      { key: "email", labelZh: "收件邮箱", labelEn: "Recipient email" },
+      { key: "campaign", labelZh: "Campaign", labelEn: "Campaign" },
+    ],
+  },
+  {
+    labelZh: "事件类型",
+    labelEn: "Event type",
+    fields: [
+      { key: "event_type", labelZh: "事件 / 发送状态", labelEn: "Event / delivery status", required: true },
+    ],
+  },
+  {
+    labelZh: "发生时间",
+    labelEn: "Occurred at",
+    fields: [
+      { key: "occurred_at", labelZh: "事件发生时间", labelEn: "Event timestamp", required: true },
+    ],
+  },
+  {
+    labelZh: "Bounce 信息",
+    labelEn: "Bounce information",
+    fields: [
+      { key: "bounce_type", labelZh: "退信类型 / 原因", labelEn: "Bounce type / reason" },
+    ],
+  },
+  { labelZh: "其他结果字段", labelEn: "Other result fields", fields: [] },
+];
+
 interface UmailFeedbackPanelProps {
   initialImportId?: string;
   realDataMode?: boolean;
   onImportChange?: (result: UmailResultImportResponse) => void;
+  mode: "preview" | "apply";
+  exportBatchId?: string;
+  health: AcceptanceHealthState;
 }
 
 export function UmailFeedbackPanel({
   initialImportId,
   realDataMode = false,
   onImportChange,
+  mode,
+  exportBatchId,
+  health,
 }: UmailFeedbackPanelProps) {
   const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
-  const [mappingText, setMappingText] = useState("");
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [mappingValidated, setMappingValidated] = useState(false);
+  const [preflightFileSignature, setPreflightFileSignature] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<UmailPreflightResponse | null>(null);
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [resultImport, setResultImport] =
@@ -143,32 +198,22 @@ export function UmailFeedbackPanel({
     window.history.replaceState(null, "", currentUrl);
   }
 
-  function parseMapping(): Record<string, string> | undefined {
-    if (!mappingText.trim()) return undefined;
-    const decoded: unknown = JSON.parse(mappingText);
-    if (
-      typeof decoded !== "object" ||
-      decoded === null ||
-      Array.isArray(decoded) ||
-      !Object.entries(decoded).every(
-        ([key, value]) => key.trim() && typeof value === "string" && value.trim(),
-      )
-    ) {
-      throw new Error("invalid mapping");
-    }
-    return decoded as Record<string, string>;
+  function updateMapping(next: Record<string, string>) {
+    setMapping(next);
+    setMappingValidated(false);
+    setMappingConfirmed(false);
   }
 
   async function handleUpload() {
-    if (!file || busy) return;
-    let mapping: Record<string, string> | undefined;
-    try {
-      mapping = parseMapping();
-    } catch {
-      setError(t("feedback.mappingInvalid"));
-      return;
-    }
-    if (realDataMode && (!preflight || !mappingConfirmed)) {
+    if (!file || busy || !health.backend || !health.postgres) return;
+    if (
+      !exportBatchId ||
+      !preflight ||
+      !mappingConfirmed ||
+      !mappingValidated ||
+      preflightFileSignature !== fileSignature(file) ||
+      (realDataMode && health.realDataGate !== "enabled")
+    ) {
       setError(t("acceptance.confirmMappingRequired"));
       return;
     }
@@ -179,6 +224,7 @@ export function UmailFeedbackPanel({
       const created = await uploadUmailResultImport(file, mapping, {
         realData: realDataMode,
         mappingConfirmed,
+        expectedFileSha256: preflight.file_sha256,
       });
       setResultImport(created);
       onImportChange?.(created);
@@ -198,21 +244,19 @@ export function UmailFeedbackPanel({
   }
 
   async function handlePreflight() {
-    if (!file || busy) return;
-    let mapping: Record<string, string> | undefined;
-    try {
-      mapping = parseMapping();
-    } catch {
-      setError(t("feedback.mappingInvalid"));
-      return;
-    }
+    if (!file || busy || !health.backend) return;
     setBusy(true);
     setError(null);
     setMappingConfirmed(false);
     try {
-      const inspected = await preflightUmailResult(file, mapping);
+      const inspected = await preflightUmailResult(
+        file,
+        Object.keys(mapping).length ? mapping : undefined,
+      );
       setPreflight(inspected);
-      setMappingText(JSON.stringify(inspected.suggested_mapping, null, 2));
+      setMapping(inspected.suggested_mapping);
+      setMappingValidated(true);
+      setPreflightFileSignature(fileSignature(file));
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
     } finally {
@@ -221,7 +265,14 @@ export function UmailFeedbackPanel({
   }
 
   async function handleApply() {
-    if (!resultImport || !confirmed || busy) return;
+    if (
+      !resultImport ||
+      !confirmed ||
+      busy ||
+      !health.backend ||
+      !health.postgres ||
+      (realDataMode && health.realDataGate !== "enabled")
+    ) return;
     setBusy(true);
     setError(null);
     try {
@@ -261,6 +312,24 @@ export function UmailFeedbackPanel({
 
   const pageCount = Math.max(1, Math.ceil(rowTotal / PAGE_SIZE));
   const canApply = resultImport?.status === "ready_for_review";
+  const selectedColumns = Object.values(mapping);
+  const mappingComplete = Boolean(mapping.event_type && mapping.occurred_at) &&
+    new Set(selectedColumns).size === selectedColumns.length;
+  const currentFileMatchesPreflight = Boolean(
+    file && preflight && preflightFileSignature === fileSignature(file),
+  );
+  const uploadDisabledReasons = [
+    !health.backend ? t("runtime.writeBlocked") : null,
+    !health.postgres ? t("acceptance.databaseRequired") : null,
+    !file ? t("acceptance.selectFileReason") : null,
+    !preflight ? t("acceptance.unlockPreflight") : null,
+    !mappingComplete ? t("acceptance.mappingIncomplete") : null,
+    !mappingValidated ? t("acceptance.mappingNeedsValidation") : null,
+    !mappingConfirmed ? t("acceptance.unlockMapping") : null,
+    !exportBatchId ? t("acceptance.exportBatchRequired") : null,
+    !currentFileMatchesPreflight ? t("acceptance.fileHashChanged") : null,
+    realDataMode && health.realDataGate !== "enabled" ? t("acceptance.localGateRequired") : null,
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <section
@@ -294,6 +363,8 @@ export function UmailFeedbackPanel({
         </p>
       ) : null}
 
+      {mode === "preview" ? (
+        <>
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <label className="text-sm font-medium text-slate-800">
           {t("feedback.file")}
@@ -305,32 +376,26 @@ export function UmailFeedbackPanel({
             onChange={(event) => {
               setFile(event.target.files?.[0] ?? null);
               setPreflight(null);
+              setMapping({});
+              setMappingValidated(false);
+              setPreflightFileSignature(null);
               setMappingConfirmed(false);
             }}
             type="file"
           />
         </label>
-        <label className="text-sm font-medium text-slate-800">
-          {t("feedback.mapping")}
-          <textarea
-            className="mt-2 min-h-24 w-full rounded-xl border border-violet-200 bg-white px-3 py-2 font-mono text-xs leading-5"
-            data-testid="umail-feedback-mapping"
-            disabled={busy}
-            onChange={(event) => {
-              setMappingText(event.target.value);
-              setPreflight(null);
-              setMappingConfirmed(false);
-            }}
-            placeholder={'{"event_type":"状态","occurred_at":"发生时间"}'}
-            value={mappingText}
-          />
-        </label>
+        <div className="rounded-xl border border-violet-200 bg-white p-3 text-sm text-slate-700">
+          <p className="font-semibold">UmailExportBatch</p>
+          <p className="mt-1 font-mono text-xs text-slate-500">
+            {exportBatchId ?? t("acceptance.exportBatchRequired")}
+          </p>
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
           className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-800 disabled:opacity-40"
           data-testid="umail-feedback-preflight"
-          disabled={busy || !file}
+          disabled={busy || !file || !health.backend}
           onClick={() => void handlePreflight()}
           type="button"
         >
@@ -339,7 +404,7 @@ export function UmailFeedbackPanel({
         <button
           className="inline-flex items-center gap-2 rounded-xl bg-violet-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
           data-testid="umail-feedback-upload"
-          disabled={busy || !file || (realDataMode && (!preflight || !mappingConfirmed))}
+          disabled={busy || uploadDisabledReasons.length > 0}
           onClick={() => void handleUpload()}
           type="button"
         >
@@ -348,6 +413,11 @@ export function UmailFeedbackPanel({
         </button>
         <span className="text-xs text-slate-500">{t("feedback.limits")}</span>
       </div>
+      {uploadDisabledReasons.length ? (
+        <p className="mt-2 text-xs text-amber-800" data-testid="umail-upload-disabled-reason">
+          {uploadDisabledReasons.join(" · ")}
+        </p>
+      ) : null}
 
       {preflight ? (
         <div className="mt-4 rounded-xl border border-violet-200 bg-white p-3" data-testid="umail-feedback-preflight-result">
@@ -375,18 +445,42 @@ export function UmailFeedbackPanel({
               </div>
             ))}
           </div>
+          <div className="mt-4">
+            <StructuredMappingEditor
+              confidence={preflight.mapping_confidence}
+              confirmed={mappingConfirmed}
+              disabled={busy}
+              duplicateColumns={preflight.duplicate_columns}
+              groups={UMAIL_MAPPING_GROUPS}
+              mapping={mapping}
+              onChange={updateMapping}
+              samples={preflight.sample_values}
+              sourceColumns={preflight.source_columns}
+              validated={mappingValidated}
+            />
+          </div>
+          <button
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-violet-300 px-3 py-2 text-xs font-semibold text-violet-800 disabled:opacity-40"
+            disabled={busy || !file || !health.backend}
+            onClick={() => void handlePreflight()}
+            type="button"
+          >
+            <RefreshCw className="size-3.5" /> {t("acceptance.revalidateMapping")}
+          </button>
           <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
             <input
               checked={mappingConfirmed}
               className="mt-1"
               data-testid="umail-preflight-mapping-confirmed"
-              disabled={preflight.missing_required_fields.length > 0 || preflight.duplicate_columns.length > 0}
+              disabled={!mappingComplete || !mappingValidated}
               onChange={(event) => setMappingConfirmed(event.target.checked)}
               type="checkbox"
             />
             <span>{t("acceptance.confirmMapping")}</span>
           </label>
         </div>
+      ) : null}
+        </>
       ) : null}
 
       {resultImport ? (
@@ -452,7 +546,7 @@ export function UmailFeedbackPanel({
             </pre>
           </details>
 
-          {canApply ? (
+          {mode === "apply" && canApply ? (
             <div className="mt-3 rounded-xl border border-violet-200 bg-white p-3">
               <label className="flex items-start gap-2 text-sm text-slate-700">
                 <input
@@ -467,19 +561,29 @@ export function UmailFeedbackPanel({
               <button
                 className="mt-3 inline-flex items-center gap-2 rounded-xl bg-violet-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
                 data-testid="umail-feedback-apply"
-                disabled={busy || !confirmed}
+                disabled={
+                  busy ||
+                  !confirmed ||
+                  !health.backend ||
+                  !health.postgres ||
+                  (realDataMode && health.realDataGate !== "enabled")
+                }
                 onClick={() => void handleApply()}
                 type="button"
               >
                 <CheckCircle2 className="size-4" /> {t("feedback.apply")}
               </button>
             </div>
-          ) : (
+          ) : mode === "apply" ? (
             <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
               {t("feedback.appliedSummary", {
                 events: resultImport.applied_event_count,
                 suppressions: resultImport.suppression_created_count,
               })}
+            </p>
+          ) : (
+            <p className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+              {t("acceptance.previewBeforeApply")}
             </p>
           )}
 
@@ -638,6 +742,10 @@ function Metric({ label, value }: { label: string; value: number | string }) {
       <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
     </div>
   );
+}
+
+function fileSignature(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
 function StatisticsPanel({

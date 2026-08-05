@@ -55,6 +55,7 @@ async def create_import_session(
     mapping: Annotated[str | None, Form()] = None,
     real_data: Annotated[bool, Form()] = False,
     mapping_confirmed: Annotated[bool, Form()] = False,
+    expected_file_sha256: Annotated[str | None, Form()] = None,
 ) -> ImportSessionCreateResponse:
     filename = PurePath(file.filename or "").name
     if not filename.lower().endswith(".csv"):
@@ -73,6 +74,7 @@ async def create_import_session(
         mapping_confirmed=mapping_confirmed,
         mapping=parsed_mapping,
         acknowledged=settings.real_data_acknowledged,
+        expected_file_sha256=expected_file_sha256,
     )
     try:
         outcome = await workflow.upload(
@@ -80,6 +82,7 @@ async def create_import_session(
             original_filename=filename,
             source=source,
             mapping=parsed_mapping,
+            expected_file_sha256=expected_file_sha256,
         )
     except BulkCsvValidationError as exc:
         raise InvalidInputError(code=exc.code, message=str(exc)) from exc
@@ -158,6 +161,7 @@ def _require_real_data_acknowledgement(
     mapping_confirmed: bool,
     mapping: dict[str, str],
     acknowledged: bool,
+    expected_file_sha256: str | None,
 ) -> None:
     if not real_data:
         return
@@ -170,4 +174,9 @@ def _require_real_data_acknowledgement(
         raise InvalidInputError(
             code="real_data_acknowledgement_required",
             message="Real-data import is blocked by the local safety acknowledgement",
+        )
+    if expected_file_sha256 is None or len(expected_file_sha256) != 64:
+        raise InvalidInputError(
+            code="real_data_preflight_hash_required",
+            message="Real-data import requires the SHA-256 from the latest preflight",
         )

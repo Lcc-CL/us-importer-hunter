@@ -120,3 +120,36 @@ async def test_real_imports_require_mapping_confirmation_and_local_acknowledgeme
         )
         assert apply.status_code == 422
         assert apply.json()["code"] == "real_data_acknowledgement_required"
+
+
+async def test_real_imports_require_latest_preflight_hash_before_workflow() -> None:
+    async for client in _client(acknowledged=True):
+        netease = await client.post(
+            "/api/v1/import-sessions",
+            data={
+                "real_data": "true",
+                "mapping_confirmed": "true",
+                "mapping": '{"company_name":"company"}',
+            },
+            files={"file": ("real.csv", b"company\nAtlas\n", "text/csv")},
+        )
+        assert netease.status_code == 422
+        assert netease.json()["code"] == "real_data_preflight_hash_required"
+
+        umail = await client.post(
+            "/api/v1/umail-result-imports",
+            data={
+                "real_data": "true",
+                "mapping_confirmed": "true",
+                "mapping": '{"event_type":"event","occurred_at":"time"}',
+            },
+            files={
+                "file": (
+                    "real-umail.csv",
+                    b"event,time\ndelivered,2026-08-01\n",
+                    "text/csv",
+                )
+            },
+        )
+        assert umail.status_code == 422
+        assert umail.json()["code"] == "real_data_preflight_hash_required"

@@ -24,7 +24,11 @@ from app.domain.umail_feedback import (
     UmailResultMatchStatus,
     UmailResultRow,
 )
-from app.services.umail_feedback import ParsedFeedbackCsv, UmailResultCsvIntake
+from app.services.umail_feedback import (
+    FeedbackCsvValidationError,
+    ParsedFeedbackCsv,
+    UmailResultCsvIntake,
+)
 from app.shared.exceptions import ApplicationConflictError, ResourceNotFoundError
 
 UmailFeedbackUowFactory = Callable[[], UmailFeedbackUnitOfWork]
@@ -201,8 +205,14 @@ class UmailResultImportWorkflow:
         source_filename: str,
         mapping: dict[str, str],
         created_by: str,
+        expected_file_sha256: str | None = None,
     ) -> UmailResultSubmission:
         parsed_file = self._csv_intake.parse(file, mapping=mapping)
+        if expected_file_sha256 and parsed_file.file_sha256 != expected_file_sha256:
+            raise FeedbackCsvValidationError(
+                "umail_result_file_changed",
+                "file changed after preflight",
+            )
         async with self._uow_factory() as uow:
             existing = await uow.umail_feedback.find_import_by_file_hash(
                 parsed_file.file_sha256

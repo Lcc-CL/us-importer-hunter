@@ -39,6 +39,10 @@ e2e/test-results/
 e2e/blob-report/
 e2e/.cache/
 
+# Private real-data acceptance files. Keep the safety README tracked.
+.local/acceptance/*
+!.local/acceptance/README.txt
+
 .env
 .env.save
 .env.backup*

@@ -212,6 +212,8 @@ class NetEasePreflightReport:
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    source_columns: tuple[str, ...]
+    sample_values: dict[str, str]
     manual_mapping_applied: bool
     unknown_fields: tuple[str, ...]
     missing_required_fields: tuple[str, ...]
@@ -237,6 +239,8 @@ class UmailPreflightReport:
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    source_columns: tuple[str, ...]
+    sample_values: dict[str, str]
     manual_mapping_applied: bool
     unknown_fields: tuple[str, ...]
     missing_required_fields: tuple[str, ...]
@@ -290,6 +294,8 @@ class RealDataPreflightService:
             mapping_profile=NETEASE_MAPPING_PROFILE,
             suggested_mapping=suggested,
             mapping_confidence=confidence,
+            source_columns=sheet.headers,
+            sample_values=_masked_samples(sheet, suggested),
             manual_mapping_applied=bool(mapping),
             unknown_fields=tuple(
                 header for header in sheet.headers if header not in mapped_columns
@@ -392,6 +398,8 @@ class RealDataPreflightService:
             mapping_profile=UMAIL_MAPPING_PROFILE,
             suggested_mapping=suggested,
             mapping_confidence=confidence,
+            source_columns=sheet.headers,
+            sample_values=_masked_samples(sheet, suggested),
             manual_mapping_applied=bool(mapping),
             unknown_fields=tuple(
                 header for header in sheet.headers if header not in mapped_columns
@@ -836,6 +844,52 @@ def _row_dicts(sheet: _Sheet) -> tuple[dict[str, str], ...]:
         }
         for row in sheet.rows
     )
+
+
+def _masked_samples(
+    sheet: _Sheet,
+    mapping: Mapping[str, str],
+) -> dict[str, str]:
+    """Return one deterministic, non-reversible display sample per mapped field."""
+    rows = _row_dicts(sheet)
+    samples: dict[str, str] = {}
+    for logical_field, source_column in mapping.items():
+        value = next(
+            (
+                row.get(source_column, "").strip()
+                for row in rows
+                if row.get(source_column, "").strip()
+            ),
+            "",
+        )
+        if value:
+            samples[logical_field] = _mask_sample(logical_field, value)
+    return samples
+
+
+def _mask_sample(logical_field: str, value: str) -> str:
+    if "email" in logical_field and "@" in value:
+        local, domain = value.split("@", 1)
+        domain_name, separator, suffix = domain.partition(".")
+        return (
+            f"{_mask_token(local)}@{_mask_token(domain_name)}"
+            f"{separator}{suffix}"
+        )
+    if "phone" in logical_field:
+        digits = "".join(character for character in value if character.isdigit())
+        return f"••••{digits[-2:]}" if digits else "••••"
+    if logical_field.endswith("_id") and len(value) > 8:
+        return f"{value[:4]}••••{value[-4:]}"
+    return _mask_token(value)
+
+
+def _mask_token(value: str) -> str:
+    compact = value.strip()
+    if len(compact) <= 1:
+        return "•"
+    if len(compact) == 2:
+        return f"{compact[0]}•"
+    return f"{compact[0]}{'•' * min(6, len(compact) - 2)}{compact[-1]}"
 
 
 def _mapped_value(

@@ -23,8 +23,8 @@ make frontend                 # Next.js dev server
 Open <http://localhost:3000> for the single-page MVP flow. Submit a company with
 real evidence sources, inspect the qualification and draft, approve it, then use
 **Refresh result** (or reload the `?company_id=...` URL) to verify persistence.
-The UI never sends email. Browser API access is configured once through
-`NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000`).
+The UI never sends email. Browser API access always uses same-origin
+`/api/v1/*`; the Next.js server reads `BACKEND_INTERNAL_URL` at runtime.
 
 ## Website research (v0.2.0 — Internal Beta)
 
@@ -47,9 +47,8 @@ a real model requires `RESEARCH_EXTRACTOR_PROVIDER=openai`.
 > docker compose build --no-cache frontend && docker compose up -d frontend
 > ```
 >
-> This applies to `NEXT_PUBLIC_ENABLE_RESEARCH` and `NEXT_PUBLIC_API_BASE_URL`
-> alike. Both are passed as build args and as runtime environment, so the dev
-> and prod targets behave the same.
+> This applies only to `NEXT_PUBLIC_ENABLE_RESEARCH`. Backend routing is a
+> server-only runtime setting and does not require rebuilding the frontend.
 
 Validation and known limitations:
 [docs/validation/](docs/validation/v0.2-real-company-evaluation.md) ·

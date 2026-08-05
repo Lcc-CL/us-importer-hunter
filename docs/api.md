@@ -73,10 +73,10 @@ actually requested. Swagger at `/docs` contains request and response examples.
 
 ## Browser client
 
-The single Next.js page at `http://localhost:3000` calls these three MVP routes
-through the typed client in `apps/frontend/src/lib/api.ts`. Its backend origin is
-configured by `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000`); route
-components do not construct API URLs. The page preserves typed business results
+The single Next.js page at `http://localhost:3000` calls these MVP routes
+through the typed client in `apps/frontend/src/lib/api.ts`. Browser requests
+always target same-origin `/api/v1/*`; the Next.js route handler resolves the
+server-only `BACKEND_INTERNAL_URL` at runtime. Route components do not construct API URLs. The page preserves typed business results
 such as `PARTIAL`, `REJECTED`, and `RESEARCH_MORE`, while HTTP/network failures
 show the safe `{code, message, request_id}` envelope.
 

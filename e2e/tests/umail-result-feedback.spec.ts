@@ -93,6 +93,54 @@ async function stubApi(page: Page) {
         research_provider: "fake",
         research_model: "fake-research-v1",
         environment: "test",
+        real_data_gate: "blocked",
+      }),
+    }),
+  );
+  await page.route("**/api/v1/acceptance/umail-result-preflight", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        file_type: "csv",
+        file_size_bytes: 128,
+        file_sha256: "a".repeat(64),
+        encoding: "utf-8",
+        total_rows: 1,
+        mapping_profile: "umail-result-preflight-v1",
+        suggested_mapping: {
+          email: "email",
+          event_type: "状态",
+          occurred_at: "时间",
+        },
+        mapping_confidence: {
+          email: "high",
+          event_type: "manual",
+          occurred_at: "manual",
+        },
+        source_columns: ["email", "状态", "时间"],
+        sample_values: {
+          email: "b••••@e•••••e.test",
+          event_type: "h••••••e",
+          occurred_at: "2••••••Z",
+        },
+        manual_mapping_applied: false,
+        unknown_fields: [],
+        missing_required_fields: [],
+        duplicate_columns: [],
+        event_type_distribution: { hard_bounced: 1 },
+        time_format_distribution: { iso8601: 1 },
+        bounce_type_distribution: {},
+        coverage: { export_row_id: 0, export_batch_id: 0, email: 1, campaign: 0 },
+        estimated_strong_id_matches: 0,
+        estimated_email_fallback_matches: 1,
+        estimated_ambiguous_rows: 0,
+        unsupported_event_count: 0,
+        missing_occurred_at_count: 0,
+        invalid_rows: 0,
+        match_estimate_basis: "database_snapshot",
+        no_business_side_effects: true,
+        real_data_gate: "blocked",
       }),
     }),
   );
@@ -186,20 +234,20 @@ test("uploads, restores, filters, and applies offline Umail results without send
 }) => {
   const consoleGuard = attachConsoleGuard(page);
   const state = await stubApi(page);
-  await page.goto("/");
+  await page.goto(`/?step=8&umail_export_batch_id=${EXPORT_BATCH_ID}`);
 
   await expect(page.getByTestId("umail-feedback-panel")).toBeVisible();
   await expect(
     page.getByText("导入的是外部发送结果，不代表本系统发送了邮件。"),
   ).toBeVisible();
-  await page.getByTestId("umail-feedback-mapping").fill(
-    JSON.stringify({ event_type: "状态", occurred_at: "时间" }),
-  );
   await page.getByTestId("umail-feedback-file").setInputFiles({
     name: "umail-results.csv",
     mimeType: "text/csv",
     buffer: Buffer.from("email,状态,时间\nbuyer@example.test,hard_bounce,2026-08-03T19:00:00Z\n"),
   });
+  await page.getByTestId("umail-feedback-preflight").click();
+  await expect(page.getByTestId("structured-mapping-editor")).toBeVisible();
+  await page.getByTestId("umail-preflight-mapping-confirmed").check();
   await page.getByTestId("umail-feedback-upload").click();
   await expect(page).toHaveURL(new RegExp(`umail_result_import_id=${IMPORT_ID}`));
   await expect(page.getByTestId("umail-feedback-preview")).toContainText("Matched");
@@ -213,6 +261,7 @@ test("uploads, restores, filters, and applies offline Umail results without send
   await expect(page.getByTestId("umail-feedback-rows")).toContainText("Ambiguous");
   await expect(page.getByTestId("umail-feedback-rows")).not.toContainText("Matched");
 
+  await page.getByTestId("acceptance-step-9").click();
   await page.getByTestId("umail-feedback-confirm").check();
   await page.getByTestId("umail-feedback-apply").click();
   await expect.poll(state.applied).toBe(true);

@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { Anchor, ExternalLink, Languages } from "lucide-react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Anchor, Languages } from "lucide-react";
 
 import {
-  API_BASE_URL,
   ApiError,
   analyzeProspect,
   approveDraft,
@@ -24,7 +23,10 @@ import type { MvpPageState, SubmittedProspectContext } from "../types";
 import { AnalysisResult } from "./analysis-result";
 import { ImportEvidencePanel } from "./import-evidence-panel";
 import { ProspectForm } from "./prospect-form";
-import { ProviderBadge } from "./provider-badge";
+import {
+  ProviderBadge,
+  type AcceptanceHealthState,
+} from "./provider-badge";
 import { DiscoveryTaskPanel } from "@/features/discovery";
 import { BulkImportPanel } from "@/features/bulk-import";
 import { RESEARCH_ENABLED, ResearchPanel } from "@/features/research";
@@ -65,6 +67,7 @@ interface MvpAnalysisPageProps {
   initialUmailExportBatchId?: string;
   initialUmailResultImportId?: string;
   initialRealDataMode?: boolean;
+  initialStep?: number;
 }
 
 function pageStateForAnalysis(result: ProspectAnalysisResponse): MvpPageState {
@@ -84,6 +87,7 @@ export function MvpAnalysisPage({
   initialUmailExportBatchId,
   initialUmailResultImportId,
   initialRealDataMode,
+  initialStep,
 }: MvpAnalysisPageProps) {
   const { t, lang, setLang } = useI18n();
   const [analysis, setAnalysis] = useState<ProspectAnalysisResponse | null>(null);
@@ -121,6 +125,18 @@ export function MvpAnalysisPage({
   // valid state (COMPANY_ONLY) and never blocks the analysis.
   const [discovery, setDiscovery] = useState<ContactDiscovery | null>(null);
   const [discovering, setDiscovering] = useState(false);
+  const [health, setHealth] = useState<AcceptanceHealthState>({
+    phase: "checking",
+    backend: false,
+    postgres: false,
+    redis: false,
+    worker: false,
+    realDataGate: "blocked",
+    runtime: null,
+  });
+  const handleHealthChange = useCallback((next: AcceptanceHealthState) => {
+    setHealth(next);
+  }, []);
   // The saved profile is external state, read through useSyncExternalStore so
   // hydration sees the server's empty snapshot first and swaps in the stored
   // values afterwards — no effect, no setState-during-render.
@@ -140,6 +156,10 @@ export function MvpAnalysisPage({
         batch_id: initialBatchId,
       }).toString()}#${initialRoutingRunId ? "prospect-routing-batch" : "prospect-batch-panel"}`
     : undefined;
+  const showAWorkspace = Boolean(initialCompanyId && initialRoutingRunId);
+  const showBatchEvidenceReview = Boolean(
+    initialResearchId && initialBatchId && !showAWorkspace,
+  );
 
   const patchContact = (patch: Partial<ProspectContact>) =>
     setContact((current) => ({ ...current, ...patch }));
@@ -407,20 +427,12 @@ export function MvpAnalysisPage({
             >
               <Languages className="size-3.5" /> {t("header.langSwitch")}
             </button>
-            <a
-              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
-              href={`${API_BASE_URL}/docs`}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {t("header.apiDocs")} <ExternalLink className="size-3.5" />
-            </a>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-[1540px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-        <div className="mb-8 grid gap-4 border-b border-slate-200 pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div className="mb-8 grid gap-4 border-b border-slate-200 pb-7 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.8fr)] lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">
               {t("hero.kicker")}
@@ -429,7 +441,7 @@ export function MvpAnalysisPage({
               {t("hero.title")}
             </h1>
           </div>
-          <ProviderBadge />
+          <ProviderBadge onStatusChange={handleHealthChange} />
         </div>
 
         <BulkImportPanel
@@ -439,14 +451,44 @@ export function MvpAnalysisPage({
           initialUmailExportBatchId={initialUmailExportBatchId}
           initialUmailResultImportId={initialUmailResultImportId}
           initialRealDataMode={initialRealDataMode}
+          initialStep={initialStep}
+          health={health}
         />
 
-        <DiscoveryTaskPanel
-          initialBatchId={initialBatchId}
-          initialTaskId={initialTaskId}
-        />
+        <details
+          className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+          data-testid="discovery-experiment-entry"
+          open={Boolean(initialTaskId || (initialBatchId && !initialRoutingRunId))}
+        >
+          <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-800">
+            {t("acceptance.discoveryExperiment")}
+            <span className="mt-1 block text-xs font-normal text-amber-700">
+              {t("acceptance.discoveryUnavailable")}
+            </span>
+          </summary>
+          <div className="border-t border-slate-200 p-4">
+            <DiscoveryTaskPanel
+              initialBatchId={initialBatchId}
+              initialTaskId={initialTaskId}
+            />
+          </div>
+        </details>
 
-        <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        {showBatchEvidenceReview && RESEARCH_ENABLED ? (
+          <div className="mb-8" data-testid="batch-evidence-review-workspace">
+            <ResearchPanel
+              batchReturnHref={batchReturnHref}
+              blockedBy={guidedBlockedBy}
+              downstreamSteps={downstreamSteps}
+              initialResearchId={initialResearchId}
+              nextAction={guidedNextAction}
+              onConfirmed={handleResearchConfirmed}
+            />
+          </div>
+        ) : null}
+
+        {showAWorkspace ? (
+        <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" data-testid="a-route-analysis-workspace">
           <div>
             {RESEARCH_ENABLED ? (
               <ResearchPanel
@@ -540,6 +582,7 @@ export function MvpAnalysisPage({
             pageState={pageState}
           />
         </div>
+        ) : null}
       </div>
     </main>
   );

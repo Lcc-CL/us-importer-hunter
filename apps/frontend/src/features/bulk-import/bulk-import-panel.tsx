@@ -21,6 +21,7 @@ import {
   subscribeSenderProfile,
 } from "@/features/mvp-analysis/sender-profile";
 import type { ProspectSender } from "@/features/mvp-analysis/prospect-state";
+import type { AcceptanceHealthState } from "@/features/mvp-analysis/components/provider-badge";
 
 import {
   createBulkImportSession,
@@ -64,6 +65,10 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { UmailExportPanel } from "./umail-export-panel";
 import { UmailFeedbackPanel } from "./umail-feedback-panel";
+import {
+  StructuredMappingEditor,
+  type MappingGroupDefinition,
+} from "./structured-mapping-editor";
 
 const DEFAULT_SOURCE = "netease_foreign_trade";
 const PAGE_SIZE = 20;
@@ -91,7 +96,68 @@ interface BulkImportPanelProps {
   initialUmailExportBatchId?: string;
   initialUmailResultImportId?: string;
   initialRealDataMode?: boolean;
+  initialStep?: number;
+  health: AcceptanceHealthState;
 }
+
+const NETEASE_MAPPING_GROUPS: MappingGroupDefinition[] = [
+  {
+    labelZh: "公司身份",
+    labelEn: "Company identity",
+    fields: [
+      { key: "company_name", labelZh: "公司名称", labelEn: "Company name", required: true },
+      { key: "external_company_id", labelZh: "外部公司 ID", labelEn: "External company ID" },
+      { key: "website", labelZh: "官网 / 域名", labelEn: "Website / domain" },
+      { key: "company_type", labelZh: "公司类型", labelEn: "Company type" },
+    ],
+  },
+  {
+    labelZh: "联系人",
+    labelEn: "Contacts",
+    fields: [
+      { key: "contact_name", labelZh: "联系人姓名", labelEn: "Contact name" },
+      { key: "contact_title", labelZh: "职位", labelEn: "Job title" },
+      { key: "contact_email", labelZh: "联系人邮箱", labelEn: "Contact email" },
+      { key: "contact_phone", labelZh: "联系人电话", labelEn: "Contact phone" },
+      { key: "contact_linkedin", labelZh: "LinkedIn", labelEn: "LinkedIn" },
+    ],
+  },
+  {
+    labelZh: "贸易记录",
+    labelEn: "Trade records",
+    fields: [
+      { key: "shipment_date", labelZh: "进口 / 到港日期", labelEn: "Shipment date" },
+      { key: "quantity", labelZh: "数量", labelEn: "Quantity" },
+      { key: "weight", labelZh: "重量", labelEn: "Weight" },
+      { key: "amount", labelZh: "金额", labelEn: "Amount" },
+      { key: "origin_country", labelZh: "原产国", labelEn: "Origin country" },
+    ],
+  },
+  {
+    labelZh: "地址和地区",
+    labelEn: "Address and region",
+    fields: [
+      { key: "address", labelZh: "公司地址", labelEn: "Company address" },
+      { key: "country", labelZh: "国家 / 地区", labelEn: "Country / region" },
+      { key: "phone", labelZh: "公司电话", labelEn: "Company phone" },
+      { key: "pol", labelZh: "起运港", labelEn: "Port of loading" },
+      { key: "pod", labelZh: "目的港", labelEn: "Port of discharge" },
+    ],
+  },
+  {
+    labelZh: "产品和 HS Code",
+    labelEn: "Products and HS code",
+    fields: [
+      { key: "product_description", labelZh: "产品描述", labelEn: "Product description" },
+      { key: "hs_code", labelZh: "HS Code", labelEn: "HS code" },
+    ],
+  },
+  {
+    labelZh: "其他字段",
+    labelEn: "Other fields",
+    fields: [],
+  },
+];
 
 export function BulkImportPanel({
   initialSessionId,
@@ -100,10 +166,14 @@ export function BulkImportPanel({
   initialUmailExportBatchId,
   initialUmailResultImportId,
   initialRealDataMode = false,
+  initialStep = 1,
+  health,
 }: BulkImportPanelProps) {
   const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
-  const [mappingText, setMappingText] = useState("");
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [mappingValidated, setMappingValidated] = useState(false);
+  const [preflightFileSignature, setPreflightFileSignature] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<NetEasePreflightResponse | null>(null);
   const [preflightBusy, setPreflightBusy] = useState(false);
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
@@ -143,6 +213,7 @@ export function BulkImportPanel({
   const [umailExportBatch, setUmailExportBatch] =
     useState<UmailExportBatchResponse | null>(null);
   const [umailResult, setUmailResult] = useState<UmailResultImportResponse | null>(null);
+  const [activeStep, setActiveStep] = useState(Math.min(10, Math.max(1, initialStep)));
   const storedSender = useSyncExternalStore(
     subscribeSenderProfile,
     senderProfileSnapshot,
@@ -371,38 +442,34 @@ export function BulkImportPanel({
     window.history.replaceState(null, "", currentUrl);
   }
 
-  function parseMapping(): Record<string, string> | undefined {
-    if (!mappingText.trim()) return undefined;
-    const decoded: unknown = JSON.parse(mappingText);
-    if (
-      typeof decoded !== "object" ||
-      decoded === null ||
-      Array.isArray(decoded) ||
-      !Object.entries(decoded).every(
-        ([key, value]) => key.trim() && typeof value === "string" && value.trim(),
-      )
-    ) {
-      throw new Error("invalid mapping");
-    }
-    return decoded as Record<string, string>;
+  function persistActiveStep(step: number) {
+    setActiveStep(step);
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("step", String(step));
+    window.history.replaceState(null, "", currentUrl);
+  }
+
+  function updateMapping(next: Record<string, string>) {
+    setMapping(next);
+    setMappingValidated(false);
+    setMappingConfirmed(false);
   }
 
   async function handlePreflight() {
-    if (!file || preflightBusy || busy) return;
-    let mapping: Record<string, string> | undefined;
-    try {
-      mapping = parseMapping();
-    } catch {
-      setError(t("bulk.mappingInvalid"));
-      return;
-    }
+    if (!file || preflightBusy || busy || !health.backend) return;
     setPreflightBusy(true);
     setError(null);
     setMappingConfirmed(false);
     try {
-      const inspected = await preflightNetEaseImport(file, mapping);
+      const inspected = await preflightNetEaseImport(
+        file,
+        Object.keys(mapping).length ? mapping : undefined,
+      );
       setPreflight(inspected);
-      setMappingText(JSON.stringify(inspected.suggested_mapping, null, 2));
+      setMapping(inspected.suggested_mapping);
+      setMappingValidated(true);
+      setPreflightFileSignature(fileSignature(file));
+      persistActiveStep(2);
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
     } finally {
@@ -419,25 +486,22 @@ export function BulkImportPanel({
       setBusy(false);
       return;
     }
-    if (realDataMode && (!preflight || !mappingConfirmed)) {
+    if (
+      !health.backend ||
+      !health.postgres ||
+      (realDataMode && health.realDataGate !== "enabled") ||
+      (realDataMode && (!preflight || !mappingConfirmed || !mappingValidated)) ||
+      (preflight && preflightFileSignature !== fileSignature(file))
+    ) {
       setError(t("acceptance.confirmMappingRequired"));
       setBusy(false);
       return;
-    }
-    let mapping: Record<string, string> | undefined;
-    if (mappingText.trim()) {
-      try {
-        mapping = parseMapping();
-      } catch {
-        setError(t("bulk.mappingInvalid"));
-        setBusy(false);
-        return;
-      }
     }
     try {
       const created = await createBulkImportSession(file, DEFAULT_SOURCE, mapping, {
         realData: realDataMode,
         mappingConfirmed,
+        expectedFileSha256: preflight?.file_sha256,
       });
       setSession(created);
       setPage(1);
@@ -452,6 +516,7 @@ export function BulkImportPanel({
       setBatchCompanies([]);
       setBatchExecution(null);
       persistSessionId(created.session_id);
+      persistActiveStep(3);
       await loadRows(created.session_id, 1, "");
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
@@ -461,7 +526,7 @@ export function BulkImportPanel({
   }
 
   async function handleStartResolution() {
-    if (!session || resolving) return;
+    if (!session || resolving || !health.backend || !health.postgres) return;
     setResolving(true);
     setError(null);
     try {
@@ -475,7 +540,7 @@ export function BulkImportPanel({
   }
 
   async function handleReview(decisionId: string, action: ImportReviewAction) {
-    if (!session || reviewingId) return;
+    if (!session || reviewingId || !health.backend || !health.postgres) return;
     setReviewingId(decisionId);
     setError(null);
     try {
@@ -489,7 +554,7 @@ export function BulkImportPanel({
   }
 
   async function handleStartRouting() {
-    if (!session || routingBusy) return;
+    if (!session || routingBusy || !health.backend || !health.postgres) return;
     const products = splitList(productKeywords);
     const hs = splitList(hsCodes);
     if (!products.length && !hs.length) {
@@ -528,7 +593,7 @@ export function BulkImportPanel({
     route: ProspectRouteResponse,
     action: "confirm" | "override" | "exclude",
   ) {
-    if (reviewingRouteId) return;
+    if (reviewingRouteId || !health.backend || !health.postgres) return;
     const reason = routeReasons[route.route_id]?.trim();
     if (action !== "confirm" && !reason) {
       setError(t("bulk.routingReasonRequired"));
@@ -561,7 +626,7 @@ export function BulkImportPanel({
   }
 
   async function handleCreateRoutingBatch() {
-    if (!routingRun || routingBusy || !selectedACompanies.length) return;
+    if (!routingRun || routingBusy || !health.backend || !health.postgres || !selectedACompanies.length) return;
     setRoutingBusy(true);
     setError(null);
     try {
@@ -580,7 +645,7 @@ export function BulkImportPanel({
   }
 
   async function handleStartRoutedBatch() {
-    if (!createdBatchId || batchBusy) return;
+    if (!createdBatchId || batchBusy || !health.backend || !health.postgres) return;
     if (!window.confirm(t("bulk.routingBatchStartConfirmation"))) return;
     setBatchBusy(true);
     setError(null);
@@ -599,7 +664,7 @@ export function BulkImportPanel({
   }
 
   async function handleResumeRoutedCompany(companyId: string) {
-    if (!createdBatchId || batchBusy) return;
+    if (!createdBatchId || batchBusy || !health.backend || !health.postgres) return;
     setBatchBusy(true);
     setError(null);
     try {
@@ -618,7 +683,7 @@ export function BulkImportPanel({
   }
 
   async function handleRetryRoutedCompany(companyId: string) {
-    if (!createdBatchId || batchBusy) return;
+    if (!createdBatchId || batchBusy || !health.backend || !health.postgres) return;
     setBatchBusy(true);
     setError(null);
     try {
@@ -683,35 +748,59 @@ export function BulkImportPanel({
     batchExecution && ["pending", "leased", "running"].includes(batchExecution.status),
   );
   const draftCount = batchCompanies.filter((company) => company.draft_id !== null).length;
-  const acceptanceSteps = [
-    [t("acceptance.step1"), Boolean(preflight)],
-    [t("acceptance.step2"), mappingConfirmed],
-    [t("acceptance.step3"), Boolean(session)],
-    [
-      t("acceptance.step4"),
-      Boolean(resolution && ["completed", "partial_failed"].includes(resolution.resolution_status)),
-    ],
-    [t("acceptance.step5"), Boolean(routingRun)],
-    [
-      t("acceptance.step6"),
-      Boolean(
-        routedBatch ||
-          routes.some(
-            (route) =>
-              route.effective_tier === "B" &&
-              ["confirmed", "overridden"].includes(route.review_status),
-          ),
-      ),
-    ],
-    [t("acceptance.step7"), Boolean(umailExportBatch || initialUmailExportBatchId)],
-    [t("acceptance.step8"), Boolean(umailResult)],
-    [t("acceptance.step9"), Boolean(umailResult?.status.includes("applied"))],
-    [t("acceptance.step10"), false],
-  ] as const;
-  const currentStep = Math.min(
-    acceptanceSteps.findIndex(([, complete]) => !complete) + 1 || 10,
-    10,
+  const resolutionComplete = Boolean(
+    resolution && ["completed", "partial_failed"].includes(resolution.resolution_status),
   );
+  const routingComplete = Boolean(
+    routingRun && ["completed", "partial_completed"].includes(routingRun.status),
+  );
+  const hasBRoute = routes.some(
+    (route) =>
+      route.effective_tier === "B" &&
+      ["confirmed", "overridden"].includes(route.review_status),
+  );
+  const acceptanceSteps = [
+    { label: t("acceptance.step1"), complete: Boolean(preflight), unlocked: true, reason: "" },
+    { label: t("acceptance.step2"), complete: mappingConfirmed, unlocked: Boolean(preflight), reason: t("acceptance.unlockPreflight") },
+    { label: t("acceptance.step3"), complete: Boolean(session), unlocked: mappingConfirmed || Boolean(session), reason: t("acceptance.unlockMapping") },
+    { label: t("acceptance.step4"), complete: resolutionComplete, unlocked: Boolean(session), reason: t("acceptance.unlockSession") },
+    { label: t("acceptance.step5"), complete: routingComplete, unlocked: resolutionComplete, reason: t("acceptance.unlockResolution") },
+    { label: t("acceptance.step6"), complete: Boolean(routedBatch || hasBRoute), unlocked: routingComplete, reason: t("acceptance.unlockRouting") },
+    { label: t("acceptance.step7"), complete: Boolean(umailExportBatch || initialUmailExportBatchId), unlocked: routingComplete && hasBRoute, reason: t("acceptance.unlockBRoute") },
+    { label: t("acceptance.step8"), complete: Boolean(umailResult), unlocked: Boolean(umailExportBatch || initialUmailExportBatchId), reason: t("acceptance.unlockExport") },
+    { label: t("acceptance.step9"), complete: Boolean(umailResult?.status.includes("applied")), unlocked: Boolean(umailResult), reason: t("acceptance.unlockPreview") },
+    { label: t("acceptance.step10"), complete: false, unlocked: Boolean(umailResult?.status.includes("applied")), reason: t("acceptance.unlockApply") },
+  ];
+  const selectedColumns = Object.values(mapping);
+  const mappingHasConflict = new Set(selectedColumns).size !== selectedColumns.length;
+  const mappingComplete = Boolean(mapping.company_name) && !mappingHasConflict;
+  const supportedFile = Boolean(file && /\.(csv|xlsx)$/i.test(file.name));
+  const currentFileMatchesPreflight = Boolean(
+    file && preflight && preflightFileSignature === fileSignature(file),
+  );
+  const preflightDisabledReasons = [
+    !health.backend ? t("runtime.writeBlocked") : null,
+    !file ? t("acceptance.selectFileReason") : null,
+    file && !supportedFile ? t("acceptance.unsupportedFileReason") : null,
+  ].filter((value): value is string => Boolean(value));
+  const importDisabledReasons = [
+    !health.backend ? t("runtime.writeBlocked") : null,
+    !health.postgres ? t("acceptance.databaseRequired") : null,
+    !preflight ? t("acceptance.unlockPreflight") : null,
+    !mappingComplete ? t("acceptance.mappingIncomplete") : null,
+    !mappingValidated ? t("acceptance.mappingNeedsValidation") : null,
+    !mappingConfirmed ? t("acceptance.unlockMapping") : null,
+    !currentFileMatchesPreflight ? t("acceptance.fileHashChanged") : null,
+    realDataMode && health.realDataGate !== "enabled"
+      ? t("acceptance.localGateRequired")
+      : null,
+    file?.name.toLowerCase().endsWith(".xlsx") ? t("acceptance.xlsxImportPending") : null,
+  ].filter((value): value is string => Boolean(value));
+  const acceptanceModeLabel = realDataMode && mappingConfirmed
+    ? t("acceptance.controlledMode")
+    : preflight
+      ? t("acceptance.waitingMapping")
+      : t("acceptance.preparationMode");
 
   return (
     <section
@@ -735,7 +824,10 @@ export function BulkImportPanel({
                 {t("acceptance.kicker")}
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
-                {t("acceptance.currentStep", { step: currentStep })}
+                {t("acceptance.currentStep", { step: activeStep })}
+              </p>
+              <p className="mt-1 text-xs text-slate-600" data-testid="acceptance-mode-label">
+                {acceptanceModeLabel}
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -751,12 +843,26 @@ export function BulkImportPanel({
             </div>
           </div>
           <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            {acceptanceSteps.map(([label, complete], index) => (
+            {acceptanceSteps.map((step, index) => (
               <li
-                className={complete ? "rounded-xl border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900" : index + 1 === currentStep ? "rounded-xl border border-indigo-300 bg-indigo-50 p-2 text-xs font-semibold text-indigo-900" : "rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500"}
-                key={label}
+                className={step.complete ? "rounded-xl border border-emerald-200 bg-emerald-50 text-xs text-emerald-900" : index + 1 === activeStep ? "rounded-xl border border-indigo-300 bg-indigo-50 text-xs font-semibold text-indigo-900" : "rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500"}
+                key={step.label}
               >
-                {index + 1}. {label}
+                <button
+                  className="w-full p-2 text-left disabled:cursor-not-allowed"
+                  data-testid={`acceptance-step-${index + 1}`}
+                  disabled={!step.unlocked}
+                  onClick={() => persistActiveStep(index + 1)}
+                  title={step.unlocked ? step.label : step.reason}
+                  type="button"
+                >
+                  {index + 1}. {step.label}
+                  {!step.unlocked ? (
+                    <span className="mt-1 block text-[10px] font-normal text-slate-400">
+                      {step.reason}
+                    </span>
+                  ) : null}
+                </button>
               </li>
             ))}
           </ol>
@@ -775,98 +881,78 @@ export function BulkImportPanel({
         </div>
       </div>
 
-      <div className="grid gap-4 p-5 sm:p-7 lg:grid-cols-2">
-        <label className="block text-sm font-medium text-slate-800">
-          {t("bulk.file")}
-          <input
-            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-indigo-900"
-            data-testid="bulk-import-file"
-            disabled={busy}
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
-              setPreflight(null);
-              setMappingConfirmed(false);
-            }}
-            type="file"
-          />
-        </label>
-        <label className="block text-sm font-medium text-slate-800">
-          {t("bulk.source")}
-          <input
-            className="mt-2 block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-600"
-            disabled
-            value={DEFAULT_SOURCE}
-          />
-        </label>
-        <label className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-slate-700 lg:col-span-2">
-          <input
-            checked={realDataMode}
-            className="mt-1"
-            data-testid="acceptance-real-data-mode"
-            onChange={(event) => updateRealDataMode(event.target.checked)}
-            type="checkbox"
-          />
-          <span>{t("acceptance.realDataToggle")}</span>
-        </label>
-        <label className="block text-sm font-medium text-slate-800 lg:col-span-2">
-          {t("bulk.mapping")}
-          <textarea
-            className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-            data-testid="bulk-import-mapping"
-            disabled={busy}
-            onChange={(event) => {
-              setMappingText(event.target.value);
-              setPreflight(null);
-              setMappingConfirmed(false);
-            }}
-            placeholder={'{"company_name":"公司名称","contact_email":"邮箱"}'}
-            value={mappingText}
-          />
-        </label>
-        <div className="flex flex-wrap items-center gap-3 lg:col-span-2">
-          <button
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-5 text-sm font-semibold text-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
-            data-testid="netease-preflight"
-            disabled={busy || preflightBusy || !file}
-            onClick={() => void handlePreflight()}
-            type="button"
-          >
-            <FileSearch className="size-4" />
-            {preflightBusy ? t("acceptance.preflighting") : t("acceptance.preflight")}
-          </button>
-          <button
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-            data-testid="bulk-import-upload"
-            disabled={
-              busy ||
-              preflightBusy ||
-              !file ||
-              file.name.toLowerCase().endsWith(".xlsx") ||
-              (realDataMode && (!preflight || !mappingConfirmed))
-            }
-            onClick={handleUpload}
-            type="button"
-          >
-            <Upload className="size-4" />
-            {busy ? t("bulk.processing") : t("bulk.upload")}
-          </button>
-          <span className="text-xs text-slate-500">{t("bulk.limits")}</span>
+      {activeStep === 1 ? (
+        <div className="grid gap-4 p-5 sm:p-7 lg:grid-cols-2" data-testid="acceptance-workspace-step-1">
+          <label className="block text-sm font-medium text-slate-800">
+            {t("bulk.file")}
+            <input
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-indigo-900"
+              data-testid="bulk-import-file"
+              disabled={busy}
+              onChange={(event) => {
+                setFile(event.target.files?.[0] ?? null);
+                setPreflight(null);
+                setMapping({});
+                setMappingValidated(false);
+                setPreflightFileSignature(null);
+                setMappingConfirmed(false);
+              }}
+              type="file"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-800">
+            {t("bulk.source")}
+            <input
+              className="mt-2 block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-600"
+              disabled
+              value={DEFAULT_SOURCE}
+            />
+          </label>
+          <label className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-slate-700 lg:col-span-2">
+            <input
+              checked={realDataMode}
+              className="mt-1"
+              data-testid="acceptance-real-data-mode"
+              onChange={(event) => updateRealDataMode(event.target.checked)}
+              type="checkbox"
+            />
+            <span>{t("acceptance.realDataToggle")}</span>
+          </label>
+          <div className="lg:col-span-2">
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-5 text-sm font-semibold text-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
+              data-testid="netease-preflight"
+              disabled={busy || preflightBusy || preflightDisabledReasons.length > 0}
+              onClick={() => void handlePreflight()}
+              type="button"
+            >
+              <FileSearch className="size-4" />
+              {preflightBusy ? t("acceptance.preflighting") : t("acceptance.preflight")}
+            </button>
+            <p className="mt-2 text-xs text-slate-500">{t("bulk.limits")}</p>
+            {preflightDisabledReasons.length ? (
+              <p className="mt-2 text-xs text-amber-800" data-testid="netease-preflight-disabled-reason">
+                {preflightDisabledReasons.join(" · ")}
+              </p>
+            ) : null}
+          </div>
         </div>
-        {preflight ? (
-          <div className="rounded-2xl border border-indigo-200 bg-slate-50 p-4 lg:col-span-2" data-testid="netease-preflight-result">
+      ) : null}
+
+      {activeStep === 2 && preflight ? (
+        <div className="space-y-4 p-5 sm:p-7" data-testid="acceptance-workspace-step-2">
+          <div className="rounded-2xl border border-indigo-200 bg-slate-50 p-4" data-testid="netease-preflight-result">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-semibold text-slate-900">
                 {preflight.mapping_profile} · {preflight.file_type.toUpperCase()} · {preflight.inferred_data_type}
               </p>
               <span className={preflight.real_data_gate === "enabled" ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-900" : "rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-900"}>
-                {preflight.real_data_gate === "enabled"
-                  ? t("acceptance.gateEnabled")
-                  : t("acceptance.gateBlocked")}
+                {preflight.real_data_gate === "enabled" ? t("acceptance.gateEnabled") : t("acceptance.gateBlocked")}
               </span>
             </div>
-            <p className="mt-2 break-all font-mono text-[10px] text-slate-500">
-              SHA-256 {preflight.file_sha256}
+            <p className="mt-2 font-mono text-[10px] text-slate-500">
+              SHA-256 {preflight.file_sha256.slice(0, 12)}…{preflight.file_sha256.slice(-8)}
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
               {[
@@ -884,28 +970,60 @@ export function BulkImportPanel({
                 </div>
               ))}
             </div>
-            {preflight.missing_required_fields.length || preflight.duplicate_columns.length ? (
-              <p className="mt-3 text-xs text-rose-700">
-                {t("acceptance.blockers")}: {[
-                  ...preflight.missing_required_fields,
-                  ...preflight.duplicate_columns,
-                ].join(" · ")}
-              </p>
-            ) : null}
-            <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+          </div>
+
+          <StructuredMappingEditor
+            confidence={preflight.mapping_confidence}
+            confirmed={mappingConfirmed}
+            disabled={busy || preflightBusy}
+            duplicateColumns={preflight.duplicate_columns}
+            groups={NETEASE_MAPPING_GROUPS}
+            mapping={mapping}
+            onChange={updateMapping}
+            samples={preflight.sample_values}
+            sourceColumns={preflight.source_columns}
+            validated={mappingValidated}
+          />
+
+          <div className="flex flex-wrap items-start gap-4">
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 text-sm font-semibold text-indigo-800 disabled:opacity-50"
+              data-testid="netease-preflight-again"
+              disabled={busy || preflightBusy || !file || !health.backend}
+              onClick={() => void handlePreflight()}
+              type="button"
+            >
+              <RefreshCw className="size-4" /> {t("acceptance.revalidateMapping")}
+            </button>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
               <input
                 checked={mappingConfirmed}
                 className="mt-1"
                 data-testid="netease-mapping-confirmed"
-                disabled={preflight.missing_required_fields.length > 0 || preflight.duplicate_columns.length > 0}
+                disabled={!mappingComplete || !mappingValidated}
                 onChange={(event) => setMappingConfirmed(event.target.checked)}
                 type="checkbox"
               />
               <span>{t("acceptance.confirmMapping")}</span>
             </label>
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              data-testid="bulk-import-upload"
+              disabled={busy || preflightBusy || !file || importDisabledReasons.length > 0}
+              onClick={handleUpload}
+              type="button"
+            >
+              <Upload className="size-4" />
+              {busy ? t("bulk.processing") : t("bulk.upload")}
+            </button>
           </div>
-        ) : null}
-      </div>
+          {importDisabledReasons.length ? (
+            <p className="text-xs text-amber-800" data-testid="bulk-import-disabled-reason">
+              {importDisabledReasons.join(" · ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <p className="mx-5 mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 sm:mx-7">
         {t("bulk.boundary")}
@@ -917,13 +1035,34 @@ export function BulkImportPanel({
         </p>
       ) : null}
 
-      <UmailFeedbackPanel
-        initialImportId={initialUmailResultImportId}
-        onImportChange={setUmailResult}
-        realDataMode={realDataMode}
-      />
+      {activeStep === 8 || activeStep === 9 ? (
+        <UmailFeedbackPanel
+          exportBatchId={umailExportBatch?.batch_id ?? initialUmailExportBatchId}
+          health={health}
+          initialImportId={initialUmailResultImportId}
+          mode={activeStep === 8 ? "preview" : "apply"}
+          onImportChange={setUmailResult}
+          realDataMode={realDataMode}
+        />
+      ) : null}
 
-      {session ? (
+      {activeStep === 10 ? (
+        <div className="border-t border-slate-200 p-5 sm:p-7" data-testid="acceptance-workspace-step-10">
+          <h3 className="text-lg font-semibold text-slate-950">{t("acceptance.step10")}</h3>
+          <p className="mt-2 text-sm text-slate-600">{t("acceptance.closureSummary")}</p>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <MetricCard label={t("acceptance.rows")} value={session?.total_rows ?? 0} />
+            <MetricCard label={t("acceptance.companies")} value={resolution ? resolution.companies_created + resolution.companies_reused : 0} />
+            <MetricCard label={t("bulk.routingTotal")} value={routingRun?.total_companies ?? 0} />
+            <MetricCard label={t("feedback.appliedEvents")} value={umailResult?.applied_event_count ?? 0} />
+          </div>
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {t("acceptance.noSend")}
+          </p>
+        </div>
+      ) : null}
+
+      {session && activeStep >= 3 && activeStep <= 7 ? (
         <div className="border-t border-slate-200 px-5 py-6 sm:px-7" data-testid="bulk-import-result">
           <div className="flex flex-wrap items-center gap-3">
             <FileCheck2 className="size-5 text-indigo-700" />
@@ -949,10 +1088,11 @@ export function BulkImportPanel({
             ))}
           </div>
 
-          <div
-            className="mt-6 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4"
-            data-testid="import-resolution-panel"
-          >
+          {activeStep === 4 ? (
+            <div
+              className="mt-6 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4"
+              data-testid="import-resolution-panel"
+            >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-800">
@@ -969,6 +1109,8 @@ export function BulkImportPanel({
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-cyan-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid="import-resolution-start"
                 disabled={
+                  !health.backend ||
+                  !health.postgres ||
                   resolving ||
                   !["completed", "partial_failed"].includes(session.status) ||
                   Boolean(
@@ -1071,7 +1213,7 @@ export function BulkImportPanel({
                             ).map(([action, label]) => (
                               <button
                                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40"
-                                disabled={Boolean(reviewingId)}
+                                disabled={!health.backend || !health.postgres || Boolean(reviewingId)}
                                 key={action}
                                 onClick={() => void handleReview(decision.decision_id, action)}
                                 type="button"
@@ -1091,12 +1233,16 @@ export function BulkImportPanel({
                 </div>
               </div>
             ) : null}
-          </div>
+            </div>
+          ) : null}
 
-          <div
-            className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4"
-            data-testid="prospect-routing-panel"
-          >
+          {activeStep >= 5 && activeStep <= 7 ? (
+            <div
+              className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4"
+              data-testid="prospect-routing-panel"
+            >
+            {activeStep === 5 ? (
+              <>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
@@ -1113,6 +1259,8 @@ export function BulkImportPanel({
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid="prospect-routing-start"
                 disabled={
+                  !health.backend ||
+                  !health.postgres ||
                   routingBusy ||
                   !resolution ||
                   !["completed", "partial_failed"].includes(resolution.resolution_status) ||
@@ -1194,6 +1342,17 @@ export function BulkImportPanel({
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {t("bulk.routingBoundary")}
             </p>
+              </>
+            ) : (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
+                  {activeStep === 6 ? t("acceptance.step6") : t("acceptance.step7")}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {activeStep === 6 ? t("acceptance.step6Hint") : t("acceptance.step7Hint")}
+                </p>
+              </div>
+            )}
 
             {routingRun ? (
               <div className="mt-4" data-testid="prospect-routing-result">
@@ -1225,7 +1384,7 @@ export function BulkImportPanel({
                   ))}
                 </div>
 
-                {routes.length ? (
+                {activeStep === 6 && routes.length ? (
                   <div
                     className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white"
                     data-testid="prospect-routing-routes"
@@ -1290,7 +1449,7 @@ export function BulkImportPanel({
                                     <div className="flex gap-2">
                                       <button
                                         className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 px-2 py-1 font-semibold text-emerald-800 disabled:opacity-40"
-                                        disabled={Boolean(reviewingRouteId)}
+                                        disabled={!health.backend || !health.postgres || Boolean(reviewingRouteId)}
                                         onClick={() => void handleRouteReview(route, "confirm")}
                                         type="button"
                                       >
@@ -1326,7 +1485,7 @@ export function BulkImportPanel({
                                     <div className="flex gap-2">
                                       <button
                                         className="rounded-lg border border-slate-300 px-2 py-1 font-semibold text-slate-700 disabled:opacity-40"
-                                        disabled={Boolean(reviewingRouteId)}
+                                        disabled={!health.backend || !health.postgres || Boolean(reviewingRouteId)}
                                         onClick={() => void handleRouteReview(route, "override")}
                                         type="button"
                                       >
@@ -1334,7 +1493,7 @@ export function BulkImportPanel({
                                       </button>
                                       <button
                                         className="inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2 py-1 font-semibold text-rose-700 disabled:opacity-40"
-                                        disabled={Boolean(reviewingRouteId)}
+                                        disabled={!health.backend || !health.postgres || Boolean(reviewingRouteId)}
                                         onClick={() => void handleRouteReview(route, "exclude")}
                                         type="button"
                                       >
@@ -1362,20 +1521,27 @@ export function BulkImportPanel({
                   </div>
                 ) : null}
 
-                <UmailExportPanel
-                  campaign={campaignName}
-                  initialBatchId={initialUmailExportBatchId}
-                  key={routingRun.routing_run_id}
-                  routes={routes}
-                  routingRunId={routingRun.routing_run_id}
-                  onBatchChange={setUmailExportBatch}
-                />
+                {activeStep === 7 ? (
+                  <UmailExportPanel
+                    campaign={campaignName}
+                    health={health}
+                    initialBatchId={initialUmailExportBatchId}
+                    key={routingRun.routing_run_id}
+                    routes={routes}
+                    routingRunId={routingRun.routing_run_id}
+                    onBatchChange={setUmailExportBatch}
+                  />
+                ) : null}
 
+                {activeStep === 6 ? (
+                  <>
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <button
                     className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     data-testid="prospect-routing-create-batch"
                     disabled={
+                      !health.backend ||
+                      !health.postgres ||
                       routingBusy ||
                       selectedACompanies.length === 0 ||
                       selectedACompanies.length > 5
@@ -1410,7 +1576,7 @@ export function BulkImportPanel({
                       <button
                         className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                         data-testid="prospect-routing-batch-start"
-                        disabled={batchBusy || Boolean(batchExecution)}
+                        disabled={!health.backend || !health.postgres || batchBusy || Boolean(batchExecution)}
                         onClick={() => void handleStartRoutedBatch()}
                         type="button"
                       >
@@ -1497,7 +1663,7 @@ export function BulkImportPanel({
                                 <button
                                   className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 disabled:opacity-50"
                                   data-testid="resume-routing-batch-company"
-                                  disabled={batchBusy || batchExecutionActive}
+                                  disabled={!health.backend || !health.postgres || batchBusy || batchExecutionActive}
                                   onClick={() => void handleResumeRoutedCompany(company.company_id)}
                                   type="button"
                                 >
@@ -1508,7 +1674,7 @@ export function BulkImportPanel({
                             {company.error_code && ROUTING_RETRYABLE_ERRORS.has(company.error_code) ? (
                               <button
                                 className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                                disabled={batchBusy || batchExecutionActive}
+                                disabled={!health.backend || !health.postgres || batchBusy || batchExecutionActive}
                                 onClick={() => void handleRetryRoutedCompany(company.company_id)}
                                 type="button"
                               >
@@ -1521,10 +1687,15 @@ export function BulkImportPanel({
                     </div>
                   </div>
                 ) : null}
+                  </>
+                ) : null}
               </div>
             ) : null}
-          </div>
+            </div>
+          ) : null}
 
+          {activeStep === 3 ? (
+            <>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <label className="text-sm font-medium text-slate-700">
               {t("bulk.rowFilter")}
@@ -1593,6 +1764,8 @@ export function BulkImportPanel({
               {t("bulk.next")}
             </button>
           </div>
+            </>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -1607,6 +1780,19 @@ function splitList(value: string): string[] {
         .map((item) => item.trim())
         .filter(Boolean),
     ),
+  );
+}
+
+function fileSignature(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function MetricCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
+    </div>
   );
 }
 

@@ -72,6 +72,10 @@ def test_netease_csv_preflight_infers_mixed_mapping_and_quality_counts() -> None
     assert report.suggested_mapping["company_name"] == "公司名称"
     assert report.suggested_mapping["contact_email"] == "邮箱"
     assert report.suggested_mapping["product_description"] == "产品"
+    assert report.source_columns[0] == "公司名称"
+    assert report.sample_values["company_name"] == "A••••••s"
+    assert report.sample_values["contact_email"] == "a•a@a•••s.example"
+    assert "ada@atlas.example" not in repr(report.sample_values)
     assert report.unknown_fields == ("未知列",)
     assert report.empty_rows == 1
     assert report.estimated_company_count == 1
