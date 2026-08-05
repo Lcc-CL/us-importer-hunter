@@ -1,10 +1,9 @@
-/** Typed client for the three browser-facing MVP endpoints (ADR-0024). */
+/** Typed client for the browser-facing MVP endpoints (ADR-0024). */
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
-
-const API_V1_URL = `${API_BASE_URL}/api/v1`;
+// Browser requests are always same-origin. The Next.js route handler resolves
+// the private backend address at runtime, so container-only hostnames and stale
+// NEXT_PUBLIC build values can never leak into the browser bundle.
+const API_V1_URL = "/api/v1";
 
 export type OverallStatus = "COMPLETED" | "PARTIAL" | "REJECTED" | "FAILED";
 
@@ -1146,7 +1145,7 @@ export function getReadinessStatus(): Promise<ReadinessResponse> {
 }
 
 export function getSafeApiRequestTarget(): string {
-  return API_BASE_URL ? `${API_BASE_URL}/api/v1` : "/api/v1 (same origin)";
+  return "/api/v1 (same origin)";
 }
 
 export function createBulkImportSession(

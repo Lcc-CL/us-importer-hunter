@@ -4,7 +4,7 @@
 
 ```
 浏览器 → Frontend（公网域名，Next.js standalone）
-           └─ 服务端 rewrites 代理（仅白名单 /api/v1/* 路径）
+           └─ 运行期 Route Handler 代理（仅白名单 /api/v1/* 路径）
                 → Backend（仅私有网络，不绑定公网域名）
                 → Worker（独立私有服务，无公网端口）
                      → PostgreSQL / Redis（私有网络）
@@ -17,9 +17,8 @@
   唯一批准的暴露方式。
 - 浏览器只请求同源 `/api/...`；`BACKEND_INTERNAL_URL` 是**服务端**变量，
   绝不能带 `NEXT_PUBLIC_` 前缀。
-- 白名单路径见 `apps/frontend/next.config.ts`：`health/runtime`、
-  `research/*`、`mvp/*`、`companies/*`、`discovery-tasks/*`、
-  `prospect-batches/*`，无任意 URL 代理。
+- 白名单路径见 `apps/frontend/src/app/api/v1/[...path]/route.ts`，无任意 URL
+  代理。
 
 ## Zeabur 控制台步骤
 
@@ -43,8 +42,7 @@
    PostgreSQL Job/Lease，不把 Redis 当任务队列。
 4. 添加 **Frontend** 服务：Root Directory `apps/frontend`，Dockerfile
    target `prod`，绑定公网域名。
-   构建变量：`NEXT_PUBLIC_API_BASE_URL=`（留空 → 同源）、
-   `NEXT_PUBLIC_ENABLE_RESEARCH=true`。
+   构建变量：`NEXT_PUBLIC_ENABLE_RESEARCH=true`。
    运行变量：`BACKEND_INTERNAL_URL=http://<backend 服务名>.zeabur.internal:8000`。
 5. Backend 首次启动后在其终端执行一次迁移：
    `uv run --no-dev alembic upgrade head`。

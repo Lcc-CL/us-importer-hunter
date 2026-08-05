@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { Anchor, ExternalLink, Languages } from "lucide-react";
+import { Anchor, Languages } from "lucide-react";
 
 import {
-  API_BASE_URL,
   ApiError,
   analyzeProspect,
   approveDraft,
@@ -428,14 +427,6 @@ export function MvpAnalysisPage({
             >
               <Languages className="size-3.5" /> {t("header.langSwitch")}
             </button>
-            {API_BASE_URL ? <a
-              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
-              href={`${API_BASE_URL}/docs`}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {t("header.apiDocs")} <ExternalLink className="size-3.5" />
-            </a> : null}
           </div>
         </div>
       </header>

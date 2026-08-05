@@ -23,6 +23,16 @@ const FORWARDED_RESPONSE_HEADERS = [
   "x-request-id",
 ] as const;
 
+function getBackendBaseUrl(): string {
+  const configured = (process.env.BACKEND_INTERNAL_URL ?? "").trim();
+  if (configured) return configured.replace(/\/$/, "");
+
+  // Host-based `npm run dev` commonly runs beside FastAPI on port 8000. Docker
+  // and production must provide the service URL explicitly because localhost
+  // inside the frontend container is not the backend container.
+  return process.env.NODE_ENV === "production" ? "" : "http://localhost:8000";
+}
+
 async function proxy(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
@@ -36,7 +46,7 @@ async function proxy(
     );
   }
 
-  const backend = (process.env.BACKEND_INTERNAL_URL ?? "").replace(/\/$/, "");
+  const backend = getBackendBaseUrl();
   if (!backend) {
     return NextResponse.json(
       {

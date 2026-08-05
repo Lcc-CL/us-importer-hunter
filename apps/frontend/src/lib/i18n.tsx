@@ -23,7 +23,6 @@ const STORAGE_KEY = "uih.lang";
 
 const zh = {
   "app.tagline": "从证据到触达 · MVP",
-  "header.apiDocs": "API 文档",
   "header.langSwitch": "English",
   "hero.kicker": "潜在客户分析工作台",
   "hero.title": "将经过验证的进口商证据，转化为人工审核的首封开发信草稿。",
@@ -714,7 +713,6 @@ export type MessageKey = keyof typeof zh;
 
 const en: Record<MessageKey, string> = {
   "app.tagline": "Evidence to outreach · MVP",
-  "header.apiDocs": "API docs",
   "header.langSwitch": "中文",
   "hero.kicker": "Prospect analysis workspace",
   "hero.title": "Turn verified importer evidence into a human-reviewed first draft.",

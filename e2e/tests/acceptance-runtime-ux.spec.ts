@@ -35,12 +35,16 @@ async function mockHealthyDependencies(page: Page, gate: "enabled" | "blocked" =
 
 test("loads runtime health through the configured browser-facing API path", async ({ page }) => {
   const consoleGuard = attachConsoleGuard(page);
+  const healthRequest = page.waitForRequest(/\/api\/v1\/health$/);
   await page.goto("/");
+  const request = await healthRequest;
   await expect(page.getByTestId("runtime-status-card")).toHaveAttribute(
     "data-health-phase",
     "healthy",
   );
   await expect(page.getByTestId("runtime-status-card")).toContainText("后端已连接");
+  expect(new URL(request.url()).origin).toBe(new URL(page.url()).origin);
+  await expect(page.getByRole("link", { name: "API 文档" })).toHaveCount(0);
   expect(consoleGuard.problems()).toEqual([]);
 });
 

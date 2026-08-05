@@ -75,9 +75,6 @@ services:
       context: ./apps/frontend
       target: prod
       args:
-        # Empty on purpose: the browser talks same-origin; the server-side
-        # runtime route-handler proxy reaches the backend privately.
-        NEXT_PUBLIC_API_BASE_URL: ""
         NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-true}
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000

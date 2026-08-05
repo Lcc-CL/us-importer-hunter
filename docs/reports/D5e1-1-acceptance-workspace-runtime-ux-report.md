@@ -8,13 +8,15 @@
 
 ## 1. 根因
 
-“无法获取后端运行状态”的主要根因不是健康接口本身失效，而是生产代理配置的生命周期错误：旧实现通过 `next.config.ts` 的 rewrite 读取 `BACKEND_INTERNAL_URL`，该配置在 `next build` 时固化；Zeabur/standalone 容器只在运行期注入私网 Backend 地址时，构建产物中没有可用 rewrite，浏览器请求无法到达私网 Backend。
+“无法获取后端运行状态”的根因包含两层：原先生产 rewrite 在构建期固化；首轮修复加入运行期 Route Handler 后，浏览器 API client 仍允许 `NEXT_PUBLIC_API_BASE_URL` 覆盖同源路径。这使旧构建变量、`localhost`、错误域名或容器内 hostname 仍能让浏览器绕过代理，问题会在不同部署环境反复出现。
 
 同时，旧前端只请求 runtime 元数据，没有把 Backend、PostgreSQL、Redis、Worker 分开检查，也没有请求超时、轮询恢复和可操作重试，因此代理或依赖异常只能表现为远离操作区的通用错误。
 
 ## 2. 修复内容
 
 - 新增运行期 Next Route Handler：`/api/v1/[...path]` 在每次请求时读取 `BACKEND_INTERNAL_URL`，不再依赖构建期 rewrite。
+- 浏览器 API client 固定使用同源 `/api/v1/*`，彻底移除 `NEXT_PUBLIC_API_BASE_URL` 分支；本地 Docker、E2E 与生产均由 Next.js 服务端连接 Backend。
+- 移除前端顶部 API 文档入口；FastAPI 文档仍仅供开发者直接访问 Backend 使用，生产环境继续禁用。
 - 代理采用明确 allow-list，只转发当前 MVP 使用的 API 前缀；仅转发必要请求/响应头，15 秒超时，异常返回脱敏 503。
 - 前端健康卡依次检查 liveness、readiness、runtime，并显示 Backend、PostgreSQL、Redis、Worker；8 秒请求超时、5 秒轮询、人工重试、自动恢复。
 - Backend readiness 增加 Redis TTL Worker heartbeat；依赖错误只返回简化原因，不返回驱动异常、凭据或连接信息。
@@ -23,15 +25,11 @@
 
 ## 3. 运行架构
 
-### 本地开发
-
-`Browser → NEXT_PUBLIC_API_BASE_URL（默认 localhost:8000）→ FastAPI`
-
-### 生产/Zeabur 拓扑
+### 本地、E2E 与生产/Zeabur 拓扑
 
 `Browser → Frontend 同源 /api/v1/* → Next Route Handler → BACKEND_INTERNAL_URL → FastAPI → PostgreSQL/Redis`
 
-`BACKEND_INTERNAL_URL` 只存在于服务端运行环境，不进入浏览器 bundle。以空 `NEXT_PUBLIC_API_BASE_URL` 构建后，生产页面、`health/ready`、`health/runtime` 均通过 `localhost:3100/api/v1/*` 验证为 200。
+`BACKEND_INTERNAL_URL` 只存在于服务端运行环境，不进入浏览器 bundle。宿主机 `npm run dev` 未配置时安全回退到 `http://localhost:8000`；Docker 明确使用 Backend service name；production 缺少变量时 fail closed。浏览器不再读取任何 Backend origin 构建变量。
 
 ## 4. 页面信息架构调整
 
@@ -56,6 +54,7 @@
 - 旧单公司 Research/分析/高级表单仅在同时存在 `company_id + routing_run_id` 的 A Route 上下文展示。
 - D1 实验批次的 Evidence Review 仍可单独打开，但只展示审核卡，不恢复旧高级表单或单公司分析区。
 - Umail Result 仅在 Step 8/9 展示，并持续显示“只回传结果，不发送邮件”。
+- 顶部 API 文档链接已移除，避免向业务用户暴露开发者入口或错误 Backend 地址。
 
 ## 6. Mapping UI
 
@@ -92,7 +91,7 @@ NetEase 与 Umail 共用结构化 Mapping 编辑器：
 
 | 门禁 | 结果 |
 | --- | --- |
-| Backend 全量 pytest | `1208 passed in 154.49s` |
+| Backend 全量 pytest | `1208 passed in 90.90s` |
 | Backend Ruff | 通过 |
 | Backend strict mypy | 通过，425 source files |
 | Alembic 当前库 | `d5d2b1c2d3e4 (head)`；单一 head；`alembic check` 通过 |
@@ -100,10 +99,12 @@ NetEase 与 Umail 共用结构化 Mapping 编辑器：
 | PostgreSQL integration | 已包含在全量 pytest，全部通过 |
 | Frontend TypeScript | `tsc --noEmit` 通过 |
 | Frontend ESLint | 0 error；5 个既有 warning |
-| Production build | 空 `NEXT_PUBLIC_API_BASE_URL` 构建通过；动态 `/api/v1/[...path]` 存在 |
-| Production same-origin Playwright | 3/3 通过 |
-| D5e1.1 定向 Playwright | 25/25 通过，41.5 秒 |
-| Docker/HTTP | Backend、PostgreSQL、Redis、Worker 健康；health/ready/runtime/frontend 均 200 |
+| Frontend production build | 通过；动态 `/api/v1/[...path]` 存在，浏览器 bundle 不再包含 Backend origin 配置 |
+| D5e1.1 + Provider 定向 Playwright | 5/5 通过，覆盖同源请求、不可用后恢复、API 文档入口移除和凭据不泄露 |
+| Feature flag 回归 | `verify-flag-off.sh` 通过，Research 默认关闭 |
+| Dev/E2E Docker HTTP | Frontend 与同源 health/ready/runtime 均为 200；隔离 Backend 停止时代理返回 503，恢复后回到 200；各服务最终健康 |
+| Production standalone HTTP | 配置 `BACKEND_INTERNAL_URL` 时 frontend/health/ready 均为 200；缺少配置时代理按预期返回脱敏 503 |
+| 浏览器验收 | 状态卡为 healthy，Backend/PostgreSQL/Redis/Worker 全部 OK；API 文档链接数量为 0 |
 
 未运行重复长时间性能测试；本轮没有性能路径或数据模型变化。
 
