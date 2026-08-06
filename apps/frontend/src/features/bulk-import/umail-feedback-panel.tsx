@@ -205,7 +205,7 @@ export function UmailFeedbackPanel({
   }
 
   async function handleUpload() {
-    if (!file || busy || !health.backend || !health.postgres) return;
+    if (!file || busy || !health.backend || !health.postgres || health.stale) return;
     if (
       !exportBatchId ||
       !preflight ||
@@ -271,6 +271,7 @@ export function UmailFeedbackPanel({
       busy ||
       !health.backend ||
       !health.postgres ||
+      health.stale ||
       (realDataMode && health.realDataGate !== "enabled")
     ) return;
     setBusy(true);
@@ -321,6 +322,7 @@ export function UmailFeedbackPanel({
   const uploadDisabledReasons = [
     !health.backend ? t("runtime.writeBlocked") : null,
     !health.postgres ? t("acceptance.databaseRequired") : null,
+    health.stale ? t("runtime.staleWriteBlocked") : null,
     !file ? t("acceptance.selectFileReason") : null,
     !preflight ? t("acceptance.unlockPreflight") : null,
     !mappingComplete ? t("acceptance.mappingIncomplete") : null,
@@ -566,6 +568,7 @@ export function UmailFeedbackPanel({
                   !confirmed ||
                   !health.backend ||
                   !health.postgres ||
+                  health.stale ||
                   (realDataMode && health.realDataGate !== "enabled")
                 }
                 onClick={() => void handleApply()}

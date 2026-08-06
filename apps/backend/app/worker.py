@@ -1,12 +1,16 @@
 """Standalone PostgreSQL worker for prospect and import-resolution jobs."""
 
 import asyncio
+import contextlib
+import logging
 import os
 import signal
 import socket
 from collections.abc import Callable
 from datetime import timedelta
 from uuid import uuid4
+
+from redis.asyncio import Redis
 
 from app.api.deps import (
     get_contact_ingestion_workflow,
@@ -22,10 +26,16 @@ from app.api.deps import (
 )
 from app.core.config import get_settings
 from app.core.redis import create_redis_client
-from app.core.worker_health import WORKER_HEARTBEAT_KEY, WORKER_HEARTBEAT_TTL_SECONDS
+from app.core.worker_health import (
+    WORKER_HEARTBEAT_KEY,
+    WORKER_HEARTBEAT_REFRESH_SECONDS,
+    WORKER_HEARTBEAT_TTL_SECONDS,
+    build_worker_heartbeat,
+)
 from app.database.repositories import SqlAlchemyImportEvidenceProjectionReader
 from app.database.session import create_engine, create_session_factory
 from app.database.uow import SqlAlchemyUnitOfWork
+from app.domain.clock import utcnow
 from app.domain.repositories import (
     ImportResolutionUnitOfWork,
     ProspectBatchUnitOfWork,
@@ -41,6 +51,8 @@ from app.workflows.mvp_prospect_analysis import UowFactory
 from app.workflows.prospect_batch import ProspectJobCoordinator, ProspectJobRunner
 from app.workflows.prospect_routing import ProspectRoutingExecutionWorkflow
 
+logger = logging.getLogger(__name__)
+
 
 async def run_worker() -> None:
     settings = get_settings()
@@ -48,6 +60,12 @@ async def run_worker() -> None:
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     redis = create_redis_client(settings.redis_url)
+    owner = f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(shutdown_signal, stop.set)
+    heartbeat_task = asyncio.create_task(_run_heartbeat(redis, owner, stop))
 
     def uow_factory() -> UnitOfWork:
         return SqlAlchemyUnitOfWork(session_factory)
@@ -102,19 +120,8 @@ async def run_worker() -> None:
         routing_workflow=ProspectRoutingExecutionWorkflow(import_uow_factory),
     )
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(shutdown_signal, stop.set)
-    owner = f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
-
     try:
         while not stop.is_set():
-            await redis.set(
-                WORKER_HEARTBEAT_KEY,
-                owner,
-                ex=WORKER_HEARTBEAT_TTL_SECONDS,
-            )
             import_worked = await import_runner.run_once(owner=owner)
             prospect_worked = await runner.run_once(owner=owner)
             worked = import_worked or prospect_worked
@@ -128,8 +135,37 @@ async def run_worker() -> None:
             except TimeoutError:
                 pass
     finally:
+        stop.set()
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
+        # Single-worker MVP: remove the key so readiness flips to unavailable
+        # immediately instead of waiting for the TTL to expire.
+        with contextlib.suppress(Exception):
+            await redis.delete(WORKER_HEARTBEAT_KEY)
         await redis.aclose()
         await engine.dispose()
+
+
+async def _run_heartbeat(
+    redis: Redis,
+    owner: str,
+    stop: asyncio.Event,
+) -> None:
+    """Refresh the worker heartbeat independently of job execution length."""
+    while not stop.is_set():
+        try:
+            await redis.set(
+                WORKER_HEARTBEAT_KEY,
+                build_worker_heartbeat(owner, utcnow()),
+                ex=WORKER_HEARTBEAT_TTL_SECONDS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("worker heartbeat write failed: %s", exc)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=WORKER_HEARTBEAT_REFRESH_SECONDS)
+        except TimeoutError:
+            pass
 
 
 def _prospect_uow_factory(

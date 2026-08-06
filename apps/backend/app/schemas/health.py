@@ -4,6 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+WorkerStatusValue = Literal["healthy", "unavailable", "unknown"]
+WorkerReasonCode = Literal[
+    "WORKER_HEARTBEAT_OK",
+    "WORKER_HEARTBEAT_MISSING",
+    "WORKER_HEARTBEAT_EXPIRED",
+    "WORKER_HEARTBEAT_INVALID",
+    "REDIS_UNAVAILABLE",
+]
+
 
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
@@ -17,9 +26,22 @@ class DependencyStatus(BaseModel):
     detail: str | None = None
 
 
+class WorkerDependencyStatus(DependencyStatus):
+    """Worker dependency with structured heartbeat health (D5e1.2).
+
+    Kept as a subclass so postgres/redis entries keep the exact v0.1 wire
+    shape while the worker entry can carry a precise status and reason.
+    """
+
+    status: WorkerStatusValue
+    reason_code: WorkerReasonCode
+    last_seen_at: str | None = None
+    age_seconds: float | None = None
+
+
 class ReadinessResponse(BaseModel):
     status: Literal["ready", "degraded"]
-    dependencies: list[DependencyStatus]
+    dependencies: list[DependencyStatus | WorkerDependencyStatus]
 
 
 class RuntimeStatusResponse(BaseModel):

@@ -98,6 +98,7 @@ interface BulkImportPanelProps {
   initialRealDataMode?: boolean;
   initialStep?: number;
   health: AcceptanceHealthState;
+  onModeChange?: (enabled: boolean) => void;
 }
 
 const NETEASE_MAPPING_GROUPS: MappingGroupDefinition[] = [
@@ -168,8 +169,13 @@ export function BulkImportPanel({
   initialRealDataMode = false,
   initialStep = 1,
   health,
+  onModeChange,
 }: BulkImportPanelProps) {
   const { t } = useI18n();
+  const backendOk = health.components.backend === "ok";
+  const postgresOk = health.components.postgres === "ok";
+  const workerOk = health.components.worker === "ok";
+  const writesConfirmed = !health.stale;
   const [file, setFile] = useState<File | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [mappingValidated, setMappingValidated] = useState(false);
@@ -435,6 +441,7 @@ export function BulkImportPanel({
 
   function updateRealDataMode(enabled: boolean) {
     setRealDataMode(enabled);
+    onModeChange?.(enabled);
     setMappingConfirmed(false);
     const currentUrl = new URL(window.location.href);
     if (enabled) currentUrl.searchParams.set("real_data", "1");
@@ -456,7 +463,7 @@ export function BulkImportPanel({
   }
 
   async function handlePreflight() {
-    if (!file || preflightBusy || busy || !health.backend) return;
+    if (!file || preflightBusy || busy || !backendOk) return;
     setPreflightBusy(true);
     setError(null);
     setMappingConfirmed(false);
@@ -486,9 +493,16 @@ export function BulkImportPanel({
       setBusy(false);
       return;
     }
+    if (!workerOk) {
+      setError(t("runtime.workerRequired"));
+      setBusy(false);
+      return;
+    }
     if (
-      !health.backend ||
-      !health.postgres ||
+      !backendOk ||
+      !postgresOk ||
+      !workerOk ||
+      !writesConfirmed ||
       (realDataMode && health.realDataGate !== "enabled") ||
       (realDataMode && (!preflight || !mappingConfirmed || !mappingValidated)) ||
       (preflight && preflightFileSignature !== fileSignature(file))
@@ -526,7 +540,7 @@ export function BulkImportPanel({
   }
 
   async function handleStartResolution() {
-    if (!session || resolving || !health.backend || !health.postgres) return;
+    if (!session || resolving || !backendOk || !postgresOk || !workerOk || !writesConfirmed) return;
     setResolving(true);
     setError(null);
     try {
@@ -540,7 +554,7 @@ export function BulkImportPanel({
   }
 
   async function handleReview(decisionId: string, action: ImportReviewAction) {
-    if (!session || reviewingId || !health.backend || !health.postgres) return;
+    if (!session || reviewingId || !backendOk || !postgresOk || !writesConfirmed) return;
     setReviewingId(decisionId);
     setError(null);
     try {
@@ -554,7 +568,7 @@ export function BulkImportPanel({
   }
 
   async function handleStartRouting() {
-    if (!session || routingBusy || !health.backend || !health.postgres) return;
+    if (!session || routingBusy || !backendOk || !postgresOk || !workerOk || !writesConfirmed) return;
     const products = splitList(productKeywords);
     const hs = splitList(hsCodes);
     if (!products.length && !hs.length) {
@@ -593,7 +607,7 @@ export function BulkImportPanel({
     route: ProspectRouteResponse,
     action: "confirm" | "override" | "exclude",
   ) {
-    if (reviewingRouteId || !health.backend || !health.postgres) return;
+    if (reviewingRouteId || !backendOk || !postgresOk || !writesConfirmed) return;
     const reason = routeReasons[route.route_id]?.trim();
     if (action !== "confirm" && !reason) {
       setError(t("bulk.routingReasonRequired"));
@@ -626,7 +640,15 @@ export function BulkImportPanel({
   }
 
   async function handleCreateRoutingBatch() {
-    if (!routingRun || routingBusy || !health.backend || !health.postgres || !selectedACompanies.length) return;
+    if (
+      !routingRun ||
+      routingBusy ||
+      !backendOk ||
+      !postgresOk ||
+      !workerOk ||
+      !writesConfirmed ||
+      !selectedACompanies.length
+    ) return;
     setRoutingBusy(true);
     setError(null);
     try {
@@ -645,7 +667,14 @@ export function BulkImportPanel({
   }
 
   async function handleStartRoutedBatch() {
-    if (!createdBatchId || batchBusy || !health.backend || !health.postgres) return;
+    if (
+      !createdBatchId ||
+      batchBusy ||
+      !backendOk ||
+      !postgresOk ||
+      !workerOk ||
+      !writesConfirmed
+    ) return;
     if (!window.confirm(t("bulk.routingBatchStartConfirmation"))) return;
     setBatchBusy(true);
     setError(null);
@@ -664,7 +693,14 @@ export function BulkImportPanel({
   }
 
   async function handleResumeRoutedCompany(companyId: string) {
-    if (!createdBatchId || batchBusy || !health.backend || !health.postgres) return;
+    if (
+      !createdBatchId ||
+      batchBusy ||
+      !backendOk ||
+      !postgresOk ||
+      !workerOk ||
+      !writesConfirmed
+    ) return;
     setBatchBusy(true);
     setError(null);
     try {
@@ -683,7 +719,14 @@ export function BulkImportPanel({
   }
 
   async function handleRetryRoutedCompany(companyId: string) {
-    if (!createdBatchId || batchBusy || !health.backend || !health.postgres) return;
+    if (
+      !createdBatchId ||
+      batchBusy ||
+      !backendOk ||
+      !postgresOk ||
+      !workerOk ||
+      !writesConfirmed
+    ) return;
     setBatchBusy(true);
     setError(null);
     try {
@@ -779,13 +822,15 @@ export function BulkImportPanel({
     file && preflight && preflightFileSignature === fileSignature(file),
   );
   const preflightDisabledReasons = [
-    !health.backend ? t("runtime.writeBlocked") : null,
+    !backendOk ? t("runtime.backendRequired") : null,
     !file ? t("acceptance.selectFileReason") : null,
     file && !supportedFile ? t("acceptance.unsupportedFileReason") : null,
   ].filter((value): value is string => Boolean(value));
   const importDisabledReasons = [
-    !health.backend ? t("runtime.writeBlocked") : null,
-    !health.postgres ? t("acceptance.databaseRequired") : null,
+    !backendOk ? t("runtime.backendRequired") : null,
+    !postgresOk ? t("acceptance.databaseRequired") : null,
+    !workerOk ? t("runtime.workerRequired") : null,
+    !writesConfirmed ? t("runtime.staleWriteBlocked") : null,
     !preflight ? t("acceptance.unlockPreflight") : null,
     !mappingComplete ? t("acceptance.mappingIncomplete") : null,
     !mappingValidated ? t("acceptance.mappingNeedsValidation") : null,
@@ -801,6 +846,9 @@ export function BulkImportPanel({
     : preflight
       ? t("acceptance.waitingMapping")
       : t("acceptance.preparationMode");
+  const firstExecutableIndex = acceptanceSteps.findIndex((step) => step.unlocked) + 1;
+  const firstExecutableStep =
+    firstExecutableIndex > 0 ? acceptanceSteps[firstExecutableIndex - 1] : null;
 
   return (
     <section
@@ -826,6 +874,17 @@ export function BulkImportPanel({
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {t("acceptance.currentStep", { step: activeStep })}
               </p>
+              {firstExecutableStep ? (
+                <p
+                  className="mt-1 text-xs text-slate-600"
+                  data-testid="acceptance-current-executable"
+                >
+                  {t("acceptance.currentExecutable", {
+                    step: firstExecutableIndex,
+                    label: firstExecutableStep.label,
+                  })}
+                </p>
+              ) : null}
               <p className="mt-1 text-xs text-slate-600" data-testid="acceptance-mode-label">
                 {acceptanceModeLabel}
               </p>
@@ -858,7 +917,7 @@ export function BulkImportPanel({
                 >
                   {index + 1}. {step.label}
                   {!step.unlocked ? (
-                    <span className="mt-1 block text-[10px] font-normal text-slate-400">
+                    <span className="mt-1 block truncate text-[10px] font-normal text-slate-400">
                       {step.reason}
                     </span>
                   ) : null}
@@ -989,7 +1048,7 @@ export function BulkImportPanel({
             <button
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 text-sm font-semibold text-indigo-800 disabled:opacity-50"
               data-testid="netease-preflight-again"
-              disabled={busy || preflightBusy || !file || !health.backend}
+              disabled={busy || preflightBusy || !file || !backendOk}
               onClick={() => void handlePreflight()}
               type="button"
             >
@@ -1109,8 +1168,10 @@ export function BulkImportPanel({
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-cyan-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid="import-resolution-start"
                 disabled={
-                  !health.backend ||
-                  !health.postgres ||
+                  !backendOk ||
+                  !postgresOk ||
+                  !workerOk ||
+                  !writesConfirmed ||
                   resolving ||
                   !["completed", "partial_failed"].includes(session.status) ||
                   Boolean(
@@ -1134,6 +1195,14 @@ export function BulkImportPanel({
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {t("bulk.resolutionBoundary")}
             </p>
+            {!workerOk ? (
+              <p
+                className="mt-2 text-xs font-medium text-amber-800"
+                data-testid="worker-disabled-reason"
+              >
+                {t("runtime.workerRequired")}
+              </p>
+            ) : null}
 
             {resolution ? (
               <div className="mt-4" data-testid="import-resolution-result">
@@ -1213,7 +1282,12 @@ export function BulkImportPanel({
                             ).map(([action, label]) => (
                               <button
                                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40"
-                                disabled={!health.backend || !health.postgres || Boolean(reviewingId)}
+                                disabled={
+                                  !backendOk ||
+                                  !postgresOk ||
+                                  !writesConfirmed ||
+                                  Boolean(reviewingId)
+                                }
                                 key={action}
                                 onClick={() => void handleReview(decision.decision_id, action)}
                                 type="button"
@@ -1259,8 +1333,10 @@ export function BulkImportPanel({
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid="prospect-routing-start"
                 disabled={
-                  !health.backend ||
-                  !health.postgres ||
+                  !backendOk ||
+                  !postgresOk ||
+                  !workerOk ||
+                  !writesConfirmed ||
                   routingBusy ||
                   !resolution ||
                   !["completed", "partial_failed"].includes(resolution.resolution_status) ||
@@ -1342,6 +1418,14 @@ export function BulkImportPanel({
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {t("bulk.routingBoundary")}
             </p>
+            {!workerOk ? (
+              <p
+                className="mt-2 text-xs font-medium text-amber-800"
+                data-testid="worker-disabled-reason"
+              >
+                {t("runtime.workerRequired")}
+              </p>
+            ) : null}
               </>
             ) : (
               <div>
@@ -1449,7 +1533,12 @@ export function BulkImportPanel({
                                     <div className="flex gap-2">
                                       <button
                                         className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 px-2 py-1 font-semibold text-emerald-800 disabled:opacity-40"
-                                        disabled={!health.backend || !health.postgres || Boolean(reviewingRouteId)}
+                                        disabled={
+                                          !backendOk ||
+                                          !postgresOk ||
+                                          !writesConfirmed ||
+                                          Boolean(reviewingRouteId)
+                                        }
                                         onClick={() => void handleRouteReview(route, "confirm")}
                                         type="button"
                                       >
@@ -1485,7 +1574,12 @@ export function BulkImportPanel({
                                     <div className="flex gap-2">
                                       <button
                                         className="rounded-lg border border-slate-300 px-2 py-1 font-semibold text-slate-700 disabled:opacity-40"
-                                        disabled={!health.backend || !health.postgres || Boolean(reviewingRouteId)}
+                                        disabled={
+                                          !backendOk ||
+                                          !postgresOk ||
+                                          !writesConfirmed ||
+                                          Boolean(reviewingRouteId)
+                                        }
                                         onClick={() => void handleRouteReview(route, "override")}
                                         type="button"
                                       >
@@ -1493,7 +1587,12 @@ export function BulkImportPanel({
                                       </button>
                                       <button
                                         className="inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2 py-1 font-semibold text-rose-700 disabled:opacity-40"
-                                        disabled={!health.backend || !health.postgres || Boolean(reviewingRouteId)}
+                                        disabled={
+                                          !backendOk ||
+                                          !postgresOk ||
+                                          !writesConfirmed ||
+                                          Boolean(reviewingRouteId)
+                                        }
                                         onClick={() => void handleRouteReview(route, "exclude")}
                                         type="button"
                                       >
@@ -1540,8 +1639,10 @@ export function BulkImportPanel({
                     className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     data-testid="prospect-routing-create-batch"
                     disabled={
-                      !health.backend ||
-                      !health.postgres ||
+                      !backendOk ||
+                      !postgresOk ||
+                      !workerOk ||
+                      !writesConfirmed ||
                       routingBusy ||
                       selectedACompanies.length === 0 ||
                       selectedACompanies.length > 5
@@ -1576,7 +1677,14 @@ export function BulkImportPanel({
                       <button
                         className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                         data-testid="prospect-routing-batch-start"
-                        disabled={!health.backend || !health.postgres || batchBusy || Boolean(batchExecution)}
+                        disabled={
+                          !backendOk ||
+                          !postgresOk ||
+                          !workerOk ||
+                          !writesConfirmed ||
+                          batchBusy ||
+                          Boolean(batchExecution)
+                        }
                         onClick={() => void handleStartRoutedBatch()}
                         type="button"
                       >
@@ -1590,6 +1698,14 @@ export function BulkImportPanel({
                     <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
                       {t("bulk.routingBatchStartWarning")}
                     </p>
+                    {!workerOk ? (
+                      <p
+                        className="mt-2 text-xs font-medium text-amber-800"
+                        data-testid="worker-disabled-reason"
+                      >
+                        {t("runtime.workerRequired")}
+                      </p>
+                    ) : null}
                     {!toBatchSender(storedSender) ? (
                       <p className="mt-2 text-xs text-amber-800">
                         {t("batch.senderMissing")}
@@ -1663,7 +1779,14 @@ export function BulkImportPanel({
                                 <button
                                   className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 disabled:opacity-50"
                                   data-testid="resume-routing-batch-company"
-                                  disabled={!health.backend || !health.postgres || batchBusy || batchExecutionActive}
+                                  disabled={
+                                    !backendOk ||
+                                    !postgresOk ||
+                                    !workerOk ||
+                                    !writesConfirmed ||
+                                    batchBusy ||
+                                    batchExecutionActive
+                                  }
                                   onClick={() => void handleResumeRoutedCompany(company.company_id)}
                                   type="button"
                                 >
@@ -1674,7 +1797,14 @@ export function BulkImportPanel({
                             {company.error_code && ROUTING_RETRYABLE_ERRORS.has(company.error_code) ? (
                               <button
                                 className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                                disabled={!health.backend || !health.postgres || batchBusy || batchExecutionActive}
+                                disabled={
+                                  !backendOk ||
+                                  !postgresOk ||
+                                  !workerOk ||
+                                  !writesConfirmed ||
+                                  batchBusy ||
+                                  batchExecutionActive
+                                }
                                 onClick={() => void handleRetryRoutedCompany(company.company_id)}
                                 type="button"
                               >

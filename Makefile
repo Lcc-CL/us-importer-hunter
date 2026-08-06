@@ -1,4 +1,4 @@
-.PHONY: up up-tools down logs backend frontend infra test lint fmt migrate revision \
+.PHONY: up up-tools down logs backend frontend worker infra test lint fmt migrate revision \
         e2e e2e-real e2e-up e2e-down e2e-install e2e-report e2e-flag-off \
         research-smoke-real
 
@@ -21,6 +21,9 @@ infra:         ## start only postgres + redis (host-run apps)
 # --- Host development ---
 backend:       ## run backend with hot reload on the host
 	cd apps/backend && uv run uvicorn app.main:app --reload
+
+worker:        ## run the background worker on the host (needed for queued jobs)
+	cd apps/backend && uv run python -m app.worker
 
 frontend:      ## run frontend dev server on the host
 	cd apps/frontend && npm run dev

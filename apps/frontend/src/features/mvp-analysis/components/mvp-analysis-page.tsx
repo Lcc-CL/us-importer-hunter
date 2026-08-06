@@ -25,6 +25,7 @@ import { ImportEvidencePanel } from "./import-evidence-panel";
 import { ProspectForm } from "./prospect-form";
 import {
   ProviderBadge,
+  INITIAL_STATE as INITIAL_HEALTH_STATE,
   type AcceptanceHealthState,
 } from "./provider-badge";
 import { DiscoveryTaskPanel } from "@/features/discovery";
@@ -125,15 +126,8 @@ export function MvpAnalysisPage({
   // valid state (COMPANY_ONLY) and never blocks the analysis.
   const [discovery, setDiscovery] = useState<ContactDiscovery | null>(null);
   const [discovering, setDiscovering] = useState(false);
-  const [health, setHealth] = useState<AcceptanceHealthState>({
-    phase: "checking",
-    backend: false,
-    postgres: false,
-    redis: false,
-    worker: false,
-    realDataGate: "blocked",
-    runtime: null,
-  });
+  const [health, setHealth] = useState<AcceptanceHealthState>(INITIAL_HEALTH_STATE);
+  const [realDataMode, setRealDataMode] = useState(Boolean(initialRealDataMode));
   const handleHealthChange = useCallback((next: AcceptanceHealthState) => {
     setHealth(next);
   }, []);
@@ -433,15 +427,21 @@ export function MvpAnalysisPage({
 
       <div className="mx-auto max-w-[1540px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
         <div className="mb-8 grid gap-4 border-b border-slate-200 pb-7 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.8fr)] lg:items-end">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">
               {t("hero.kicker")}
             </p>
             <h1 className="mt-2 max-w-3xl text-3xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-4xl">
               {t("hero.title")}
             </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+              {t("hero.subtitle")}
+            </p>
           </div>
-          <ProviderBadge onStatusChange={handleHealthChange} />
+          <ProviderBadge
+            onStatusChange={handleHealthChange}
+            realDataMode={realDataMode}
+          />
         </div>
 
         <BulkImportPanel
@@ -453,6 +453,7 @@ export function MvpAnalysisPage({
           initialRealDataMode={initialRealDataMode}
           initialStep={initialStep}
           health={health}
+          onModeChange={setRealDataMode}
         />
 
         <details

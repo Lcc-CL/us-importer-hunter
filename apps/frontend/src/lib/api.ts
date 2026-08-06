@@ -950,6 +950,16 @@ export interface DependencyStatusResponse {
   name: "postgres" | "redis" | "worker" | string;
   healthy: boolean;
   detail: string | null;
+  /** Structured worker health (D5e1.2); absent on older backends. */
+  status?: "healthy" | "unavailable" | "unknown";
+  reason_code?:
+    | "WORKER_HEARTBEAT_OK"
+    | "WORKER_HEARTBEAT_MISSING"
+    | "WORKER_HEARTBEAT_EXPIRED"
+    | "WORKER_HEARTBEAT_INVALID"
+    | "REDIS_UNAVAILABLE";
+  last_seen_at?: string | null;
+  age_seconds?: number | null;
 }
 
 export interface ReadinessResponse {
