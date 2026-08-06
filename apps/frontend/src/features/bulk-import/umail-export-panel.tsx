@@ -111,7 +111,13 @@ export function UmailExportPanel({
   }
 
   async function handlePrepare() {
-    if (busy || !health.backend || !health.postgres || !effectiveSelectedCompanies.length) return;
+    if (
+      busy ||
+      !health.backend ||
+      !health.postgres ||
+      health.stale ||
+      !effectiveSelectedCompanies.length
+    ) return;
     if (!campaign.trim()) {
       setError(t("bulk.umailCampaignRequired"));
       return;
@@ -155,7 +161,14 @@ export function UmailExportPanel({
   }
 
   async function handleCreateSuppression() {
-    if (busy || !health.backend || !health.postgres || !targetValue.trim() || !suppressionReason.trim()) return;
+    if (
+      busy ||
+      !health.backend ||
+      !health.postgres ||
+      health.stale ||
+      !targetValue.trim() ||
+      !suppressionReason.trim()
+    ) return;
     setBusy(true);
     setError(null);
     try {
@@ -174,7 +187,7 @@ export function UmailExportPanel({
   }
 
   async function handleDeactivate(suppressionId: string) {
-    if (busy || !health.backend || !health.postgres) return;
+    if (busy || !health.backend || !health.postgres || health.stale) return;
     setBusy(true);
     setError(null);
     try {
@@ -262,7 +275,13 @@ export function UmailExportPanel({
           <button
             className="mt-3 w-full rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             data-testid="umail-export-prepare"
-            disabled={!health.backend || !health.postgres || busy || !effectiveSelectedCompanies.length}
+            disabled={
+              !health.backend ||
+              !health.postgres ||
+              health.stale ||
+              busy ||
+              !effectiveSelectedCompanies.length
+            }
             onClick={() => void handlePrepare()}
             type="button"
           >
@@ -302,7 +321,14 @@ export function UmailExportPanel({
           <button
             className="mt-2 inline-flex items-center gap-1 rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 disabled:opacity-40"
             data-testid="suppression-create"
-            disabled={!health.backend || !health.postgres || busy || !targetValue.trim() || !suppressionReason.trim()}
+            disabled={
+              !health.backend ||
+              !health.postgres ||
+              health.stale ||
+              busy ||
+              !targetValue.trim() ||
+              !suppressionReason.trim()
+            }
             onClick={() => void handleCreateSuppression()}
             type="button"
           >
@@ -323,7 +349,7 @@ export function UmailExportPanel({
                     <button
                       aria-label={`${t("bulk.umailSuppressionDeactivate")} ${target}`}
                       className="text-rose-700 disabled:opacity-40"
-                      disabled={!health.backend || !health.postgres || busy}
+                      disabled={!health.backend || !health.postgres || health.stale || busy}
                       onClick={() => void handleDeactivate(entry.suppression_id)}
                       type="button"
                     >

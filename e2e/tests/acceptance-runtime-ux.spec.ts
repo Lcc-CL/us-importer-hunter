@@ -42,7 +42,7 @@ test("loads runtime health through the configured browser-facing API path", asyn
     "data-health-phase",
     "healthy",
   );
-  await expect(page.getByTestId("runtime-status-card")).toContainText("后端已连接");
+  await expect(page.getByTestId("runtime-status-card")).toContainText("系统运行正常");
   expect(new URL(request.url()).origin).toBe(new URL(page.url()).origin);
   await expect(page.getByRole("link", { name: "API 文档" })).toHaveCount(0);
   expect(consoleGuard.problems()).toEqual([]);
@@ -84,7 +84,7 @@ test("shows an actionable unavailable state and recovers without reload", async 
   backendAvailable = true;
   await page.getByTestId("runtime-retry").click();
   await expect(card).toHaveAttribute("data-health-phase", "healthy");
-  await expect(card).toContainText("后端已连接");
+  await expect(card).toContainText("系统运行正常");
   await expect(card).toContainText("PostgreSQL");
   await expect(card).toContainText("Worker");
 });
