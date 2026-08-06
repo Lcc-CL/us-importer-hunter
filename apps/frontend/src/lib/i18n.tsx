@@ -891,7 +891,7 @@ const en: Record<MessageKey, string> = {
   "runtime.mode.synthetic": "Synthetic",
   "runtime.mode.real": "Real data",
   "runtime.mode.provider": "Provider",
-  "runtime.mode.providerFake": "Fake (demo mode · not called)",
+  "runtime.mode.providerFake": "Fake (Demo mode · not called)",
   "runtime.mode.providerReal": "Real AI (openai)",
   "runtime.mode.realWrite": "Real writes",
   "runtime.mode.enabled": "Enabled",
