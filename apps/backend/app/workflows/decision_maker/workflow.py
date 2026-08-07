@@ -18,6 +18,8 @@ from enum import StrEnum
 from uuid import UUID
 
 from app.domain.contact import (
+    Contact,
+    ContactChannelType,
     ContactStatus,
     DecisionMakerFitAssessment,
     Department,
@@ -30,6 +32,7 @@ from app.domain.services import DecisionMakerSelectionService
 from app.services.contact.scorer import DecisionMakerSelectionResult
 from app.services.contact.selector import select
 from app.services.contact.size_provider import DeterministicSizeProvider
+from app.services.import_resolution.normalization import is_department_email
 
 
 class NoSelectionReason(StrEnum):
@@ -94,6 +97,7 @@ class DecisionMakerSelectionWorkflow:
                 contact
                 for contact in await uow.contacts.list_for_company(company_id)
                 if contact.status not in (ContactStatus.INVALID, ContactStatus.INACTIVE)
+                and not _is_department_mailbox(contact)
             ]
 
             size_provider = DeterministicSizeProvider()
@@ -207,7 +211,16 @@ class DecisionMakerSelectionWorkflow:
                 no_selection_reason=_no_selection_reason(best),
                 policy_version=policy,
                 selection_result=selection_result,
-            )
+                )
+
+
+def _is_department_mailbox(contact: Contact) -> bool:
+    """Shared mailboxes (info@/sales@/contact@) are never auto decision makers."""
+    return any(
+        channel.channel_type is ContactChannelType.EMAIL
+        and is_department_email(channel.normalized_value)
+        for channel in contact.channels
+    )
 
 
 def _no_selection_reason(best: DecisionMakerFitAssessment) -> NoSelectionReason:
