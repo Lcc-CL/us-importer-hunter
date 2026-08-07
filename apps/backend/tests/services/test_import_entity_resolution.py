@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 
+import pytest
+
 from app.domain.import_resolution import (
     CompanyResolutionCandidate,
     ContactIdentityCandidate,
@@ -156,3 +158,29 @@ def test_contact_global_email_department_and_unassigned_rules() -> None:
     )
     assert unassigned.decision is ImportEntityDecisionKind.AUTO_CREATE
     assert "unassigned_contact" in unassigned.reason_codes
+
+
+@pytest.mark.parametrize(
+    "email",
+    [
+        "info@company.example",
+        "sales@company.example",
+        "support@company.example",
+        "admin@company.example",
+        "office@company.example",
+        "hello@company.example",
+    ],
+)
+def test_department_shared_mailboxes_are_flagged_retained_and_not_personified(
+    email: str,
+) -> None:
+    projected = project(
+        company="Atlas Hardware",
+        website="atlas.example",
+        contact="Support Desk",
+        email=email,
+        title="Manager",
+    )
+    assert projected.is_department_contact is True
+    assert projected.contact_name == "Support Desk"  # retained, not deleted
+    assert projected.role_category is ImportRoleCategory.UNKNOWN
