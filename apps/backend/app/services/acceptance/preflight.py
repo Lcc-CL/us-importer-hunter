@@ -20,6 +20,8 @@ from typing import Any, BinaryIO, Literal
 from uuid import UUID
 from xml.etree import ElementTree
 
+from app.services.import_resolution.normalization import is_department_email
+
 ACCEPTANCE_MAX_BYTES = 20 * 1024 * 1024
 ACCEPTANCE_MAX_ROWS = 20_000
 XLSX_MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
@@ -517,7 +519,20 @@ def _enriched_netease_rows(
     """
     rows = _row_dicts(sheet)
     if not sheet.merges:
-        return tuple((row, {}) for row in rows)
+        return tuple(
+            (
+                row,
+                {"company_anchor_row": position + 1}
+                if any(_mapped_value(row, mapping, field) for field in (
+                    "company_name",
+                    "external_company_id",
+                    "website",
+                    "address",
+                ))
+                else {},
+            )
+            for position, row in enumerate(rows, start=1)
+        )
     company_headers = {
         mapping[field]
         for field in ("company_name", "external_company_id", "website", "address")
@@ -665,9 +680,7 @@ def _analyze_netease_rows(
                 contact_key = f"email:{email}"
                 contact_keys.add(contact_key)
                 email_counts[email] += 1
-                if email.startswith(
-                    ("info@", "sales@", "contact@", "support@", "hello@", "admin@", "service@")
-                ):
+                if is_department_email(email):
                     department_emails.add(email)
             else:
                 contact_key = (
