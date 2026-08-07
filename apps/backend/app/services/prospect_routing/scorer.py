@@ -150,10 +150,11 @@ class RoutingFeatureProjector:
             pols.extend(_split(_value(fields, mapping, "pol")))
             pods.extend(_split(_value(fields, mapping, "pod")))
             company_types.extend(_split(_value(fields, mapping, "company_type")))
-            suppliers.extend(_split(_value(fields, mapping, "supplier")))
-            if last_import_at is None:
+            if "supplier" in mapping:
+                suppliers.extend(_split(_value(fields, mapping, "supplier")))
+            if last_import_at is None and "last_import_at" in mapping:
                 last_import_at = _value(fields, mapping, "last_import_at") or None
-            if import_amount_raw is None:
+            if import_amount_raw is None and "amount" in mapping:
                 import_amount_raw = _value(fields, mapping, "amount") or None
             parsed_date = _parse_date(_value(fields, mapping, "shipment_date"))
             if parsed_date is not None:
