@@ -354,6 +354,15 @@ class ProspectRoutingQueryWorkflow:
                 for view in views
                 if view.decision.candidate_entity_id is not None
             }
+            _all_views, pending_total = await uow.import_resolution.list_decisions(
+                session_id=import_session_id,
+                entity_type=None,
+                review_status=ImportEntityReviewStatus.PENDING,
+                min_confidence=None,
+                max_confidence=None,
+                offset=0,
+                limit=500,
+            )
         mapping = session.mapping_json.get("logical_fields", {}) or {}
         taxonomy = fitness_equipment_v1()
         policy = RoutingPolicyV11()
@@ -465,7 +474,7 @@ class ProspectRoutingQueryWorkflow:
             "rules_version": policy.rules_version,
             "taxonomy_version": taxonomy.rules_version,
             "preview_valid": preview_valid,
-            "entity_pending_count": len(pending_ids),
+            "entity_pending_count": pending_total,
             "totals": totals,
             "companies": companies,
         }
