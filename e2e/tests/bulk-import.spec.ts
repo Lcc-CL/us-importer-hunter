@@ -6,6 +6,22 @@ test("bulk import entity resolution review survives refresh", async ({
   page,
 }) => {
   const guard = attachConsoleGuard(page);
+  // The isolated fake E2E stack keeps the real-data gate blocked; enable it in
+  // the page so the routing approval step can be exercised after entity review.
+  await page.route("**/api/v1/health/runtime", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: "fake",
+        model: "fake-static-v1",
+        research_provider: "fake",
+        research_model: "fake-research-v1",
+        environment: "test",
+        real_data_gate: "enabled",
+      }),
+    }),
+  );
   await page.goto("/");
   await expect(page.getByTestId("runtime-status-card")).toHaveAttribute(
     "data-health-phase",
@@ -24,8 +40,8 @@ test("bulk import entity resolution review survives refresh", async ({
     buffer: Buffer.from(
       [
         "公司名称,外部ID,官网,地址,公司类型,联系人,邮箱,职位,产品,HS,日期,来源国,POL,POD",
-        "D5B1 E2E Atlas,ATLAS-E2E,atlas-e2e.example,100 Main St Austin TX,importer,Maria Chen,maria@atlas-e2e.example,Director Logistics,industrial hardware tools,8205.40,2026-07-01,China,Shanghai,Los Angeles",
-        "D5B1 Unrelated Furniture,,atlas-e2e.example,900 Ocean Dr Miami FL,warehouse,Pat Lee,pat@unrelated.example,Procurement Manager,upholstered furniture,9401,2026-07-15,Vietnam,Ho Chi Minh,Long Beach",
+        "D5B1 E2E Atlas,ATLAS-E2E,atlas-e2e.example,100 Main St Austin TX,importer,Maria Chen,maria@atlas-e2e.example,Director Logistics,fitness equipment,950691,2026-07-01,United States,Shanghai,Los Angeles",
+        "D5B1 Unrelated Fitness,,atlas-e2e.example,900 Ocean Dr Miami FL,warehouse,Pat Lee,pat@unrelated.example,Procurement Manager,fitness accessories,950691,2026-07-15,United States,Ho Chi Minh,Long Beach",
         "BrokenOnly",
       ].join("\n"),
     ),
@@ -68,7 +84,25 @@ test("bulk import entity resolution review survives refresh", async ({
   await expect(restoredResolution.getByText("实体归并完成")).toBeVisible();
   await expect(restored.getByTestId("import-resolution-reviews")).toBeVisible();
 
-  await restored.getByRole("button", { name: "合并", exact: true }).click();
+  // Step 5 routing must stay blocked while the entity review is pending.
+  await page.getByTestId("acceptance-step-5").click();
+  await restored.getByTestId("prospect-routing-products").fill("fitness");
+  await restored.getByTestId("prospect-routing-hs").fill("950691");
+  await restored.getByTestId("prospect-routing-origins").fill("United States");
+  await restored.getByTestId("prospect-routing-pol").fill("Shanghai");
+  await restored.getByTestId("prospect-routing-pod").fill("Los Angeles");
+  await restored.getByTestId("prospect-routing-campaign").fill("D5e2g1 E2E fitness");
+  await restored.getByTestId("routing-preview-generate").click();
+  await expect(
+    restored.getByTestId("routing-apply-blocker").getByText("仍有 1 条实体需要审核。"),
+  ).toBeVisible();
+  await expect(restored.getByTestId("prospect-routing-start")).toBeDisabled();
+
+  // Low-confidence merge opens the confirmation modal with both candidates.
+  await page.getByTestId("acceptance-step-4").click();
+  await restored.getByRole("button", { name: "确认同一实体", exact: true }).click();
+  await expect(page.getByTestId("merge-confirm-candidates")).toBeVisible();
+  await page.getByTestId("merge-confirm-submit").click();
   await expect(restored.getByText("当前没有待复核决定。")).toBeVisible();
   await expect(
     restoredResolution.getByText("公司待复核", { exact: true }).locator("..").getByText("0", {
@@ -77,13 +111,10 @@ test("bulk import entity resolution review survives refresh", async ({
   ).toBeVisible();
 
   await page.getByTestId("acceptance-step-5").click();
-  await restored.getByTestId("prospect-routing-products").fill("hardware");
-  await restored.getByTestId("prospect-routing-hs").fill("8205");
-  await restored.getByTestId("prospect-routing-origins").fill("China");
-  await restored.getByTestId("prospect-routing-pol").fill("Shanghai");
-  await restored.getByTestId("prospect-routing-pod").fill("Los Angeles");
-  await restored.getByTestId("prospect-routing-campaign").fill("D5c E2E hardware");
+  await restored.getByTestId("routing-preview-generate").click();
+  await expect(restored.getByTestId("routing-apply-blocker")).not.toBeVisible();
   await restored.getByTestId("prospect-routing-start").click();
+  await page.getByTestId("routing-apply-confirm-submit").click();
 
   const routing = restored.getByTestId("prospect-routing-result");
   await expect(routing.getByText("路由完成")).toBeVisible();

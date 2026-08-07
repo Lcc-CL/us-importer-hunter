@@ -1492,12 +1492,28 @@ export function BulkImportPanel({
                             </span>
                             {(
                               [
-                                ["defer", t("bulk.reviewDefer")],
-                                ["merge", t("bulk.reviewMerge")],
-                                ["keep_separate", t("bulk.reviewSeparate")],
-                                ["reject", t("bulk.reviewReject")],
+                                [
+                                  "defer",
+                                  t("bulk.reviewDefer"),
+                                  t("bulk.reviewDeferHint"),
+                                ],
+                                [
+                                  "merge",
+                                  t("bulk.reviewMerge"),
+                                  t("bulk.reviewMergeHint"),
+                                ],
+                                [
+                                  "keep_separate",
+                                  t("bulk.reviewSeparate"),
+                                  t("bulk.reviewSeparateHint"),
+                                ],
+                                [
+                                  "reject",
+                                  t("bulk.reviewReject"),
+                                  t("bulk.reviewRejectHint"),
+                                ],
                               ] as const
-                            ).map(([action, label]) => (
+                            ).map(([action, label, hint]) => (
                               <button
                                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40"
                                 disabled={
@@ -1507,6 +1523,7 @@ export function BulkImportPanel({
                                   Boolean(reviewingId)
                                 }
                                 key={action}
+                                title={hint}
                                 onClick={
                                   action === "defer"
                                     ? () => undefined
@@ -1518,6 +1535,7 @@ export function BulkImportPanel({
                                       : () => void handleReview(decision.decision_id, action)
                                 }
                                 type="button"
+                                data-testid={`review-action-${action}`}
                               >
                                 {action !== "defer" && reviewingId === decision.decision_id
                                   ? t("bulk.reviewing")
@@ -2260,13 +2278,69 @@ export function BulkImportPanel({
       ) : null}
       {confirmMergeDecision ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
             <h3 className="text-sm font-semibold text-slate-900">
-              {t("routing.mergeConfirmTitle")}
+              {t("bulk.mergeConfirmTitle")}
             </h3>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              {t("routing.mergeConfirmBody")}
+              {t("bulk.mergeConfirmBody")}
             </p>
+            <div className="mt-4 space-y-3" data-testid="merge-confirm-candidates">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold text-slate-500">
+                  {t("bulk.mergeCandidateIncoming")}
+                </p>
+                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700">
+                  <div className="col-span-2">
+                    <dt className="inline text-slate-400">
+                      {t("bulk.mergeRowNumber")}:{" "}
+                    </dt>
+                    <dd className="inline font-medium">
+                      #{confirmMergeDecision.row_number ?? "—"}
+                    </dd>
+                  </div>
+                  {Object.entries(confirmMergeDecision.source_facts ?? {}).map(
+                    ([key, value]) => (
+                      <div key={key} className="col-span-2">
+                        <dt className="inline text-slate-400">{key}: </dt>
+                        <dd className="inline font-medium">{value}</dd>
+                      </div>
+                    ),
+                  )}
+                </dl>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold text-slate-500">
+                  {t("bulk.mergeCandidateExisting")}
+                </p>
+                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700">
+                  <div className="col-span-2">
+                    <dt className="inline text-slate-400">
+                      {t("bulk.entityCompany")}/{t("bulk.entityContact")}:{" "}
+                    </dt>
+                    <dd className="inline font-medium">
+                      {confirmMergeDecision.candidate_label ?? "—"}
+                    </dd>
+                  </div>
+                  <div className="col-span-2">
+                    <dt className="inline text-slate-400">
+                      {t("bulk.mergeConfidence")}:{" "}
+                    </dt>
+                    <dd className="inline font-medium">
+                      {(confirmMergeDecision.confidence * 100).toFixed(0)}%
+                    </dd>
+                  </div>
+                  <div className="col-span-2">
+                    <dt className="inline text-slate-400">
+                      {t("bulk.mergeReason")}:{" "}
+                    </dt>
+                    <dd className="inline font-medium">
+                      {confirmMergeDecision.reason_codes.join(" · ")}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
