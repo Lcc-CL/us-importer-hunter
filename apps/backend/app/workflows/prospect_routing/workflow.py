@@ -10,6 +10,8 @@ from uuid import UUID
 from app.domain.bulk_import import ImportSessionStatus
 from app.domain.exceptions import DuplicateOperation, InvalidStateTransition
 from app.domain.import_resolution import (
+    ImportEntityReviewStatus,
+    ImportEntityType,
     ImportJobType,
     ImportProcessingJob,
     ImportResolutionStatus,
@@ -32,6 +34,8 @@ from app.services.prospect_routing import (
     DeterministicProspectRoutingScorer,
     RoutingFeatureProjector,
 )
+from app.services.prospect_routing.scorer import RoutingPolicyV11
+from app.services.prospect_routing.taxonomy import fitness_equipment_v1
 from app.shared.exceptions import (
     ApplicationConflictError,
     InvalidInputError,
@@ -321,6 +325,150 @@ class ProspectRoutingQueryWorkflow:
                 total=total,
                 routes=tuple(routes),
             )
+
+    async def routing_preview(
+        self,
+        *,
+        import_session_id: UUID,
+        criteria: ProspectRoutingCriteria,
+    ) -> dict[str, Any]:
+        """Read-only deterministic routing preview (never writes routes)."""
+        async with self._uow_factory() as uow:
+            session = await uow.bulk_import.get_session(import_session_id)
+            if session is None:
+                raise ResourceNotFoundError(
+                    f"import session not found: {import_session_id}"
+                )
+            sources = await uow.prospect_routing.list_source_companies(import_session_id)
+            views, _total = await uow.import_resolution.list_decisions(
+                session_id=import_session_id,
+                entity_type=ImportEntityType.COMPANY,
+                review_status=ImportEntityReviewStatus.PENDING,
+                min_confidence=None,
+                max_confidence=None,
+                offset=0,
+                limit=500,
+            )
+            pending_ids = {
+                view.decision.candidate_entity_id
+                for view in views
+                if view.decision.candidate_entity_id is not None
+            }
+        mapping = session.mapping_json.get("logical_fields", {}) or {}
+        taxonomy = fitness_equipment_v1()
+        policy = RoutingPolicyV11()
+        projector = RoutingFeatureProjector()
+        totals: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0, "blocked": 0}
+        companies: list[dict[str, Any]] = []
+        for source in sources:
+            if source.company_id in pending_ids:
+                totals["blocked"] += 1
+                companies.append(
+                    {
+                        "company_id": str(source.company_id),
+                        "company_name": source.company_name,
+                        "tier": "blocked",
+                        "pre_score": 0.0,
+                        "reason_codes": ["ENTITY_REVIEW_PENDING"],
+                        "positive_reasons": [],
+                        "unknown_evidence": ["ENTITY_REVIEW_PENDING"],
+                        "explicit_negative": [],
+                        "product_signal": False,
+                        "hs_signal": False,
+                        "import_signal": False,
+                        "contact_quality": 0.0,
+                        "data_completeness": 0.0,
+                        "person_contact_count": 0,
+                        "department_contact_count": 0,
+                        "rules_version": policy.rules_version,
+                    }
+                )
+                continue
+            features = projector.project(source, mapping=mapping)
+            result = policy.evaluate(
+                criteria=criteria,
+                features=features,
+                taxonomy=taxonomy,
+            )
+            tier = (
+                "blocked"
+                if result.blocked
+                else result.recommended_tier.value
+                if result.recommended_tier is not None
+                else "blocked"
+            )
+            totals[tier] += 1
+            snapshot = result.feature_snapshot
+            explicit = [
+                code for code in result.reason_codes if code.startswith("EXPLICIT_")
+            ]
+            companies.append(
+                {
+                    "company_id": str(source.company_id),
+                    "company_name": source.company_name,
+                    "tier": tier,
+                    "pre_score": result.pre_score,
+                    "reason_codes": list(result.reason_codes[:8]),
+                    "positive_reasons": [
+                        code
+                        for code in result.reason_codes
+                        if code
+                        in (
+                            "TARGET_PRODUCT_MATCH",
+                            "TARGET_HS_MATCH",
+                            "FITNESS_EQUIPMENT_SIGNAL",
+                            "IMPORT_VALUE_SIGNAL",
+                            "WEBSITE_LEGITIMACY",
+                            "SOURCE_FACT_CONFIDENCE_HIGH",
+                            "PERSON_CONTACT_PREFERRED_ROLE",
+                            "PERSON_CONTACT_SIGNAL",
+                            "DEPARTMENT_REACHABILITY_ONLY",
+                            "CONTACT_COVERAGE_FULL",
+                        )
+                    ],
+                    "unknown_evidence": list(result.warning_codes),
+                    "explicit_negative": explicit,
+                    "product_signal": bool(
+                        "TARGET_PRODUCT_MATCH" in result.reason_codes
+                        or (snapshot.get("product_match_score") or 0) > 0
+                    ),
+                    "hs_signal": bool(
+                        "TARGET_HS_MATCH" in result.reason_codes
+                        or (snapshot.get("hs_code_match_score") or 0) > 0
+                    ),
+                    "import_signal": "IMPORT_VALUE_SIGNAL" in result.reason_codes,
+                    "contact_quality": float(snapshot.get("person_contact_quality") or 0),
+                    "data_completeness": float(snapshot.get("data_completeness") or 0),
+                    "person_contact_count": int(
+                        snapshot.get("person_contact_count") or 0
+                    ),
+                    "department_contact_count": int(
+                        snapshot.get("department_contact_count") or 0
+                    ),
+                    "rules_version": policy.rules_version,
+                }
+            )
+        d_without_evidence = sum(
+            1
+            for company in companies
+            if company["tier"] == "D" and not company["explicit_negative"]
+        )
+        target_signal_exists = any(
+            company["product_signal"] or company["hs_signal"] for company in companies
+        )
+        preview_valid = (
+            d_without_evidence == 0
+            and not (totals["A"] + totals["B"] == 0 and target_signal_exists)
+        )
+        return {
+            "import_session_id": str(import_session_id),
+            "rules_version": policy.rules_version,
+            "taxonomy_version": taxonomy.rules_version,
+            "preview_valid": preview_valid,
+            "entity_pending_count": len(pending_ids),
+            "totals": totals,
+            "companies": companies,
+        }
 
 
 class ProspectRouteReviewWorkflow:

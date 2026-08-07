@@ -22,6 +22,7 @@ from app.schemas.prospect_routing import (
     ProspectRoutingCreateRequest,
     ProspectRoutingCreateResponse,
     ProspectRoutingRunResponse,
+    RoutingPreviewResponse,
 )
 
 router = APIRouter(tags=["prospect-routing"])
@@ -31,6 +32,24 @@ ERRORS: dict[int | str, dict[str, Any]] = {
     422: {"model": ApiErrorResponse},
     500: {"model": ApiErrorResponse},
 }
+
+
+@router.post(
+    "/import-sessions/{session_id}/routing-preview",
+    response_model=RoutingPreviewResponse,
+    responses=ERRORS,
+)
+async def preview_prospect_routing(
+    session_id: UUID,
+    payload: ProspectRoutingCreateRequest,
+    workflow: ProspectRoutingQueryDep,
+) -> RoutingPreviewResponse:
+    """Read-only deterministic routing preview. Never creates routes."""
+    data = await workflow.routing_preview(
+        import_session_id=session_id,
+        criteria=payload.to_domain(),
+    )
+    return RoutingPreviewResponse(**data)
 
 
 @router.post(

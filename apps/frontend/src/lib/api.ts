@@ -506,6 +506,8 @@ export interface ImportEntityDecisionResponse {
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+  source_facts?: Record<string, string>;
+  is_department_contact?: boolean;
 }
 
 export interface ImportEntityDecisionListResponse {
@@ -1060,6 +1062,10 @@ const KNOWN_ERROR_MESSAGES: Record<string, string> = {
   invalid_state: "当前工作流状态不允许该操作，请刷新后重试。",
   internal_error: "服务内部错误，请稍后重试。",
   application_conflict: "操作与当前业务状态冲突。",
+  ENTITY_REVIEW_PENDING: "仍有实体需要人工确认。",
+  ROUTING_PREVIEW_INVALID: "Routing 预览未通过安全校验，请检查证据和规则。",
+  ENTITY_RESOLUTION_PREVIEW_FAILED: "实体归并预览失败。",
+  WORKFLOW_STATE_CONFLICT: "工作流状态冲突，请刷新后重试。",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1323,6 +1329,48 @@ export function createProspectRoutingRun(
         campaign_name: campaignName?.trim() || null,
         notes: notes?.trim() || null,
       }),
+    },
+  );
+}
+
+export interface RoutingPreviewCompany {
+  company_id: string;
+  company_name: string;
+  tier: string;
+  pre_score: number;
+  reason_codes: string[];
+  positive_reasons: string[];
+  unknown_evidence: string[];
+  explicit_negative: string[];
+  product_signal: boolean;
+  hs_signal: boolean;
+  import_signal: boolean;
+  contact_quality: number;
+  data_completeness: number;
+  person_contact_count: number;
+  department_contact_count: number;
+  rules_version: string;
+}
+
+export interface RoutingPreviewResponse {
+  import_session_id: string;
+  rules_version: string;
+  taxonomy_version: string;
+  preview_valid: boolean;
+  entity_pending_count: number;
+  totals: Record<string, number>;
+  companies: RoutingPreviewCompany[];
+}
+
+export function getRoutingPreview(
+  sessionId: string,
+  criteria: ProspectRoutingCriteriaInput,
+): Promise<RoutingPreviewResponse> {
+  return requestJson<RoutingPreviewResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/routing-preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({ criteria }),
     },
   );
 }

@@ -1,7 +1,7 @@
 """Framework-free state for auditable import entity resolution."""
 
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -531,6 +531,9 @@ class ImportDecisionView:
     row_number: int
     source_label: str
     candidate_label: str | None
+    #: Relevant source facts for the human review card (masked/non-raw).
+    source_facts: dict[str, str] = field(default_factory=dict)
+    is_department_contact: bool = False
 
 
 @dataclass(frozen=True)

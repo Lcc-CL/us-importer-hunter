@@ -38,6 +38,7 @@ import {
   getProspectBatchCompanies,
   getProspectBatchExecution,
   getProspectRoutingRun,
+  getRoutingPreview,
   preflightNetEaseImport,
   resumeProspectBatchCompany,
   retryProspectBatchCompany,
@@ -56,6 +57,7 @@ import {
   type ProspectBatchResponse,
   type ProspectBatchSender,
   type ProspectRoutingRunResponse,
+  type RoutingPreviewResponse,
   type ProspectTier,
   type RawImportRowResponse,
   type RawImportRowStatus,
@@ -196,6 +198,13 @@ export function BulkImportPanel({
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [routingRun, setRoutingRun] = useState<ProspectRoutingRunResponse | null>(null);
   const [routes, setRoutes] = useState<ProspectRouteResponse[]>([]);
+  const [routingPreview, setRoutingPreview] = useState<RoutingPreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewTierFilter, setPreviewTierFilter] = useState("All");
+  const [confirmMergeDecision, setConfirmMergeDecision] =
+    useState<ImportEntityDecisionResponse | null>(null);
+  const [confirmRoutingApply, setConfirmRoutingApply] = useState(false);
   const [productKeywords, setProductKeywords] = useState("");
   const [hsCodes, setHsCodes] = useState("");
   const [originCountries, setOriginCountries] = useState("");
@@ -600,6 +609,34 @@ export function BulkImportPanel({
       setRoutingBusy(false);
     }
   }
+
+  const loadRoutingPreview = useCallback(async () => {
+    if (!session || !backendOk) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const preview = await getRoutingPreview(session.session_id, {
+        target_product_keywords: splitList(productKeywords),
+        target_hs_codes: splitList(hsCodes),
+        preferred_origin_countries: splitList(originCountries),
+        preferred_pol: splitList(preferredPol),
+        preferred_pod: splitList(preferredPod),
+      });
+      setRoutingPreview(preview);
+    } catch (caught: unknown) {
+      setPreviewError(getClientErrorDetails(caught).message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [
+    session,
+    backendOk,
+    productKeywords,
+    hsCodes,
+    originCountries,
+    preferredPol,
+    preferredPod,
+  ]);
 
   async function handleRouteReview(
     route: ProspectRouteResponse,
@@ -1375,7 +1412,27 @@ export function BulkImportPanel({
                     <h4 className="text-sm font-semibold text-slate-900">
                       {t("bulk.pendingReviews")}
                     </h4>
-                    <span className="text-xs text-slate-500">{decisions.length}</span>
+                    <span className="text-xs text-slate-500" data-testid="review-progress">
+                      {t("bulk.reviewProgress", {
+                        done: 0,
+                        pending: decisions.length,
+                      })}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                    <span>
+                      {t("bulk.reviewPendingCount", { count: decisions.length })}
+                    </span>
+                    <span>
+                      {t("bulk.reviewCompanyConflicts", {
+                        count: decisions.filter((d) => d.entity_type === "company").length,
+                      })}
+                    </span>
+                    <span>
+                      {t("bulk.reviewContactConflicts", {
+                        count: decisions.filter((d) => d.entity_type === "contact").length,
+                      })}
+                    </span>
                   </div>
                   {decisions.length ? (
                     <div className="mt-2 space-y-2" data-testid="import-resolution-reviews">
@@ -1395,13 +1452,40 @@ export function BulkImportPanel({
                                 #{decision.row_number ?? "—"} · {decision.candidate_label ?? "—"}
                               </span>
                             </div>
-                            <span className="text-xs text-slate-500">
-                              {(decision.confidence * 100).toFixed(0)}%
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {decision.is_department_contact ? (
+                                <span
+                                  className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900"
+                                  data-testid="department-contact-badge"
+                                >
+                                  {t("bulk.departmentContact")}
+                                </span>
+                              ) : null}
+                              <span className="text-xs text-slate-500">
+                                {(decision.confidence * 100).toFixed(0)}%
+                              </span>
+                            </div>
                           </div>
                           <p className="mt-2 text-xs leading-5 text-slate-600">
                             {decision.reason_codes.join(" · ")}
                           </p>
+                          {decision.source_facts ? (
+                            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600 sm:grid-cols-3">
+                              {Object.entries(decision.source_facts).map(([key, value]) => (
+                                <div key={key}>
+                                  <dt className="text-slate-400">{key}</dt>
+                                  <dd className="truncate font-medium text-slate-700">
+                                    {value}
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          ) : null}
+                          {decision.is_department_contact ? (
+                            <p className="mt-2 text-[11px] text-amber-800">
+                              {t("bulk.departmentContactNote")}
+                            </p>
+                          ) : null}
                           <div className="mt-3 flex flex-wrap gap-2">
                             <span className="mr-1 self-center text-[11px] text-slate-500">
                               {t("bulk.reviewDefaultDefer")}
@@ -1426,7 +1510,12 @@ export function BulkImportPanel({
                                 onClick={
                                   action === "defer"
                                     ? () => undefined
-                                    : () => void handleReview(decision.decision_id, action)
+                                    : action === "merge" &&
+                                        (decision.confidence < 0.8 ||
+                                          decision.reason_codes.includes("company_name_similar") ||
+                                          decision.reason_codes.includes("same_company_name_only"))
+                                      ? () => setConfirmMergeDecision(decision)
+                                      : () => void handleReview(decision.decision_id, action)
                                 }
                                 type="button"
                               >
@@ -1455,6 +1544,110 @@ export function BulkImportPanel({
             >
             {activeStep === 5 ? (
               <>
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-white p-3" data-testid="routing-preview-panel">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-emerald-900">
+                  {t("routing.previewTitle")}
+                </p>
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50"
+                  data-testid="routing-preview-generate"
+                  disabled={previewLoading || !backendOk}
+                  onClick={() => void loadRoutingPreview()}
+                  type="button"
+                >
+                  <RefreshCw className={`size-3.5 ${previewLoading ? "animate-spin" : ""}`} />
+                  {t("routing.previewGenerate")}
+                </button>
+              </div>
+              {previewError ? (
+                <p className="mt-2 text-xs text-rose-700">{previewError}</p>
+              ) : null}
+              {routingPreview ? (
+                <div className="mt-3">
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {(["A", "B", "C", "D", "blocked"] as const).map((tier) => (
+                      <button
+                        className={
+                          previewTierFilter === tier
+                            ? "rounded-full bg-emerald-800 px-3 py-1 font-semibold text-white"
+                            : "rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700"
+                        }
+                        data-testid={`routing-filter-${tier}`}
+                        key={tier}
+                        onClick={() => setPreviewTierFilter(tier)}
+                        type="button"
+                      >
+                        {tier}: {routingPreview.totals[tier] ?? 0}
+                      </button>
+                    ))}
+                    <button
+                      className={
+                        previewTierFilter === "All"
+                          ? "rounded-full bg-emerald-800 px-3 py-1 font-semibold text-white"
+                          : "rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700"
+                      }
+                      onClick={() => setPreviewTierFilter("All")}
+                      type="button"
+                    >
+                      {t("routing.filterAll")}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    {t("routing.tierLegend")}
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold text-amber-700">
+                    {t("routing.notWinProbability")}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {routingPreview.companies
+                      .filter((company) =>
+                        previewTierFilter === "All" || company.tier === previewTierFilter,
+                      )
+                      .sort((a, b) => b.pre_score - a.pre_score)
+                      .map((company) => (
+                        <div
+                          className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs"
+                          data-testid={`routing-preview-company-${company.tier}`}
+                          key={company.company_id}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-800">
+                              {company.company_name}
+                            </span>
+                            <span className="text-slate-500">
+                              {company.tier} · {company.pre_score.toFixed(1)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            {company.reason_codes.slice(0, 4).join(" · ")}
+                          </p>
+                          {company.explicit_negative.length ? (
+                            <p className="mt-1 text-[11px] font-semibold text-rose-700">
+                              {company.explicit_negative.join(" · ")}
+                            </p>
+                          ) : null}
+                          {company.unknown_evidence.length ? (
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {company.unknown_evidence.slice(0, 3).join(" · ")}
+                            </p>
+                          ) : null}
+                          <p className="mt-1 font-mono text-[10px] text-slate-400">
+                            rules: {company.rules_version} · contacts {company.person_contact_count}p/
+                            {company.department_contact_count}d · import{" "}
+                            {company.import_signal ? "Y" : "N"}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                  {!routingPreview.preview_valid ? (
+                    <p className="mt-2 text-xs font-semibold text-rose-700" data-testid="preview-invalid">
+                      {t("routing.previewInvalid")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
@@ -1476,6 +1669,11 @@ export function BulkImportPanel({
                   !workerOk ||
                   !writesConfirmed ||
                   routingBusy ||
+                  !routingPreview ||
+                  routingPreview.entity_pending_count > 0 ||
+                  !routingPreview.preview_valid ||
+                  !routingPreview.rules_version ||
+                  health.realDataGate !== "enabled" ||
                   !resolution ||
                   !["completed", "partial_failed"].includes(resolution.resolution_status) ||
                   Boolean(
@@ -1485,12 +1683,36 @@ export function BulkImportPanel({
                       ),
                   )
                 }
-                onClick={() => void handleStartRouting()}
+                onClick={() => setConfirmRoutingApply(true)}
                 type="button"
               >
                 <Route className="size-4" />
                 {routingBusy ? t("bulk.routingStarting") : t("bulk.routingStart")}
               </button>
+              {routingPreview && routingPreview.entity_pending_count > 0 ? (
+                <p
+                  className="mt-2 text-xs font-medium text-amber-800"
+                  data-testid="routing-apply-blocker"
+                >
+                  {t("routing.applyBlockerPending", {
+                    count: routingPreview.entity_pending_count,
+                  })}
+                </p>
+              ) : routingPreview && !routingPreview.preview_valid ? (
+                <p
+                  className="mt-2 text-xs font-medium text-rose-700"
+                  data-testid="routing-apply-blocker"
+                >
+                  {t("routing.applyBlockerInvalid")}
+                </p>
+              ) : health.realDataGate !== "enabled" ? (
+                <p
+                  className="mt-2 text-xs font-medium text-amber-800"
+                  data-testid="routing-apply-blocker"
+                >
+                  {t("routing.applyBlockerGate")}
+                </p>
+              ) : null}
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -2034,6 +2256,84 @@ export function BulkImportPanel({
           </div>
             </>
           ) : null}
+        </div>
+      ) : null}
+      {confirmMergeDecision ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-slate-900">
+              {t("routing.mergeConfirmTitle")}
+            </h3>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              {t("routing.mergeConfirmBody")}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                onClick={() => setConfirmMergeDecision(null)}
+                type="button"
+              >
+                {t("routing.cancel")}
+              </button>
+              <button
+                className="rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white"
+                data-testid="merge-confirm-submit"
+                onClick={() => {
+                  void handleReview(confirmMergeDecision.decision_id, "merge");
+                  setConfirmMergeDecision(null);
+                }}
+                type="button"
+              >
+                {t("bulk.reviewMerge")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmRoutingApply ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-slate-900">
+              {t("routing.applyConfirmTitle")}
+            </h3>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              {routingPreview
+                ? t("routing.applyConfirmSummary", {
+                    a: routingPreview.totals.A ?? 0,
+                    b: routingPreview.totals.B ?? 0,
+                    c: routingPreview.totals.C ?? 0,
+                    d: routingPreview.totals.D ?? 0,
+                  })
+                : ""}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              {t("routing.applyConfirmBody")}
+            </p>
+            <p className="mt-2 text-xs font-semibold text-emerald-800">
+              {t("routing.noEmailGuarantee")}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                onClick={() => setConfirmRoutingApply(false)}
+                type="button"
+              >
+                {t("routing.cancel")}
+              </button>
+              <button
+                className="rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white"
+                data-testid="routing-apply-confirm-submit"
+                onClick={() => {
+                  setConfirmRoutingApply(false);
+                  void handleStartRouting();
+                }}
+                type="button"
+              >
+                {t("routing.applyConfirmButton")}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>
