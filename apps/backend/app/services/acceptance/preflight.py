@@ -254,6 +254,13 @@ class NetEasePreflightReport:
     orphan_contact_rows: int
     company_import_summary_rows: int
     true_shipment_rows: int
+    expected_company_count: int
+    expected_contact_count: int
+    company_merge_count: int
+    company_review_count: int
+    contact_merge_count: int
+    contact_review_count: int
+    companycontact_relation_count: int
     estimated_company_count: int
     estimated_contact_count: int
     estimated_trade_record_count: int
@@ -345,6 +352,13 @@ class RealDataPreflightService:
             orphan_contact_rows=analysis.orphan_contact_rows,
             company_import_summary_rows=analysis.company_import_summary_rows,
             true_shipment_rows=analysis.true_shipment_rows,
+            expected_company_count=analysis.expected_company_count,
+            expected_contact_count=analysis.expected_contact_count,
+            company_merge_count=analysis.company_merge_count,
+            company_review_count=analysis.company_review_count,
+            contact_merge_count=analysis.contact_merge_count,
+            contact_review_count=analysis.contact_review_count,
+            companycontact_relation_count=analysis.companycontact_relation_count,
             estimated_company_count=analysis.company_count,
             estimated_contact_count=analysis.contact_count,
             estimated_trade_record_count=analysis.trade_record_count,
@@ -478,6 +492,13 @@ class _NetEaseAnalysis:
     orphan_contact_rows: int
     company_import_summary_rows: int
     true_shipment_rows: int
+    expected_company_count: int
+    expected_contact_count: int
+    company_merge_count: int
+    company_review_count: int
+    contact_merge_count: int
+    contact_review_count: int
+    companycontact_relation_count: int
 
 
 _SUMMARY_FIELDS = ("hs_code", "product_description", "supplier", "amount", "last_import_at")
@@ -586,6 +607,10 @@ def _analyze_netease_rows(
     true_shipment_rows = 0
     high_keys: set[str] = set()
     medium_keys: set[str] = set()
+    company_key_rows: Counter[str] = Counter()
+    email_counts: Counter[str] = Counter()
+    department_emails: set[str] = set()
+    relations: set[tuple[str, str]] = set()
     has_company = False
     has_contact = False
     has_trade = False
@@ -628,6 +653,8 @@ def _analyze_netease_rows(
         if company_present:
             has_company = True
             company_keys.add(company_key)
+            if meta.get("company_anchor_row") == position + 1:
+                company_key_rows[company_key] += 1
             if external_id or _domain(website):
                 high_keys.add(company_key)
             elif company_name and address:
@@ -635,9 +662,19 @@ def _analyze_netease_rows(
         if contact_present:
             has_contact = True
             if _valid_email(email):
-                contact_keys.add(f"email:{email}")
+                contact_key = f"email:{email}"
+                contact_keys.add(contact_key)
+                email_counts[email] += 1
+                if email.startswith(
+                    ("info@", "sales@", "contact@", "support@", "hello@", "admin@", "service@")
+                ):
+                    department_emails.add(email)
             else:
-                contact_keys.add(f"company:{company_key}:name:{_normalized_token(contact_name)}")
+                contact_key = (
+                    f"company:{company_key}:name:{_normalized_token(contact_name)}"
+                )
+                contact_keys.add(contact_key)
+            relations.add((contact_key, company_key))
         if trade_present:
             has_trade = True
             trade_records += 1
@@ -694,6 +731,17 @@ def _analyze_netease_rows(
         orphan_contact_rows=orphan_contact_rows,
         company_import_summary_rows=company_import_summary_rows,
         true_shipment_rows=true_shipment_rows,
+        expected_company_count=len(company_keys),
+        expected_contact_count=len(contact_keys),
+        company_merge_count=sum(1 for count in company_key_rows.values() if count > 1),
+        company_review_count=sum(
+            1
+            for key, count in company_key_rows.items()
+            if count > 1 and key.startswith("name:")
+        ),
+        contact_merge_count=sum(1 for count in email_counts.values() if count > 1),
+        contact_review_count=len(department_emails),
+        companycontact_relation_count=len(relations),
     )
 
 

@@ -74,6 +74,10 @@ const zh = {
   "acceptance.systemGateEnabled": "启用",
   "acceptance.systemGateDisabled": "禁用",
   "acceptance.systemGateBlockedReason": "系统真实数据导入开关当前关闭，需要管理员启用。",
+  "acceptance.prewritePreview": "即将写入（Preflight 估计）",
+  "acceptance.shipments": "Shipments",
+  "acceptance.companyMerges": "公司归并",
+  "acceptance.contactDedup": "联系人去重",
   "acceptance.realDataToggle":
     "本次将处理真实用户数据。只读 Preflight 不受门禁影响；正式导入必须确认 Mapping，并由本地安全配置明确授权。",
   "acceptance.preflight": "只读 Preflight",
@@ -832,6 +836,10 @@ const en: Record<MessageKey, string> = {
   "acceptance.systemGateDisabled": "DISABLED",
   "acceptance.systemGateBlockedReason":
     "The system real-data import switch is off; an administrator must enable it.",
+  "acceptance.prewritePreview": "About to write (preflight estimate)",
+  "acceptance.shipments": "Shipments",
+  "acceptance.companyMerges": "Company merges",
+  "acceptance.contactDedup": "Contact dedup",
   "acceptance.realDataToggle":
     "This run will process real user data. Read-only preflight is always available; persistence requires a confirmed mapping and explicit local safety acknowledgement.",
   "acceptance.preflight": "Read-only preflight",

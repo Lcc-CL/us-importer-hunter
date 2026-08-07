@@ -305,3 +305,41 @@ def test_mapping_aliases_and_confidence_for_netease_headers() -> None:
     assert confidence["last_import_at"] == "high"
     assert report.mapping_source["contact_email"] == "auto_alias"
     assert report.mapping_source["supplier"] == "auto_alias"
+
+
+def test_preflight_resolution_preview_counts() -> None:
+    content = _build_xlsx(
+        sheet_name="客户线索",
+        headers=["公司名称", "官网", "联系人姓名", "联系人邮箱"],
+        rows=[
+            ["A公司", "acme.example", "Alice", "info@acme.example"],
+            ["", "", "Bob", "bob@acme.example"],
+            ["A公司", "acme.example", "Carol", "info@acme.example"],
+        ],
+        merges=["A2:A3", "B2:B3"],
+    )
+    service = RealDataPreflightService()
+    with binary_file(content) as file:
+        report = service.preflight_netease(
+            file,
+            filename="synthetic.xlsx",
+            mapping={
+                "company_name": "公司名称",
+                "website": "官网",
+                "contact_name": "联系人姓名",
+                "contact_email": "联系人邮箱",
+            },
+        )
+
+    assert report.company_anchor_rows == 2
+    assert report.contact_continuation_rows == 1
+    assert report.invalid_rows == 0
+    assert report.expected_company_count == 1
+    assert report.company_merge_count == 1
+    assert report.company_review_count == 0
+    assert report.expected_contact_count == 2
+    assert report.contact_merge_count == 1
+    assert report.contact_review_count == 1
+    assert report.companycontact_relation_count == 2
+    assert report.company_import_summary_rows == 0
+    assert report.true_shipment_rows == 0
