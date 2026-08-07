@@ -1054,6 +1054,14 @@ export class ApiNetworkError extends Error {
   }
 }
 
+const KNOWN_ERROR_MESSAGES: Record<string, string> = {
+  resource_not_found: "请求的资源不存在（例如实体归并尚未开始或已被移除）。",
+  import_session_not_found: "未找到该导入会话（ImportSession）。",
+  invalid_state: "当前工作流状态不允许该操作，请刷新后重试。",
+  internal_error: "服务内部错误，请稍后重试。",
+  application_conflict: "操作与当前业务状态冲突。",
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -1069,7 +1077,12 @@ function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
 
 export function getClientErrorDetails(error: unknown): ClientErrorDetails {
   if (error instanceof ApiError) {
-    return error.payload;
+    const known = KNOWN_ERROR_MESSAGES[error.payload.code];
+    return {
+      code: error.payload.code,
+      message: known ?? error.payload.message,
+      request_id: error.payload.request_id,
+    };
   }
   if (error instanceof ApiNetworkError) {
     return { code: error.code, message: error.message, request_id: null };
