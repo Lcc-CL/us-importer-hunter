@@ -1114,6 +1114,49 @@ export function BulkImportPanel({
             validated={mappingValidated}
           />
 
+          <div
+            className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3"
+            data-testid="prewrite-preview"
+          >
+            <p className="text-xs font-semibold text-indigo-900">
+              {t("acceptance.prewritePreview")}
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700 sm:grid-cols-3">
+              <span>
+                {t("acceptance.rawRows")}: {preflight.total_rows}
+              </span>
+              <span>
+                {t("acceptance.companies")}:{" "}
+                {preflight.expected_company_count ?? preflight.estimated_company_count}
+              </span>
+              <span>
+                {t("acceptance.contacts")}:{" "}
+                {preflight.expected_contact_count ?? preflight.estimated_contact_count}
+              </span>
+              <span>
+                CompanyContact: {preflight.companycontact_relation_count ?? 0}
+              </span>
+              <span>
+                {t("acceptance.importSummaryGroup")}:{" "}
+                {preflight.company_import_summary_rows ?? 0}
+              </span>
+              <span>
+                {t("acceptance.shipments")}: {preflight.true_shipment_rows ?? 0}
+              </span>
+              <span>
+                {t("acceptance.companyMerges")}: {preflight.company_merge_count ?? 0}
+              </span>
+              <span>
+                {t("acceptance.contactDedup")}: {preflight.contact_merge_count ?? 0}
+              </span>
+              <span>
+                {t("acceptance.reviewRequired")}:{" "}
+                {(preflight.contact_review_count ?? 0) +
+                  (preflight.company_review_count ?? 0)}
+              </span>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-start gap-4">
             <button
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 text-sm font-semibold text-indigo-800 disabled:opacity-50"

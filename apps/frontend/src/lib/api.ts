@@ -392,6 +392,13 @@ export interface NetEasePreflightResponse {
   orphan_contact_rows: number;
   company_import_summary_rows: number;
   true_shipment_rows: number;
+  expected_company_count: number;
+  expected_contact_count: number;
+  company_merge_count: number;
+  company_review_count: number;
+  contact_merge_count: number;
+  contact_review_count: number;
+  companycontact_relation_count: number;
   estimated_company_count: number;
   estimated_contact_count: number;
   estimated_trade_record_count: number;
