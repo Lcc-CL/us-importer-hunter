@@ -74,6 +74,35 @@ class ProspectRoutingCreateResponse(BaseModel):
     recalculated: bool
 
 
+class RoutingPreviewCompany(BaseModel):
+    company_id: UUID
+    company_name: str
+    tier: str
+    pre_score: float
+    reason_codes: list[str]
+    positive_reasons: list[str]
+    unknown_evidence: list[str]
+    explicit_negative: list[str]
+    product_signal: bool
+    hs_signal: bool
+    import_signal: bool
+    contact_quality: float
+    data_completeness: float
+    person_contact_count: int
+    department_contact_count: int
+    rules_version: str
+
+
+class RoutingPreviewResponse(BaseModel):
+    import_session_id: UUID
+    rules_version: str
+    taxonomy_version: str
+    preview_valid: bool
+    entity_pending_count: int
+    totals: dict[str, int]
+    companies: list[RoutingPreviewCompany]
+
+
 class ProspectRoutingRunResponse(BaseModel):
     routing_run_id: UUID
     import_session_id: UUID

@@ -1,7 +1,7 @@
 """PostgreSQL persistence and queue operations for D5b1 entity resolution."""
 
 from datetime import datetime, timedelta
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import Table, bindparam, func, select
@@ -36,6 +36,61 @@ from app.domain.import_resolution import (
     ImportProcessingJob,
     ImportResolution,
 )
+
+_REVIEW_FACT_HEADERS = (
+    "公司名称",
+    "官网",
+    "国家/地区",
+    "主要进口产品",
+    "HS code",
+    "最大供应商",
+    "进口金额",
+    "最后进口时间",
+    "联系人姓名",
+    "联系人职位",
+    "联系人邮箱",
+)
+_DEPARTMENT_PREFIXES = (
+    "admin@",
+    "contact@",
+    "customerservice@",
+    "export@",
+    "hello@",
+    "import@",
+    "info@",
+    "logistics@",
+    "office@",
+    "operations@",
+    "procurement@",
+    "purchase@",
+    "purchasing@",
+    "sales@",
+    "service@",
+    "shipping@",
+    "support@",
+    "warehouse@",
+)
+
+
+def _review_source_facts(payload: dict[str, Any]) -> dict[str, str]:
+    fields = payload.get("fields", {}) if isinstance(payload, dict) else {}
+    if not isinstance(fields, dict):
+        return {}
+    return {
+        header: str(fields[header])
+        for header in _REVIEW_FACT_HEADERS
+        if header in fields and str(fields[header]).strip()
+    }
+
+
+def _review_department_contact(payload: dict[str, Any]) -> bool:
+    fields = payload.get("fields", {}) if isinstance(payload, dict) else {}
+    email = (
+        str(fields.get("联系人邮箱", "") if isinstance(fields, dict) else "")
+        .strip()
+        .lower()
+    )
+    return email.startswith(_DEPARTMENT_PREFIXES)
 
 
 class SqlAlchemyImportResolutionRepository:
@@ -161,6 +216,26 @@ class SqlAlchemyImportResolutionRepository:
             if models
             else {}
         )
+        row_payloads: dict[UUID, dict[str, Any]] = (
+            dict(
+                (
+                    await self._session.execute(
+                        select(
+                            ImportEntityDecisionModel.raw_import_row_id,
+                            RawImportRowModel.raw_payload,
+                        )
+                        .join(
+                            RawImportRowModel,
+                            RawImportRowModel.id
+                            == ImportEntityDecisionModel.raw_import_row_id,
+                        )
+                        .where(ImportEntityDecisionModel.id.in_([model.id for model in models]))
+                    )
+                ).tuples().all()
+            )
+            if models
+            else {}
+        )
         company_ids = {
             model.candidate_entity_id
             for model in models
@@ -208,6 +283,12 @@ class SqlAlchemyImportResolutionRepository:
                     row_number=row_number,
                     source_label=f"Import row {row_number}",
                     candidate_label=candidate_label,
+                    source_facts=_review_source_facts(
+                        row_payloads.get(model.raw_import_row_id, {})
+                    ),
+                    is_department_contact=_review_department_contact(
+                        row_payloads.get(model.raw_import_row_id, {})
+                    ),
                 )
             )
         return views, total

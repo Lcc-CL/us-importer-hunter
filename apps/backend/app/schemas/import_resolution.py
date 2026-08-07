@@ -100,6 +100,8 @@ class ImportEntityDecisionResponse(BaseModel):
     reviewed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    source_facts: dict[str, str] = Field(default_factory=dict)
+    is_department_contact: bool = False
 
     @classmethod
     def from_domain(
@@ -125,6 +127,8 @@ class ImportEntityDecisionResponse(BaseModel):
             reviewed_at=decision.reviewed_at,
             created_at=decision.created_at,
             updated_at=decision.updated_at,
+            source_facts=view.source_facts if view else {},
+            is_department_contact=view.is_department_contact if view else False,
         )
 
 
