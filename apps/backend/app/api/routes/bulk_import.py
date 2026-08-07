@@ -15,7 +15,7 @@ from app.schemas.bulk_import import (
     RawImportRowListResponse,
 )
 from app.schemas.mvp import ApiErrorResponse
-from app.services.bulk_import import BulkCsvValidationError
+from app.services.bulk_import import BulkCsvValidationError, TabularValidationError
 from app.shared.exceptions import InvalidInputError, ResourceNotFoundError
 
 router = APIRouter(prefix="/import-sessions", tags=["bulk-import"])
@@ -33,6 +33,10 @@ CSV_CONTENT_TYPES = {
     "text/plain",
     "application/octet-stream",
 }
+XLSX_CONTENT_TYPES = {
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/octet-stream",
+}
 
 
 @router.post(
@@ -40,17 +44,20 @@ CSV_CONTENT_TYPES = {
     response_model=ImportSessionCreateResponse,
     status_code=status.HTTP_201_CREATED,
     responses=ERROR_RESPONSES,
-    summary="Create a traceable raw CSV import session",
+    summary="Create a traceable raw CSV/XLSX import session",
     description=(
-        "Streams a CSV into raw audit rows only. It does not create companies, contacts, "
-        "opportunities, research runs, drafts, or email activity."
+        "Streams a CSV or XLSX into raw audit rows only. It does not create companies, "
+        "contacts, opportunities, research runs, drafts, or email activity."
     ),
 )
 async def create_import_session(
     response: Response,
     workflow: BulkImportWorkflowDep,
     settings: SettingsDep,
-    file: Annotated[UploadFile, File(description="CSV, maximum 20 MB / 20,000 rows")],
+    file: Annotated[
+        UploadFile,
+        File(description="CSV or XLSX, maximum 20 MB / 20,000 rows"),
+    ],
     source: Annotated[str, Form()] = "netease_foreign_trade",
     mapping: Annotated[str | None, Form()] = None,
     real_data: Annotated[bool, Form()] = False,
@@ -58,15 +65,20 @@ async def create_import_session(
     expected_file_sha256: Annotated[str | None, Form()] = None,
 ) -> ImportSessionCreateResponse:
     filename = PurePath(file.filename or "").name
-    if not filename.lower().endswith(".csv"):
+    if not (filename.lower().endswith(".csv") or filename.lower().endswith(".xlsx")):
         raise InvalidInputError(
             code="bulk_import_file_type_invalid",
-            message="D5a1 only accepts .csv files",
+            message="Formal import accepts .csv or .xlsx files",
         )
-    if file.content_type and file.content_type.lower() not in CSV_CONTENT_TYPES:
+    allowed = (
+        CSV_CONTENT_TYPES
+        if filename.lower().endswith(".csv")
+        else XLSX_CONTENT_TYPES
+    )
+    if file.content_type and file.content_type.lower() not in allowed:
         raise InvalidInputError(
             code="bulk_import_file_type_invalid",
-            message="D5a1 only accepts CSV content types",
+            message="Unsupported content type for the uploaded file",
         )
     parsed_mapping = _parse_mapping(mapping)
     _require_real_data_acknowledgement(
@@ -84,7 +96,7 @@ async def create_import_session(
             mapping=parsed_mapping,
             expected_file_sha256=expected_file_sha256,
         )
-    except BulkCsvValidationError as exc:
+    except (BulkCsvValidationError, TabularValidationError) as exc:
         raise InvalidInputError(code=exc.code, message=str(exc)) from exc
     except ValueError as exc:
         raise InvalidInputError(code="bulk_import_invalid_input", message=str(exc)) from exc

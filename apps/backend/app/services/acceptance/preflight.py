@@ -53,14 +53,31 @@ NETEASE_ALIASES: dict[str, tuple[str, ...]] = {
         "企业id",
         "公司id",
     ),
-    "website": ("website", "domain", "url", "官网", "网站", "公司网站", "域名"),
+    "website": ("website", "domain", "url", "官网", "网站", "公司网站", "公司官网", "域名"),
     "address": ("address", "company_address", "公司地址", "地址", "注册地址"),
     "country": ("country", "company_country", "国家", "公司国家", "地区"),
     "company_type": ("company_type", "公司类型", "企业类型", "客户类型"),
     "phone": ("phone", "company_phone", "公司电话", "总机"),
     "contact_name": ("contact_name", "contact", "联系人", "联系人姓名", "姓名"),
-    "contact_title": ("contact_title", "title", "job_title", "职位", "职务", "岗位"),
-    "contact_email": ("contact_email", "email", "邮箱", "电子邮箱", "邮件地址"),
+    "contact_title": (
+        "contact_title",
+        "title",
+        "job_title",
+        "职位",
+        "职务",
+        "岗位",
+        "联系人职位",
+        "job title",
+    ),
+    "contact_email": (
+        "contact_email",
+        "email",
+        "邮箱",
+        "电子邮箱",
+        "邮件地址",
+        "联系人邮箱",
+        "e-mail",
+    ),
     "contact_phone": (
         "contact_phone",
         "mobile",
@@ -71,6 +88,7 @@ NETEASE_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "contact_linkedin": ("contact_linkedin", "linkedin", "linkedin_url"),
     "hs_code": ("hs_code", "hscode", "hs code", "海关编码", "hs编码", "商品编码"),
+    "supplier": ("supplier", "vendor", "供应商", "最大供应商", "供货商", "供应商名称"),
     "product_description": (
         "product_description",
         "product",
@@ -823,14 +841,40 @@ def _infer_mapping(
     result = {field: column for field, column in manual_mapping.items()}
     confidence = {field: "manual" for field in manual_mapping}
     used_columns = set(result.values())
+    # Exact known-alias pass: normalized equality -> HIGH confidence.
     for logical_field, candidates in aliases.items():
         if logical_field in result:
             continue
-        for index, alias in enumerate(candidates):
+        for alias in candidates:
             matched_header = normalized_headers.get(_normalized_header(alias))
             if matched_header is not None and matched_header not in used_columns:
                 result[logical_field] = matched_header
-                confidence[logical_field] = "high" if index == 0 else "medium"
+                confidence[logical_field] = "high"
+                used_columns.add(matched_header)
+                break
+    # Fuzzy pass: header contains a known alias -> MEDIUM confidence.
+    normalized_by_header = {
+        header: _normalized_header(header) for header in headers
+    }
+    for logical_field, candidates in aliases.items():
+        if logical_field in result:
+            continue
+        for alias in candidates:
+            normalized_alias = _normalized_header(alias)
+            if len(normalized_alias) < 2:
+                continue
+            matched_header = next(
+                (
+                    header
+                    for header, normalized in normalized_by_header.items()
+                    if header not in used_columns
+                    and normalized_alias in normalized
+                ),
+                None,
+            )
+            if matched_header is not None:
+                result[logical_field] = matched_header
+                confidence[logical_field] = "medium"
                 used_columns.add(matched_header)
                 break
     return result, confidence

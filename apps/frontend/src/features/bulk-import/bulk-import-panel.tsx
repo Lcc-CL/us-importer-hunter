@@ -488,11 +488,6 @@ export function BulkImportPanel({
     if (!file || busy) return;
     setBusy(true);
     setError(null);
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      setError(t("acceptance.xlsxImportPending"));
-      setBusy(false);
-      return;
-    }
     if (!workerOk) {
       setError(t("runtime.workerRequired"));
       setBusy(false);
@@ -839,13 +834,18 @@ export function BulkImportPanel({
     realDataMode && health.realDataGate !== "enabled"
       ? t("acceptance.localGateRequired")
       : null,
-    file?.name.toLowerCase().endsWith(".xlsx") ? t("acceptance.xlsxImportPending") : null,
   ].filter((value): value is string => Boolean(value));
   const acceptanceModeLabel = realDataMode && mappingConfirmed
     ? t("acceptance.controlledMode")
     : preflight
       ? t("acceptance.waitingMapping")
       : t("acceptance.preparationMode");
+  const hasCompanySummaryFields = [
+    "hs_code",
+    "product_description",
+    "supplier",
+    "amount",
+  ].some((field) => Boolean(mapping[field]));
   const firstExecutableIndex = acceptanceSteps.findIndex((step) => step.unlocked) + 1;
   const firstExecutableStep =
     firstExecutableIndex > 0 ? acceptanceSteps[firstExecutableIndex - 1] : null;
@@ -1001,6 +1001,17 @@ export function BulkImportPanel({
 
       {activeStep === 2 && preflight ? (
         <div className="space-y-4 p-5 sm:p-7" data-testid="acceptance-workspace-step-2">
+          {hasCompanySummaryFields ? (
+            <p
+              className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"
+              data-testid="company-import-summary-note"
+            >
+              {t("acceptance.companyImportSummary")}
+            </p>
+          ) : null}
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {t("acceptance.noEmailInMappingStep")}
+          </p>
           <div className="rounded-2xl border border-indigo-200 bg-slate-50 p-4" data-testid="netease-preflight-result">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-semibold text-slate-900">

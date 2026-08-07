@@ -39,7 +39,7 @@ const zh = {
   "bulk.mappingInvalid": "Mapping 必须是有效的 JSON 对象，键和值均为非空字符串。",
   "bulk.upload": "开始原始数据导入",
   "bulk.processing": "导入处理中…",
-  "bulk.limits": "支持 utf-8-sig、utf-8、gb18030；最大 20 MB / 20,000 行。",
+  "bulk.limits": "支持 CSV / XLSX；最大 20 MB / 20,000 行。",
   "bulk.boundary":
     "本步骤仅完成原始数据导入和质量检查，尚未进行公司归并、机会评分或邮件发送。",
   "acceptance.kicker": "D5e · 真实闭环验收",
@@ -68,8 +68,8 @@ const zh = {
   "acceptance.confirmMapping":
     "我已核对自动 Mapping、未知字段、缺失字段和重复列，并确认使用当前 Mapping。",
   "acceptance.confirmMappingRequired": "真实数据正式导入前必须先完成 Preflight 并确认 Mapping。",
-  "acceptance.xlsxImportPending":
-    "XLSX 已支持只读 Preflight；正式 ImportSession 当前仍只接受 CSV，请在真实格式确认后按运行手册处理。",
+  "acceptance.companyImportSummary": "公司进口摘要，不代表单票海运记录。",
+  "acceptance.noEmailInMappingStep": "本步骤不会发送邮件。",
   "acceptance.gateEnabled": "真实数据门禁已就绪",
   "acceptance.gateBlocked": "真实数据正式导入已阻止",
   "acceptance.rows": "行",
@@ -781,7 +781,7 @@ const en: Record<MessageKey, string> = {
   "bulk.mappingInvalid": "Mapping must be a valid JSON object with non-empty string keys and values.",
   "bulk.upload": "Start raw-data import",
   "bulk.processing": "Importing…",
-  "bulk.limits": "Supports utf-8-sig, utf-8 and gb18030; maximum 20 MB / 20,000 rows.",
+  "bulk.limits": "Supports CSV / XLSX; maximum 20 MB / 20,000 rows.",
   "bulk.boundary":
     "This step only imports raw data and checks quality. It has not merged companies, scored opportunities, or sent email.",
   "acceptance.kicker": "D5e · Real closure acceptance",
@@ -811,8 +811,9 @@ const en: Record<MessageKey, string> = {
     "I reviewed the inferred mapping, unknown fields, missing fields and duplicate columns, and confirm this mapping.",
   "acceptance.confirmMappingRequired":
     "Run preflight and confirm the mapping before persisting real data.",
-  "acceptance.xlsxImportPending":
-    "XLSX read-only preflight is supported. ImportSession still accepts CSV only; follow the runbook after the real format is confirmed.",
+  "acceptance.companyImportSummary":
+    "Company import summary; not individual shipment records.",
+  "acceptance.noEmailInMappingStep": "No email is sent at this step.",
   "acceptance.gateEnabled": "Real-data gate ready",
   "acceptance.gateBlocked": "Real-data persistence blocked",
   "acceptance.rows": "rows",
