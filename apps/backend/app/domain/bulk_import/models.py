@@ -121,6 +121,7 @@ class ImportSession:
         *,
         source: str,
         original_filename: str,
+        file_type: str = "csv",
         file_size_bytes: int,
         file_sha256: str,
         mapping_json: dict[str, Any],
@@ -131,7 +132,7 @@ class ImportSession:
             id=uuid4(),
             source=source,
             original_filename=original_filename,
-            file_type="csv",
+            file_type=file_type,
             file_size_bytes=file_size_bytes,
             file_sha256=file_sha256,
             mapping_json=mapping_json,
@@ -237,8 +238,8 @@ class ImportSession:
             raise DomainError("import source must not be empty")
         if not self._original_filename.strip():
             raise DomainError("original filename must not be empty")
-        if self._file_type != "csv":
-            raise DomainError("D5a1 import session only supports csv")
+        if self._file_type not in {"csv", "xlsx"}:
+            raise DomainError("import session only supports csv or xlsx")
         if self._file_size_bytes <= 0:
             raise DomainError("import file size must be positive")
         if len(self._file_sha256) != 64:

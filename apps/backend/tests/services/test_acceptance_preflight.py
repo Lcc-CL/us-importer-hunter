@@ -108,7 +108,8 @@ def test_netease_xlsx_preflight_and_manual_mapping_override() -> None:
     assert report.sheets == ("客户与贸易",)
     assert report.total_rows == 1
     assert report.manual_mapping_applied is True
-    assert set(report.mapping_confidence.values()) == {"manual"}
+    assert set(report.mapping_confidence.values()) == {"high"}
+    assert set(report.mapping_source.values()) == {"manual"}
     assert report.inferred_data_type == "mixed"
 
 

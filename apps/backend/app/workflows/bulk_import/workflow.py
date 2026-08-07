@@ -11,7 +11,7 @@ from uuid import UUID
 from app.domain.bulk_import import ImportSession, RawImportRow, RawImportRowStatus
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import BulkImportUnitOfWork
-from app.services.bulk_import import StreamingCsvIntake
+from app.services.bulk_import import BulkTabularIntake
 
 BulkImportUowFactory = Callable[[], BulkImportUnitOfWork]
 SOURCE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,99}$")
@@ -36,10 +36,10 @@ class BulkImportWorkflow:
     def __init__(
         self,
         uow_factory: BulkImportUowFactory,
-        parser: StreamingCsvIntake | None = None,
+        parser: BulkTabularIntake | None = None,
     ) -> None:
         self._uow_factory = uow_factory
-        self._parser = parser or StreamingCsvIntake()
+        self._parser = parser or BulkTabularIntake()
 
     async def upload(
         self,
@@ -59,6 +59,7 @@ class BulkImportWorkflow:
             self._parser.preflight,
             file,
             mapping=mapping,
+            filename=safe_filename,
         )
         if expected_file_sha256 and preflight.file_sha256 != expected_file_sha256:
             raise ValueError("file changed after preflight")
@@ -72,11 +73,14 @@ class BulkImportWorkflow:
         session = ImportSession.create(
             source=normalized_source,
             original_filename=safe_filename,
+            file_type=preflight.file_type,
             file_size_bytes=preflight.file_size_bytes,
             file_sha256=preflight.file_sha256,
             mapping_json={
                 "logical_fields": dict(mapping),
                 "source_headers": list(preflight.headers),
+                "file_type": preflight.file_type,
+                "sheet_name": preflight.sheet_name,
             },
             encoding=preflight.encoding,
         )
@@ -100,6 +104,7 @@ class BulkImportWorkflow:
                 file,
                 session_id=session.id,
                 preflight=preflight,
+                mapping=mapping,
             )
             totals = {"total": 0, "accepted": 0, "invalid": 0, "duplicate": 0}
             while batch := await asyncio.to_thread(_next_batch, batches):
@@ -121,7 +126,7 @@ class BulkImportWorkflow:
                     await uow.commit()
                     session = persisted
             if session.total_rows != preflight.total_rows:
-                raise RuntimeError("CSV changed between preflight and persistence")
+                raise RuntimeError("file changed between preflight and persistence")
             session.complete()
             await self._save_session(session)
             return BulkImportOutcome(session=session, reused_existing=False)

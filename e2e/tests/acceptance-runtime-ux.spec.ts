@@ -172,8 +172,6 @@ test("uses a structured mapping table and preserves valid mapping after invalid 
 
   await page.getByTestId("netease-mapping-confirmed").check();
   await expect(page.getByTestId("bulk-import-upload")).toBeDisabled();
-  await expect(page.getByTestId("bulk-import-disabled-reason")).toContainText(
-    "real_data_acknowledged",
-  );
+  await expect(page.getByTestId("bulk-import-disabled-reason")).toContainText("开关");
   expect(consoleGuard.problems()).toEqual([]);
 });

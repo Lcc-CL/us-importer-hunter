@@ -378,6 +378,7 @@ export interface NetEasePreflightResponse {
   mapping_profile: "netease-foreign-trade-v1";
   suggested_mapping: Record<string, string>;
   mapping_confidence: Record<string, string>;
+  mapping_source: Record<string, string>;
   source_columns: string[];
   sample_values: Record<string, string>;
   manual_mapping_applied: boolean;
@@ -386,6 +387,11 @@ export interface NetEasePreflightResponse {
   duplicate_columns: string[];
   empty_rows: number;
   invalid_rows: number;
+  company_anchor_rows: number;
+  contact_continuation_rows: number;
+  orphan_contact_rows: number;
+  company_import_summary_rows: number;
+  true_shipment_rows: number;
   estimated_company_count: number;
   estimated_contact_count: number;
   estimated_trade_record_count: number;
