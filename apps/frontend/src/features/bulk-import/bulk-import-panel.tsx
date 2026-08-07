@@ -1403,8 +1403,12 @@ export function BulkImportPanel({
                             {decision.reason_codes.join(" · ")}
                           </p>
                           <div className="mt-3 flex flex-wrap gap-2">
+                            <span className="mr-1 self-center text-[11px] text-slate-500">
+                              {t("bulk.reviewDefaultDefer")}
+                            </span>
                             {(
                               [
+                                ["defer", t("bulk.reviewDefer")],
                                 ["merge", t("bulk.reviewMerge")],
                                 ["keep_separate", t("bulk.reviewSeparate")],
                                 ["reject", t("bulk.reviewReject")],
@@ -1419,10 +1423,14 @@ export function BulkImportPanel({
                                   Boolean(reviewingId)
                                 }
                                 key={action}
-                                onClick={() => void handleReview(decision.decision_id, action)}
+                                onClick={
+                                  action === "defer"
+                                    ? () => undefined
+                                    : () => void handleReview(decision.decision_id, action)
+                                }
                                 type="button"
                               >
-                                {reviewingId === decision.decision_id
+                                {action !== "defer" && reviewingId === decision.decision_id
                                   ? t("bulk.reviewing")
                                   : label}
                               </button>
