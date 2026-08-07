@@ -47,6 +47,8 @@ test("bulk import entity resolution review survives refresh", async ({
     result.getByText("总行数", { exact: true }).locator("..").getByText("3", { exact: true }),
   ).toBeVisible();
   await expect(page).toHaveURL(/import_session_id=[0-9a-f-]{36}/);
+  await expect(panel.getByTestId("acceptance-current-executable")).toContainText("Step 4");
+  await expect(panel.getByTestId("acceptance-current-executable")).not.toContainText("Step 1");
 
   await panel.getByTestId("acceptance-step-4").click();
   await panel.getByTestId("import-resolution-start").click();

@@ -378,9 +378,11 @@ export function BulkImportPanel({
       return;
     }
     const timer = window.setInterval(() => {
-      void loadResolutionState(session.session_id).catch((caught: unknown) => {
-        setError(getClientErrorDetails(caught).message);
-      });
+      void loadResolutionState(session.session_id)
+        .then(() => setError(null))
+        .catch((caught: unknown) => {
+          setError(getClientErrorDetails(caught).message);
+        });
     }, 1500);
     return () => window.clearInterval(timer);
   }, [loadResolutionState, resolution, session]);
@@ -799,8 +801,8 @@ export function BulkImportPanel({
       ["confirmed", "overridden"].includes(route.review_status),
   );
   const acceptanceSteps = [
-    { label: t("acceptance.step1"), complete: Boolean(preflight), unlocked: true, reason: "" },
-    { label: t("acceptance.step2"), complete: mappingConfirmed, unlocked: Boolean(preflight), reason: t("acceptance.unlockPreflight") },
+    { label: t("acceptance.step1"), complete: Boolean(session) || Boolean(preflight), unlocked: true, reason: "" },
+    { label: t("acceptance.step2"), complete: Boolean(session) || mappingConfirmed, unlocked: Boolean(preflight) || Boolean(session), reason: t("acceptance.unlockPreflight") },
     { label: t("acceptance.step3"), complete: Boolean(session), unlocked: mappingConfirmed || Boolean(session), reason: t("acceptance.unlockMapping") },
     { label: t("acceptance.step4"), complete: resolutionComplete, unlocked: Boolean(session), reason: t("acceptance.unlockSession") },
     { label: t("acceptance.step5"), complete: routingComplete, unlocked: resolutionComplete, reason: t("acceptance.unlockResolution") },
@@ -863,9 +865,16 @@ export function BulkImportPanel({
           : group,
       )
     : NETEASE_MAPPING_GROUPS;
-  const firstExecutableIndex = acceptanceSteps.findIndex((step) => step.unlocked) + 1;
+  const firstIncompleteIndex = acceptanceSteps.findIndex(
+    (step) => !step.complete && step.unlocked,
+  );
+  const firstExecutableIndex = firstIncompleteIndex + 1;
   const firstExecutableStep =
-    firstExecutableIndex > 0 ? acceptanceSteps[firstExecutableIndex - 1] : null;
+    firstIncompleteIndex >= 0 ? acceptanceSteps[firstIncompleteIndex] : null;
+  const nextStep =
+    firstIncompleteIndex >= 0 && firstIncompleteIndex + 1 < acceptanceSteps.length
+      ? acceptanceSteps[firstIncompleteIndex + 1]
+      : null;
 
   return (
     <section
@@ -900,6 +909,14 @@ export function BulkImportPanel({
                     step: firstExecutableIndex,
                     label: firstExecutableStep.label,
                   })}
+                </p>
+              ) : null}
+              {nextStep ? (
+                <p
+                  className="mt-1 text-xs text-slate-600"
+                  data-testid="acceptance-next-step"
+                >
+                  {t("acceptance.nextStep", { label: nextStep.label })}
                 </p>
               ) : null}
               <p className="mt-1 text-xs text-slate-600" data-testid="acceptance-mode-label">
