@@ -519,7 +519,20 @@ def _enriched_netease_rows(
     """
     rows = _row_dicts(sheet)
     if not sheet.merges:
-        return tuple((row, {}) for row in rows)
+        return tuple(
+            (
+                row,
+                {"company_anchor_row": position + 1}
+                if any(_mapped_value(row, mapping, field) for field in (
+                    "company_name",
+                    "external_company_id",
+                    "website",
+                    "address",
+                ))
+                else {},
+            )
+            for position, row in enumerate(rows, start=1)
+        )
     company_headers = {
         mapping[field]
         for field in ("company_name", "external_company_id", "website", "address")

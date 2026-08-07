@@ -52,8 +52,16 @@ async def test_netease_and_umail_preflight_have_no_write_dependencies() -> None:
             },
         )
         assert netease.status_code == 200, netease.text
-        assert netease.json()["no_business_side_effects"] is True
-        assert netease.json()["real_data_gate"] == "blocked"
+        body = netease.json()
+        assert body["no_business_side_effects"] is True
+        assert body["real_data_gate"] == "blocked"
+        assert body["company_anchor_rows"] == 1
+        assert body["expected_company_count"] == 1
+        assert body["expected_contact_count"] == 1
+        assert body["invalid_rows"] == 0
+        assert body["company_import_summary_rows"] == 1
+        assert body["true_shipment_rows"] == 0
+        assert body["mapping_source"]["company_name"] == "auto_alias"
 
         umail = await client.post(
             "/api/v1/acceptance/umail-result-preflight",

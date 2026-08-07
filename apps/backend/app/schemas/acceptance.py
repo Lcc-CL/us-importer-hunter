@@ -20,6 +20,7 @@ class NetEasePreflightResponse(BaseModel):
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    mapping_source: dict[str, str]
     source_columns: list[str]
     sample_values: dict[str, str]
     manual_mapping_applied: bool
@@ -28,6 +29,18 @@ class NetEasePreflightResponse(BaseModel):
     duplicate_columns: list[str]
     empty_rows: int
     invalid_rows: int
+    company_anchor_rows: int
+    contact_continuation_rows: int
+    orphan_contact_rows: int
+    company_import_summary_rows: int
+    true_shipment_rows: int
+    expected_company_count: int
+    expected_contact_count: int
+    company_merge_count: int
+    company_review_count: int
+    contact_merge_count: int
+    contact_review_count: int
+    companycontact_relation_count: int
     estimated_company_count: int
     estimated_contact_count: int
     estimated_trade_record_count: int
@@ -61,6 +74,7 @@ class UmailPreflightResponse(BaseModel):
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    mapping_source: dict[str, str]
     source_columns: list[str]
     sample_values: dict[str, str]
     manual_mapping_applied: bool
