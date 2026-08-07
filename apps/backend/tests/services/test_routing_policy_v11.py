@@ -259,3 +259,18 @@ def test_blocked_entity_stays_blocked() -> None:
 
 def test_taxonomy_rules_version() -> None:
     assert fitness_equipment_v1().rules_version == "fitness_equipment_v1"
+
+
+def test_unknown_relevance_is_capped_at_c_even_with_high_other_signals() -> None:
+    # Strong source/value/contact signals must not promote an unknown-relevance
+    # company to A/B: without target match the tier is C by definition.
+    features = _features(
+        products=("specialty hardware",),
+        amount="$1,000,000",
+        contacts=(_person("logistics"), _person("executive"), _person("procurement")),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is ProspectTier.C
+    assert result.pre_score >= 45
+    assert "TARGET_RELEVANCE_UNKNOWN" in result.reason_codes
