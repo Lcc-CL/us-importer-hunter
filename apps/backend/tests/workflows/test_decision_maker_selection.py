@@ -111,6 +111,25 @@ class TestSelection:
         outcome = await workflow.handle(company_id=COMPANY_ID, opportunity_id=OPPORTUNITY_ID)
         assert outcome.action is DecisionMakerSelectionAction.RESEARCH_MORE
 
+    async def test_department_shared_mailbox_is_never_auto_selected(
+        self, workflow: DecisionMakerSelectionWorkflow, repo: FakeContactRepository
+    ) -> None:
+        person = seed_contact(
+            repo, "Lena Logistics", "Logistics Director", Department.LOGISTICS,
+            SeniorityLevel.DIRECTOR, email="lena@logistics.example", verified=True,
+        )
+        department = seed_contact(
+            repo, "Support Desk", "Support Manager", Department.SALES_MARKETING,
+            SeniorityLevel.MANAGER, email="info@logistics.example",
+        )
+        outcome = await workflow.handle(company_id=COMPANY_ID, opportunity_id=OPPORTUNITY_ID)
+        assert outcome.action is DecisionMakerSelectionAction.SELECTED
+        assert outcome.selected_contact_id == person.id
+        assert department.id not in {
+            candidate.contact_id for candidate in outcome.ranked_candidates
+        }
+        assert len(outcome.ranked_candidates) == 1
+
     async def test_no_contacts_means_research_more(
         self, workflow: DecisionMakerSelectionWorkflow
     ) -> None:
