@@ -40,7 +40,13 @@ COMPANY_IDENTITY_FIELDS = ("company_name", "external_company_id", "website", "ad
 #: Fields that only exist in transaction-level shipment rows.
 SHIPMENT_TICKET_FIELDS = ("shipment_date", "quantity", "weight", "pol", "pod")
 #: Fields that describe a company-level import summary, not one shipment.
-SUMMARY_TRADE_FIELDS = ("hs_code", "product_description", "supplier", "amount")
+SUMMARY_TRADE_FIELDS = (
+    "hs_code",
+    "product_description",
+    "supplier",
+    "amount",
+    "last_import_at",
+)
 
 ALLOWED_LOGICAL_FIELDS = frozenset(
     {
@@ -64,6 +70,7 @@ ALLOWED_LOGICAL_FIELDS = frozenset(
         "quantity",
         "weight",
         "amount",
+        "last_import_at",
         "pol",
         "pod",
     }
@@ -230,6 +237,11 @@ def annotate_company_import_summary(
     )
     if has_summary and not has_ticket:
         payload["record_kind"] = "company_import_summary"
+        last_import_column = mapping.get("last_import_at")
+        if last_import_column:
+            last_import = (fields.get(last_import_column) or "").strip()
+            if last_import:
+                payload["last_import_at"] = last_import
         amount_column = mapping.get("amount")
         if amount_column:
             raw_amount = (fields.get(amount_column) or "").strip()

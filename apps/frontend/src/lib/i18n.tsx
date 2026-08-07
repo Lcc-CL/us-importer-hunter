@@ -60,7 +60,20 @@ const zh = {
   "acceptance.providerNotCalled": "真实 Provider：未调用",
   "acceptance.noSend": "系统发送邮件：否",
   "acceptance.entitySummary":
-    "当前实体：Raw {rows} 行 · 公司 {companies} · 联系人 {contacts} · 路由 {routes}",
+    "正式已导入实体：Raw {rows} · Company {companies} · Contact {contacts} · Route {routes}",
+  "acceptance.preflightEstimate":
+    "Preflight 估计：{companies} 家公司 · {contacts} 个联系人（区别于已持久化数据）",
+  "acceptance.rawRows": "原始行",
+  "acceptance.companyAnchors": "公司 Anchor",
+  "acceptance.contactContinuation": "联系人续行",
+  "acceptance.reviewRequired": "待人工复核",
+  "acceptance.highConfidenceMerge": "高置信归并 {count}",
+  "acceptance.mediumConfidenceMerge": "待人工归并 {count}",
+  "acceptance.trueShipmentRows": "真实逐票贸易记录 {count}",
+  "acceptance.systemGate": "系统真实数据导入开关",
+  "acceptance.systemGateEnabled": "启用",
+  "acceptance.systemGateDisabled": "禁用",
+  "acceptance.systemGateBlockedReason": "系统真实数据导入开关当前关闭，需要管理员启用。",
   "acceptance.realDataToggle":
     "本次将处理真实用户数据。只读 Preflight 不受门禁影响；正式导入必须确认 Mapping，并由本地安全配置明确授权。",
   "acceptance.preflight": "只读 Preflight",
@@ -68,7 +81,9 @@ const zh = {
   "acceptance.confirmMapping":
     "我已核对自动 Mapping、未知字段、缺失字段和重复列，并确认使用当前 Mapping。",
   "acceptance.confirmMappingRequired": "真实数据正式导入前必须先完成 Preflight 并确认 Mapping。",
-  "acceptance.companyImportSummary": "公司进口摘要，不代表单票海运记录。",
+  "acceptance.companyImportSummary":
+    "这些字段是公司级进口摘要，不代表单票海运、提单或报关记录。",
+  "acceptance.importSummaryGroup": "公司进口摘要",
   "acceptance.noEmailInMappingStep": "本步骤不会发送邮件。",
   "acceptance.gateEnabled": "真实数据门禁已就绪",
   "acceptance.gateBlocked": "真实数据正式导入已阻止",
@@ -802,7 +817,21 @@ const en: Record<MessageKey, string> = {
   "acceptance.providerNotCalled": "Real provider: not called",
   "acceptance.noSend": "System email sending: no",
   "acceptance.entitySummary":
-    "Current entities: {rows} raw rows · {companies} companies · {contacts} contacts · {routes} routes",
+    "Persisted entities: Raw {rows} · Company {companies} · Contact {contacts} · Route {routes}",
+  "acceptance.preflightEstimate":
+    "Preflight estimate: {companies} companies · {contacts} contacts (not yet persisted)",
+  "acceptance.rawRows": "Raw rows",
+  "acceptance.companyAnchors": "Company anchors",
+  "acceptance.contactContinuation": "Contact continuation",
+  "acceptance.reviewRequired": "Review required",
+  "acceptance.highConfidenceMerge": "High-confidence merges {count}",
+  "acceptance.mediumConfidenceMerge": "Manual merges {count}",
+  "acceptance.trueShipmentRows": "True shipment-level rows {count}",
+  "acceptance.systemGate": "System real-data import switch",
+  "acceptance.systemGateEnabled": "ENABLED",
+  "acceptance.systemGateDisabled": "DISABLED",
+  "acceptance.systemGateBlockedReason":
+    "The system real-data import switch is off; an administrator must enable it.",
   "acceptance.realDataToggle":
     "This run will process real user data. Read-only preflight is always available; persistence requires a confirmed mapping and explicit local safety acknowledgement.",
   "acceptance.preflight": "Read-only preflight",
@@ -812,7 +841,8 @@ const en: Record<MessageKey, string> = {
   "acceptance.confirmMappingRequired":
     "Run preflight and confirm the mapping before persisting real data.",
   "acceptance.companyImportSummary":
-    "Company import summary; not individual shipment records.",
+    "These fields are company-level import summaries, not individual shipment, B/L or customs records.",
+  "acceptance.importSummaryGroup": "Company import summary",
   "acceptance.noEmailInMappingStep": "No email is sent at this step.",
   "acceptance.gateEnabled": "Real-data gate ready",
   "acceptance.gateBlocked": "Real-data persistence blocked",

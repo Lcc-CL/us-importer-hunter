@@ -16,7 +16,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import BinaryIO, Literal
+from typing import Any, BinaryIO, Literal
 from uuid import UUID
 from xml.etree import ElementTree
 
@@ -55,7 +55,7 @@ NETEASE_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "website": ("website", "domain", "url", "官网", "网站", "公司网站", "公司官网", "域名"),
     "address": ("address", "company_address", "公司地址", "地址", "注册地址"),
-    "country": ("country", "company_country", "国家", "公司国家", "地区"),
+    "country": ("country", "company_country", "国家", "公司国家", "地区", "国家/地区"),
     "company_type": ("company_type", "公司类型", "企业类型", "客户类型"),
     "phone": ("phone", "company_phone", "公司电话", "总机"),
     "contact_name": ("contact_name", "contact", "联系人", "联系人姓名", "姓名"),
@@ -96,6 +96,7 @@ NETEASE_ALIASES: dict[str, tuple[str, ...]] = {
         "goods_description",
         "产品",
         "产品描述",
+        "主要进口产品",
         "商品描述",
         "品名",
     ),
@@ -118,7 +119,13 @@ NETEASE_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "quantity": ("quantity", "qty", "数量", "件数"),
     "weight": ("weight", "weight_kg", "gross_weight", "重量", "毛重"),
-    "amount": ("amount", "value", "trade_value", "金额", "货值", "总价"),
+    "amount": ("amount", "value", "trade_value", "金额", "货值", "总价", "进口金额"),
+    "last_import_at": (
+        "last_import_at",
+        "last_import_date",
+        "最后进口时间",
+        "最近进口时间",
+    ),
     "pol": ("pol", "port_of_loading", "loading_port", "起运港", "装货港"),
     "pod": (
         "pod",
@@ -205,6 +212,9 @@ class _Sheet:
     name: str
     headers: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
+    #: Vertical merge ranges (start_row, end_row, column_letters) — structural
+    #: evidence for company-anchor contact continuation rows.
+    merges: tuple[tuple[int, int, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -230,6 +240,7 @@ class NetEasePreflightReport:
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    mapping_source: dict[str, str]
     source_columns: tuple[str, ...]
     sample_values: dict[str, str]
     manual_mapping_applied: bool
@@ -238,6 +249,11 @@ class NetEasePreflightReport:
     duplicate_columns: tuple[str, ...]
     empty_rows: int
     invalid_rows: int
+    company_anchor_rows: int
+    contact_continuation_rows: int
+    orphan_contact_rows: int
+    company_import_summary_rows: int
+    true_shipment_rows: int
     estimated_company_count: int
     estimated_contact_count: int
     estimated_trade_record_count: int
@@ -257,6 +273,7 @@ class UmailPreflightReport:
     mapping_profile: str
     suggested_mapping: dict[str, str]
     mapping_confidence: dict[str, str]
+    mapping_source: dict[str, str]
     source_columns: tuple[str, ...]
     sample_values: dict[str, str]
     manual_mapping_applied: bool
@@ -289,7 +306,7 @@ class RealDataPreflightService:
     ) -> NetEasePreflightReport:
         tabular = _read_tabular(file, filename=filename, allow_xlsx=True)
         sheet = _select_sheet(tabular.sheets, NETEASE_ALIASES)
-        suggested, confidence = _infer_mapping(
+        suggested, confidence, source = _infer_mapping(
             sheet.headers,
             aliases=NETEASE_ALIASES,
             manual_mapping=mapping or {},
@@ -312,6 +329,7 @@ class RealDataPreflightService:
             mapping_profile=NETEASE_MAPPING_PROFILE,
             suggested_mapping=suggested,
             mapping_confidence=confidence,
+            mapping_source=source,
             source_columns=sheet.headers,
             sample_values=_masked_samples(sheet, suggested),
             manual_mapping_applied=bool(mapping),
@@ -322,6 +340,11 @@ class RealDataPreflightService:
             duplicate_columns=duplicate_columns,
             empty_rows=analysis.empty_rows,
             invalid_rows=analysis.invalid_rows,
+            company_anchor_rows=analysis.company_anchor_rows,
+            contact_continuation_rows=analysis.contact_continuation_rows,
+            orphan_contact_rows=analysis.orphan_contact_rows,
+            company_import_summary_rows=analysis.company_import_summary_rows,
+            true_shipment_rows=analysis.true_shipment_rows,
             estimated_company_count=analysis.company_count,
             estimated_contact_count=analysis.contact_count,
             estimated_trade_record_count=analysis.trade_record_count,
@@ -339,7 +362,7 @@ class RealDataPreflightService:
     ) -> UmailPreflightReport:
         tabular = _read_tabular(file, filename=filename, allow_xlsx=False)
         sheet = tabular.sheets[0]
-        suggested, confidence = _infer_mapping(
+        suggested, confidence, source = _infer_mapping(
             sheet.headers,
             aliases=UMAIL_ALIASES,
             manual_mapping=mapping or {},
@@ -416,6 +439,7 @@ class RealDataPreflightService:
             mapping_profile=UMAIL_MAPPING_PROFILE,
             suggested_mapping=suggested,
             mapping_confidence=confidence,
+            mapping_source=source,
             source_columns=sheet.headers,
             sample_values=_masked_samples(sheet, suggested),
             manual_mapping_applied=bool(mapping),
@@ -449,24 +473,126 @@ class _NetEaseAnalysis:
     coverage: dict[str, float]
     high_confidence: int
     medium_confidence: int
+    company_anchor_rows: int
+    contact_continuation_rows: int
+    orphan_contact_rows: int
+    company_import_summary_rows: int
+    true_shipment_rows: int
+
+
+_SUMMARY_FIELDS = ("hs_code", "product_description", "supplier", "amount", "last_import_at")
+_TICKET_FIELDS = ("shipment_date", "quantity", "weight", "pol", "pod")
+
+
+def _enriched_netease_rows(
+    sheet: _Sheet,
+    mapping: Mapping[str, str],
+) -> tuple[tuple[dict[str, str], dict[str, Any]], ...]:
+    """Row dicts with merged-cell company inheritance applied.
+
+    Only vertical merges over mapped company columns are treated as structural
+    evidence; anything else stays unlinked and is marked for review instead of
+    being guessed or forward-filled.
+    """
+    rows = _row_dicts(sheet)
+    if not sheet.merges:
+        return tuple((row, {}) for row in rows)
+    company_headers = {
+        mapping[field]
+        for field in ("company_name", "external_company_id", "website", "address")
+        if field in mapping and mapping[field] in sheet.headers
+    }
+    company_columns = {
+        _column_name(sheet.headers.index(header)) for header in company_headers
+    }
+    anchors: set[int] = set()
+    for position, row in enumerate(rows, start=1):
+        if any(_mapped_value(row, mapping, field) for field in (
+            "company_name",
+            "external_company_id",
+            "website",
+            "address",
+        )):
+            anchors.add(position + 1)  # absolute sheet row (header is row 1)
+
+    enriched: list[tuple[dict[str, str], dict[str, Any]]] = []
+    for position, row in enumerate(rows, start=1):
+        absolute = position + 1
+        if absolute in anchors:
+            enriched.append((row, {"company_anchor_row": absolute}))
+            continue
+        anchor = _preflight_merge_anchor(
+            absolute,
+            company_columns=company_columns,
+            merges=sheet.merges,
+        )
+        if anchor is not None and anchor in anchors:
+            anchor_row = rows[anchor - 2]
+            inherited_row = dict(row)
+            for field in ("company_name", "external_company_id", "website", "address"):
+                column = mapping.get(field)
+                if column in sheet.headers and not _mapped_value(row, mapping, field):
+                    anchor_value = (anchor_row.get(column) or "").strip()
+                    if anchor_value:
+                        inherited_row[column] = anchor_value
+            enriched.append(
+                (
+                    inherited_row,
+                    {
+                        "inherited_company_source_row": anchor,
+                        "grouping_rule": "xlsx_vertical_merge",
+                        "grouping_confidence": "high",
+                        "company_anchor_row": anchor,
+                    },
+                )
+            )
+        else:
+            enriched.append(
+                (row, {"grouping_rule": "none", "company_review_required": True})
+            )
+    return tuple(enriched)
+
+
+def _preflight_merge_anchor(
+    row_number: int,
+    *,
+    company_columns: set[str],
+    merges: tuple[tuple[int, int, str], ...],
+) -> int | None:
+    candidates = [
+        start
+        for start, end, column in merges
+        if end > start and start < row_number <= end
+        and (not company_columns or column in company_columns)
+    ]
+    return min(candidates) if candidates else None
 
 
 def _analyze_netease_rows(
     sheet: _Sheet,
     mapping: Mapping[str, str],
 ) -> _NetEaseAnalysis:
-    rows = _row_dicts(sheet)
+    enriched = _enriched_netease_rows(sheet, mapping)
+    rows = tuple(row for row, _meta in enriched)
     company_keys: set[str] = set()
     contact_keys: set[str] = set()
     empty_rows = 0
     invalid_rows = 0
     trade_records = 0
+    company_anchor_rows = 0
+    contact_continuation_rows = 0
+    orphan_contact_rows = 0
+    company_import_summary_rows = 0
+    true_shipment_rows = 0
     high_keys: set[str] = set()
     medium_keys: set[str] = set()
     has_company = False
     has_contact = False
     has_trade = False
-    for position, (source_row, row) in enumerate(zip(sheet.rows, rows, strict=True), start=1):
+    for position, (source_row, (row, meta)) in enumerate(
+        zip(sheet.rows, enriched, strict=True),
+        start=1,
+    ):
         values = tuple(value.strip() for value in row.values())
         if not any(values):
             empty_rows += 1
@@ -474,6 +600,12 @@ def _analyze_netease_rows(
             continue
         if len(source_row) != len(sheet.headers):
             invalid_rows += 1
+        if meta.get("company_anchor_row") == position + 1:
+            company_anchor_rows += 1
+        if meta.get("grouping_rule") == "xlsx_vertical_merge":
+            contact_continuation_rows += 1
+        if meta.get("company_review_required"):
+            orphan_contact_rows += 1
         company_name = _mapped_value(row, mapping, "company_name")
         external_id = _mapped_value(row, mapping, "external_company_id")
         website = _mapped_value(row, mapping, "website")
@@ -509,6 +641,12 @@ def _analyze_netease_rows(
         if trade_present:
             has_trade = True
             trade_records += 1
+        summary_present = any(_mapped_value(row, mapping, field) for field in _SUMMARY_FIELDS)
+        ticket_present = any(_mapped_value(row, mapping, field) for field in _TICKET_FIELDS)
+        if summary_present and not ticket_present:
+            company_import_summary_rows += 1
+        if ticket_present:
+            true_shipment_rows += 1
         if not any((company_present, contact_present, trade_present)):
             invalid_rows += 1
     kinds = sum((has_company, has_contact, has_trade))
@@ -551,6 +689,11 @@ def _analyze_netease_rows(
         coverage=coverage,
         high_confidence=len(high_keys),
         medium_confidence=len(medium_keys - high_keys),
+        company_anchor_rows=company_anchor_rows,
+        contact_continuation_rows=contact_continuation_rows,
+        orphan_contact_rows=orphan_contact_rows,
+        company_import_summary_rows=company_import_summary_rows,
+        true_shipment_rows=true_shipment_rows,
     )
 
 
@@ -697,8 +840,11 @@ def _xlsx_sheets(data: bytes) -> tuple[_Sheet, ...]:
                     "acceptance_malformed_xlsx", f"XLSX sheet metadata is invalid: {name}"
                 ) from exc
             rows = _xlsx_rows(xml, shared_strings)
+            merges = _xlsx_merges(xml)
             if rows:
-                sheets.append(_rows_to_sheet(name, rows, require_data=False))
+                sheets.append(
+                    _rows_to_sheet(name, rows, require_data=False, merges=merges)
+                )
         if not sheets:
             raise AcceptancePreflightError(
                 "acceptance_file_empty", "XLSX must contain a non-empty worksheet"
@@ -726,6 +872,17 @@ def _xlsx_shared_strings(archive: zipfile.ZipFile) -> tuple[str, ...]:
             "acceptance_malformed_xlsx", "XLSX shared strings are invalid"
         ) from exc
     return tuple("".join(node.text or "" for node in item.findall(".//{*}t")) for item in root)
+
+
+def _xlsx_merges(root: ElementTree.Element) -> tuple[tuple[int, int, str], ...]:
+    merges: list[tuple[int, int, str]] = []
+    for merge in root.findall(".//{*}mergeCells/{*}mergeCell"):
+        ref = merge.attrib.get("ref", "")
+        match = re.match(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$", ref)
+        if match:
+            col1, row1, _col2, row2 = match.groups()
+            merges.append((int(row1), int(row2), col1))
+    return tuple(merges)
 
 
 def _xlsx_rows(root: ElementTree.Element, shared_strings: tuple[str, ...]) -> list[tuple[str, ...]]:
@@ -768,11 +925,21 @@ def _column_index(letters: str) -> int:
     return value - 1
 
 
+def _column_name(index: int) -> str:
+    name = ""
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        name = chr(ord("A") + remainder) + name
+    return name
+
+
 def _rows_to_sheet(
     name: str,
     rows: Sequence[tuple[str, ...]],
     *,
     require_data: bool,
+    merges: tuple[tuple[int, int, str], ...] = (),
 ) -> _Sheet:
     header_index = next(
         (index for index, row in enumerate(rows) if any(value.strip() for value in row)),
@@ -785,7 +952,10 @@ def _rows_to_sheet(
         raise AcceptancePreflightError(
             "acceptance_invalid_header", "Header names must not be empty"
         )
-    data_rows = tuple(rows[header_index + 1 :])
+    data_rows = tuple(
+        row + ("",) * max(0, len(headers) - len(row))
+        for row in rows[header_index + 1 :]
+    )
     if require_data and not data_rows:
         raise AcceptancePreflightError(
             "acceptance_file_empty", "File must contain at least one data row"
@@ -794,7 +964,7 @@ def _rows_to_sheet(
         raise AcceptancePreflightError(
             "acceptance_too_many_rows", f"File must not exceed {ACCEPTANCE_MAX_ROWS} data rows"
         )
-    return _Sheet(name=name, headers=headers, rows=data_rows)
+    return _Sheet(name=name, headers=headers, rows=data_rows, merges=merges)
 
 
 def _select_sheet(
@@ -820,7 +990,7 @@ def _infer_mapping(
     *,
     aliases: Mapping[str, tuple[str, ...]],
     manual_mapping: Mapping[str, str],
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     invalid_fields = sorted(set(manual_mapping) - set(aliases))
     if invalid_fields:
         raise AcceptancePreflightError(
@@ -840,6 +1010,7 @@ def _infer_mapping(
         normalized_headers.setdefault(_normalized_header(header), header)
     result = {field: column for field, column in manual_mapping.items()}
     confidence = {field: "manual" for field in manual_mapping}
+    source = {field: "manual" for field in manual_mapping}
     used_columns = set(result.values())
     # Exact known-alias pass: normalized equality -> HIGH confidence.
     for logical_field, candidates in aliases.items():
@@ -850,6 +1021,7 @@ def _infer_mapping(
             if matched_header is not None and matched_header not in used_columns:
                 result[logical_field] = matched_header
                 confidence[logical_field] = "high"
+                source[logical_field] = "auto_alias"
                 used_columns.add(matched_header)
                 break
     # Fuzzy pass: header contains a known alias -> MEDIUM confidence.
@@ -875,9 +1047,15 @@ def _infer_mapping(
             if matched_header is not None:
                 result[logical_field] = matched_header
                 confidence[logical_field] = "medium"
+                source[logical_field] = "inferred"
                 used_columns.add(matched_header)
                 break
-    return result, confidence
+    # Manual selections are user-confirmed: keep confidence out of the
+    # auto-confidence vocabulary, source tells the story instead.
+    for field in manual_mapping:
+        confidence[field] = "high"
+        source[field] = "manual"
+    return result, confidence, source
 
 
 def _row_dicts(sheet: _Sheet) -> tuple[dict[str, str], ...]:

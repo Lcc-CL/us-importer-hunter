@@ -22,6 +22,7 @@ interface StructuredMappingEditorProps {
   mapping: Record<string, string>;
   sourceColumns: string[];
   confidence: Record<string, string>;
+  source?: Record<string, string>;
   samples: Record<string, string>;
   duplicateColumns?: string[];
   confirmed: boolean;
@@ -35,6 +36,7 @@ export function StructuredMappingEditor({
   mapping,
   sourceColumns,
   confidence,
+  source = {},
   samples,
   duplicateColumns = [],
   confirmed,
@@ -116,6 +118,7 @@ export function StructuredMappingEditor({
                   <th className="px-3 py-2">{lang === "zh" ? "文件列" : "Source column"}</th>
                   <th className="px-3 py-2">{lang === "zh" ? "要求" : "Requirement"}</th>
                   <th className="px-3 py-2">{lang === "zh" ? "置信度" : "Confidence"}</th>
+                  <th className="px-3 py-2">{lang === "zh" ? "来源" : "Source"}</th>
                   <th className="px-3 py-2">{lang === "zh" ? "脱敏样例" : "Masked sample"}</th>
                   <th className="px-3 py-2">{lang === "zh" ? "状态" : "Status"}</th>
                 </tr>
@@ -163,7 +166,30 @@ export function StructuredMappingEditor({
                           : (lang === "zh" ? "可选" : "Optional")}
                       </td>
                       <td className="px-3 py-2.5 text-slate-600">
-                        {confidence[field.key] ?? "—"}
+                        <span
+                          className={
+                            confidence[field.key] === "high"
+                              ? "font-semibold text-emerald-700"
+                              : "font-medium text-amber-700"
+                          }
+                        >
+                          {(confidence[field.key] ?? "low").toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-600">
+                          {source[field.key] === "manual"
+                            ? lang === "zh"
+                              ? "手动"
+                              : "MANUAL"
+                            : source[field.key] === "inferred"
+                              ? lang === "zh"
+                                ? "推断"
+                                : "INFERRED"
+                              : lang === "zh"
+                                ? "自动"
+                                : "AUTO"}
+                        </span>
                       </td>
                       <td className="px-3 py-2.5 font-mono text-slate-600">
                         {samples[field.key] ?? "—"}

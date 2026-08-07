@@ -253,8 +253,10 @@ def test_mapping_aliases_and_confidence_for_netease_headers() -> None:
             "联系人职位",
             "联系人邮箱",
             "HS code",
+            "主要进口产品",
             "最大供应商",
             "进口金额",
+            "最后进口时间",
             "国家/地区",
         ],
         rows=[
@@ -265,8 +267,10 @@ def test_mapping_aliases_and_confidence_for_netease_headers() -> None:
                 "经理",
                 "a@example.com",
                 "8205",
+                "hinges",
                 "S1",
                 "$1",
+                "2026-07-01",
                 "美国",
             ]
         ],
@@ -292,6 +296,12 @@ def test_mapping_aliases_and_confidence_for_netease_headers() -> None:
     assert suggested["supplier"] == "最大供应商"
     assert confidence["supplier"] == "high"
     assert suggested["amount"] == "进口金额"
-    assert confidence["amount"] == "medium"
+    assert confidence["amount"] == "high"
     assert suggested["country"] == "国家/地区"
-    assert confidence["country"] == "medium"
+    assert confidence["country"] == "high"
+    assert suggested["product_description"] == "主要进口产品"
+    assert confidence["product_description"] == "high"
+    assert suggested["last_import_at"] == "最后进口时间"
+    assert confidence["last_import_at"] == "high"
+    assert report.mapping_source["contact_email"] == "auto_alias"
+    assert report.mapping_source["supplier"] == "auto_alias"

@@ -128,6 +128,7 @@ const NETEASE_MAPPING_GROUPS: MappingGroupDefinition[] = [
     labelEn: "Trade records",
     fields: [
       { key: "shipment_date", labelZh: "进口 / 到港日期", labelEn: "Shipment date" },
+      { key: "last_import_at", labelZh: "最后进口时间", labelEn: "Last import time" },
       { key: "quantity", labelZh: "数量", labelEn: "Quantity" },
       { key: "weight", labelZh: "重量", labelEn: "Weight" },
       { key: "amount", labelZh: "金额", labelEn: "Amount" },
@@ -832,7 +833,7 @@ export function BulkImportPanel({
     !mappingConfirmed ? t("acceptance.unlockMapping") : null,
     !currentFileMatchesPreflight ? t("acceptance.fileHashChanged") : null,
     realDataMode && health.realDataGate !== "enabled"
-      ? t("acceptance.localGateRequired")
+      ? t("acceptance.systemGateBlockedReason")
       : null,
   ].filter((value): value is string => Boolean(value));
   const acceptanceModeLabel = realDataMode && mappingConfirmed
@@ -846,6 +847,22 @@ export function BulkImportPanel({
     "supplier",
     "amount",
   ].some((field) => Boolean(mapping[field]));
+  const isCompanyImportSummary = Boolean(
+    preflight &&
+      (preflight.company_import_summary_rows ?? 0) > 0 &&
+      (preflight.true_shipment_rows ?? 0) === 0,
+  );
+  const mappingGroups = isCompanyImportSummary
+    ? NETEASE_MAPPING_GROUPS.map((group) =>
+        group.labelEn === "Trade records"
+          ? {
+              ...group,
+              labelZh: t("acceptance.importSummaryGroup"),
+              labelEn: "Company import summary",
+            }
+          : group,
+      )
+    : NETEASE_MAPPING_GROUPS;
   const firstExecutableIndex = acceptanceSteps.findIndex((step) => step.unlocked) + 1;
   const firstExecutableStep =
     firstExecutableIndex > 0 ? acceptanceSteps[firstExecutableIndex - 1] : null;
@@ -937,6 +954,14 @@ export function BulkImportPanel({
               routes: routingRun?.total_companies ?? 0,
             })}
           </p>
+          {preflight ? (
+            <p className="mt-1 text-xs text-slate-500" data-testid="preflight-estimate">
+              {t("acceptance.preflightEstimate", {
+                companies: preflight.estimated_company_count,
+                contacts: preflight.estimated_contact_count,
+              })}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -978,6 +1003,15 @@ export function BulkImportPanel({
             />
             <span>{t("acceptance.realDataToggle")}</span>
           </label>
+          <p
+            className="text-xs font-medium text-slate-600 lg:col-span-2"
+            data-testid="system-gate"
+          >
+            {t("acceptance.systemGate")}:{" "}
+            {health.realDataGate === "enabled"
+              ? t("acceptance.systemGateEnabled")
+              : t("acceptance.systemGateDisabled")}
+          </p>
           <div className="lg:col-span-2">
             <button
               className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-5 text-sm font-semibold text-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1026,13 +1060,17 @@ export function BulkImportPanel({
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
               {[
-                [t("acceptance.rows"), preflight.total_rows],
+                [t("acceptance.rawRows"), preflight.total_rows],
+                [t("acceptance.companyAnchors"), preflight.company_anchor_rows ?? 0],
+                [t("acceptance.contactContinuation"), preflight.contact_continuation_rows ?? 0],
                 [t("acceptance.companies"), preflight.estimated_company_count],
                 [t("acceptance.contacts"), preflight.estimated_contact_count],
-                [t("acceptance.tradeRecords"), preflight.estimated_trade_record_count],
+                [
+                  t("acceptance.reviewRequired"),
+                  (preflight.orphan_contact_rows ?? 0) +
+                    preflight.estimated_medium_confidence_reviews,
+                ],
                 [t("acceptance.invalidRows"), preflight.invalid_rows],
-                [t("acceptance.highConfidence"), preflight.estimated_high_confidence_reviews],
-                [t("acceptance.mediumConfidence"), preflight.estimated_medium_confidence_reviews],
               ].map(([label, value]) => (
                 <div className="rounded-xl bg-white p-2" key={String(label)}>
                   <p className="text-[11px] text-slate-500">{label}</p>
@@ -1040,14 +1078,35 @@ export function BulkImportPanel({
                 </div>
               ))}
             </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              {t("acceptance.highConfidenceMerge", {
+                count: preflight.estimated_high_confidence_reviews,
+              })}
+              {" · "}
+              {t("acceptance.mediumConfidenceMerge", {
+                count: preflight.estimated_medium_confidence_reviews,
+              })}
+            </p>
           </div>
+
+          {preflight.true_shipment_rows !== undefined ? (
+            <p
+              className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"
+              data-testid="true-shipment-count"
+            >
+              {t("acceptance.trueShipmentRows", {
+                count: preflight.true_shipment_rows ?? 0,
+              })}
+            </p>
+          ) : null}
 
           <StructuredMappingEditor
             confidence={preflight.mapping_confidence}
+            source={preflight.mapping_source}
             confirmed={mappingConfirmed}
             disabled={busy || preflightBusy}
             duplicateColumns={preflight.duplicate_columns}
-            groups={NETEASE_MAPPING_GROUPS}
+            groups={mappingGroups}
             mapping={mapping}
             onChange={updateMapping}
             samples={preflight.sample_values}
