@@ -704,6 +704,11 @@ class RoutingPolicyV11:
             reasons.append("UNRESOLVED_COMPANY_CONFLICT_BLOCKED")
         elif exclusion is not None:
             reasons.append(exclusion)
+        elif not taxonomy_target:
+            # No target match and no explicit non-target evidence: evidence is
+            # insufficient for high-cost development -> C, never D (and never
+            # promoted to A/B by unrelated signals).
+            reasons.append("TARGET_RELEVANCE_UNKNOWN")
         elif pre_score >= V11_TIER_A:
             reasons.append("TARGET_A_CANDIDATE")
         elif pre_score >= V11_TIER_B:
@@ -741,6 +746,8 @@ class RoutingPolicyV11:
                 if blocked
                 else ProspectTier.D
                 if exclusion is not None
+                else ProspectTier.C
+                if not taxonomy_target
                 else ProspectTier.A
                 if pre_score >= V11_TIER_A
                 else ProspectTier.B
