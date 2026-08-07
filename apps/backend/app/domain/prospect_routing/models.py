@@ -421,6 +421,7 @@ class RoutingContactSnapshot:
     status: str
     has_usable_channel: bool
     has_usable_email: bool
+    is_department_contact: bool = False
 
 
 @dataclass(frozen=True)
@@ -464,6 +465,10 @@ class RoutingFeatureInput:
     intermediary_signals: tuple[str, ...]
     strong_exclusion: bool
     unresolved_company_conflict: bool
+    # V2 (real-routing-v1.1) source facts; None/missing is UNKNOWN, not negative.
+    import_amount_raw: str | None = None
+    last_import_at: str | None = None
+    supplier: tuple[str, ...] = ()
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:
