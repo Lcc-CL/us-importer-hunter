@@ -139,6 +139,9 @@ class RoutingFeatureProjector:
         pols: list[str] = []
         pods: list[str] = []
         company_types: list[str] = []
+        suppliers: list[str] = []
+        last_import_at: str | None = None
+        import_amount_raw: str | None = None
         for row in company.rows:
             fields = _fields(row.raw_payload)
             products.extend(_split(_value(fields, mapping, "product_description")))
@@ -147,6 +150,12 @@ class RoutingFeatureProjector:
             pols.extend(_split(_value(fields, mapping, "pol")))
             pods.extend(_split(_value(fields, mapping, "pod")))
             company_types.extend(_split(_value(fields, mapping, "company_type")))
+            if "supplier" in mapping:
+                suppliers.extend(_split(_value(fields, mapping, "supplier")))
+            if last_import_at is None and "last_import_at" in mapping:
+                last_import_at = _value(fields, mapping, "last_import_at") or None
+            if import_amount_raw is None and "amount" in mapping:
+                import_amount_raw = _value(fields, mapping, "amount") or None
             parsed_date = _parse_date(_value(fields, mapping, "shipment_date"))
             if parsed_date is not None:
                 shipment_dates.append(parsed_date)
@@ -178,6 +187,9 @@ class RoutingFeatureProjector:
             intermediary_signals=intermediary_signals,
             strong_exclusion=explicit_type or len(intermediary_signals) >= 2,
             unresolved_company_conflict=company.unresolved_company_conflict,
+            import_amount_raw=import_amount_raw,
+            last_import_at=last_import_at,
+            supplier=_dedupe(suppliers),
         )
 
 
@@ -485,6 +497,292 @@ def _normalize(value: str) -> str:
 
 def _normalize_hs(value: str) -> str:
     return _HS_CLEAN.sub("", value.casefold())
+
+
+# ---------------------------------------------------------------------------
+# real-routing-v1.1 — additive scoring, missing == unknown (0), D = explicit
+# exclusion only. Original real-routing-v1 semantics are untouched above.
+# ---------------------------------------------------------------------------
+
+V11_RULES_VERSION = "real-routing-v1.1"
+V11_WEIGHTS: dict[str, float] = {
+    "importer_source_confidence": 20.0,
+    "product_hs_relevance": 25.0,
+    "import_value_signal": 15.0,
+    "website_legitimacy": 10.0,
+    "contact_coverage": 15.0,
+    "person_contact_quality": 10.0,
+    "data_completeness": 5.0,
+}
+V11_TIER_A = 70.0
+V11_TIER_B = 45.0
+V11_TIER_C = 20.0
+
+_FITNESS_KEYWORDS = (
+    "fitness",
+    "gym",
+    "exercise",
+    "treadmill",
+    "dumbbell",
+    "elliptical",
+    "weight",
+    "yoga",
+    "sport",
+)
+_FITNESS_HS_PREFIXES = ("9506", "950691", "950699")
+
+
+class RoutingPolicyV11:
+    """real-routing-v1.1 policy: additive, explainable, missing-safe."""
+
+    rules_version = V11_RULES_VERSION
+
+    def evaluate(
+        self,
+        *,
+        criteria: ProspectRoutingCriteria,
+        features: RoutingFeatureInput,
+    ) -> RoutingScoreResult:
+        reasons: list[str] = []
+        warnings: list[str] = []
+
+        eligible = tuple(
+            c for c in features.contacts if c.status == "active" and c.has_usable_channel
+        )
+        person_contacts = tuple(
+            c for c in eligible if c.has_usable_email and not c.is_department_contact
+        )
+        department_contacts = tuple(
+            c for c in eligible if c.has_usable_email and c.is_department_contact
+        )
+        preferred_person = tuple(
+            c for c in person_contacts if c.role_category in PREFERRED_ROLES
+        )
+        preferred_role = (
+            preferred_person[0].role_category
+            if preferred_person
+            else person_contacts[0].role_category
+            if person_contacts
+            else department_contacts[0].role_category
+            if department_contacts
+            else None
+        )
+
+        source_facts = [
+            bool(features.product_descriptions),
+            bool(features.hs_codes),
+            bool(features.supplier),
+            bool(features.import_amount_raw),
+            bool(features.last_import_at),
+            bool(features.origin_countries),
+        ]
+        source_ratio = sum(source_facts) / len(source_facts)
+        source_points = V11_WEIGHTS["importer_source_confidence"] * source_ratio
+        reasons.append(f"SOURCE_FACT_CONFIDENCE_{_band_name(source_ratio)}")
+        if not features.product_descriptions:
+            warnings.append("PRODUCT_DATA_MISSING")
+        if not features.hs_codes:
+            warnings.append("HS_CODE_DATA_MISSING")
+        if not features.last_import_at:
+            warnings.append("IMPORT_RECENCY_UNKNOWN")
+        if not features.import_amount_raw:
+            warnings.append("IMPORT_VALUE_UNKNOWN")
+
+        product_ratio = _keyword_match_ratio(
+            criteria.target_product_keywords,
+            features.product_descriptions,
+        )
+        hs_ratio = _hs_match_ratio(criteria.target_hs_codes, features.hs_codes)
+        relevance_points = (
+            V11_WEIGHTS["product_hs_relevance"] * 0.6 * product_ratio
+            + V11_WEIGHTS["product_hs_relevance"] * 0.4 * hs_ratio
+        )
+        reasons.append(_band_reason("PRODUCT_HS_MATCH", max(product_ratio, hs_ratio)))
+        fitness_signal = bool(
+            any(
+                keyword in _normalize(value)
+                for value in features.product_descriptions
+                for keyword in _FITNESS_KEYWORDS
+            )
+            or any(
+                hs.startswith(prefix)
+                for hs in features.hs_codes
+                for prefix in _FITNESS_HS_PREFIXES
+            )
+        )
+        if fitness_signal:
+            reasons.append("FITNESS_EQUIPMENT_SIGNAL")
+
+        value_points = self._value_points(features.import_amount_raw)
+        if value_points > 0:
+            reasons.append("IMPORT_VALUE_SIGNAL")
+
+        website_points = (
+            8.0 if (features.website or features.profile_domain) else 0.0
+        ) + (2.0 if features.profile_company_type else 0.0)
+        if website_points > 0:
+            reasons.append("WEBSITE_LEGITIMACY")
+        else:
+            warnings.append("WEBSITE_MISSING")
+
+        coverage_ratio = min(len(eligible) / 2, 1.0)
+        coverage_points = V11_WEIGHTS["contact_coverage"] * coverage_ratio
+        reasons.append(_band_reason("CONTACT_COVERAGE", coverage_ratio))
+        if not eligible:
+            warnings.append("USABLE_CONTACT_MISSING")
+
+        person_quality = 0.0
+        if preferred_person:
+            person_quality = 10.0
+            reasons.append("PERSON_CONTACT_PREFERRED_ROLE")
+        elif person_contacts:
+            person_quality = 5.0
+            reasons.append("PERSON_CONTACT_SIGNAL")
+        elif department_contacts:
+            person_quality = 2.0
+            reasons.append("DEPARTMENT_REACHABILITY_ONLY")
+        if not person_contacts and not department_contacts:
+            warnings.append("PERSON_CONTACT_MISSING")
+
+        completeness_flags = [
+            bool(features.product_descriptions or features.hs_codes),
+            bool(features.origin_countries),
+            bool(features.import_amount_raw),
+            bool(features.supplier),
+            bool(features.last_import_at),
+            bool(features.website or features.profile_domain),
+            bool(eligible),
+        ]
+        completeness_ratio = sum(completeness_flags) / len(completeness_flags)
+        completeness_points = V11_WEIGHTS["data_completeness"] * completeness_ratio
+        reasons.append(_band_reason("DATA_COMPLETENESS", completeness_ratio))
+
+        pre_score = round(
+            min(
+                100.0,
+                source_points
+                + relevance_points
+                + value_points
+                + website_points
+                + coverage_points
+                + person_quality
+                + completeness_points,
+            ),
+            2,
+        )
+
+        exclusion = self._hard_exclusion(features, criteria, product_ratio, hs_ratio)
+        blocked = features.unresolved_company_conflict
+        if blocked:
+            reasons.append("UNRESOLVED_COMPANY_CONFLICT_BLOCKED")
+        elif exclusion is not None:
+            reasons.append(exclusion)
+        elif pre_score >= V11_TIER_A:
+            reasons.append("TARGET_A_CANDIDATE")
+        elif pre_score >= V11_TIER_B:
+            reasons.append("TARGET_B_CANDIDATE")
+        else:
+            reasons.append(
+                "TARGET_C_CANDIDATE" if pre_score >= V11_TIER_C else "INFO_INSUFFICIENT"
+            )
+
+        snapshot: dict[str, Any] = {
+            "rules_version": self.rules_version,
+            "source_confidence": round(source_points, 2),
+            "product_hs_relevance": round(relevance_points, 2),
+            "import_value_signal": round(value_points, 2),
+            "website_legitimacy": round(website_points, 2),
+            "contact_coverage": round(coverage_points, 2),
+            "person_contact_quality": round(person_quality, 2),
+            "data_completeness": round(completeness_points, 2),
+            "product_match_score": round(product_ratio * 100, 2),
+            "hs_code_match_score": round(hs_ratio * 100, 2),
+            "fitness_signal": fitness_signal,
+            "import_amount_raw": features.import_amount_raw,
+            "last_import_at": features.last_import_at,
+            "contact_count": len(features.contacts),
+            "person_contact_count": len(person_contacts),
+            "department_contact_count": len(department_contacts),
+            "preferred_role_category": preferred_role,
+            "missing_signals": tuple(warnings),
+            "calculation_total": pre_score,
+        }
+        return RoutingScoreResult(
+            pre_score=pre_score,
+            recommended_tier=(
+                None
+                if blocked
+                else ProspectTier.D
+                if exclusion is not None
+                else ProspectTier.A
+                if pre_score >= V11_TIER_A
+                else ProspectTier.B
+                if pre_score >= V11_TIER_B
+                else ProspectTier.C
+            ),
+            feature_snapshot=snapshot,
+            reason_codes=tuple(dict.fromkeys(reasons)),
+            warning_codes=tuple(dict.fromkeys(warnings)),
+            blocked=blocked,
+            contact_count=len(eligible),
+            has_usable_contact=bool(eligible),
+            has_usable_email=bool(person_contacts or department_contacts),
+            preferred_role_category=preferred_role,
+        )
+
+    @staticmethod
+    def _hard_exclusion(
+        features: RoutingFeatureInput,
+        criteria: ProspectRoutingCriteria,
+        product_ratio: float,
+        hs_ratio: float,
+    ) -> str | None:
+        if features.strong_exclusion:
+            joined = " ".join(features.intermediary_signals).lower()
+            if "forwarder" in joined or "货代" in joined:
+                return "FREIGHT_FORWARDER"
+            if "broker" in joined or "报关" in joined:
+                return "CUSTOMS_BROKER"
+            return "LOGISTICS_PROVIDER"
+        if features.origin_countries:
+            normalized = {_normalize(value) for value in features.origin_countries}
+            if not any(
+                token in normalized
+                for token in ("us", "usa", "united states", "美国")
+            ):
+                return "NON_US_TARGET"
+        if bool(features.product_descriptions or features.hs_codes) and (
+            product_ratio == 0.0 and hs_ratio == 0.0
+        ):
+            return "NON_TARGET_INDUSTRY"
+        return None
+
+    @staticmethod
+    def _value_points(raw: str | None) -> float:
+        if not raw:
+            return 0.0
+        digits = "".join(char for char in raw if char.isdigit() or char == ".")
+        try:
+            value = float(digits)
+        except ValueError:
+            return 0.0
+        if value >= 250_000:
+            return 15.0
+        if value >= 50_000:
+            return 10.0
+        if value > 0:
+            return 5.0
+        return 0.0
+
+
+def _band_name(ratio: float) -> str:
+    if ratio >= 0.8:
+        return "HIGH"
+    if ratio >= 0.4:
+        return "PARTIAL"
+    if ratio > 0:
+        return "LOW"
+    return "NONE"
 
 
 def _keyword_match_ratio(targets: tuple[str, ...], observations: tuple[str, ...]) -> float:

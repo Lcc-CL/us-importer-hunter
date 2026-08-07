@@ -252,6 +252,7 @@ class SqlAlchemyProspectRoutingRepository:
                         CompanyContactModel.role_category,
                         CompanyContactModel.seniority,
                         CompanyContactModel.status,
+                        CompanyContactModel.is_department_contact,
                         ContactModel.status,
                         func.bool_or(
                             ContactChannelModel.verification_status != "invalid"
@@ -275,6 +276,7 @@ class SqlAlchemyProspectRoutingRepository:
                         CompanyContactModel.role_category,
                         CompanyContactModel.seniority,
                         CompanyContactModel.status,
+                        CompanyContactModel.is_department_contact,
                         ContactModel.status,
                     )
                 )
@@ -287,6 +289,7 @@ class SqlAlchemyProspectRoutingRepository:
             role_category,
             seniority,
             employment_status,
+            is_department_contact,
             contact_status,
             has_usable_channel,
             has_usable_email,
@@ -303,6 +306,7 @@ class SqlAlchemyProspectRoutingRepository:
                     status="active" if active else "inactive",
                     has_usable_channel=active and bool(has_usable_channel),
                     has_usable_email=active and bool(has_usable_email),
+                    is_department_contact=bool(is_department_contact),
                 )
             )
 
