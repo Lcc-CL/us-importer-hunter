@@ -20,6 +20,8 @@ from typing import Any, BinaryIO, Literal
 from uuid import UUID
 from xml.etree import ElementTree
 
+from app.services.import_resolution.normalization import is_department_email
+
 ACCEPTANCE_MAX_BYTES = 20 * 1024 * 1024
 ACCEPTANCE_MAX_ROWS = 20_000
 XLSX_MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
@@ -665,9 +667,7 @@ def _analyze_netease_rows(
                 contact_key = f"email:{email}"
                 contact_keys.add(contact_key)
                 email_counts[email] += 1
-                if email.startswith(
-                    ("info@", "sales@", "contact@", "support@", "hello@", "admin@", "service@")
-                ):
+                if is_department_email(email):
                     department_emails.add(email)
             else:
                 contact_key = (
