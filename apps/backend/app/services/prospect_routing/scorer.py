@@ -14,6 +14,10 @@ from app.domain.prospect_routing import (
     RoutingFeatureInput,
     RoutingSourceCompany,
 )
+from app.services.prospect_routing.taxonomy import (
+    TargetTaxonomyConfig,
+    fitness_equipment_v1,
+)
 
 DEFAULT_WEIGHTS: dict[str, float] = {
     "product_or_hs_match": 30.0,
@@ -542,7 +546,9 @@ class RoutingPolicyV11:
         *,
         criteria: ProspectRoutingCriteria,
         features: RoutingFeatureInput,
+        taxonomy: TargetTaxonomyConfig | None = None,
     ) -> RoutingScoreResult:
+        taxonomy = taxonomy or fitness_equipment_v1()
         reasons: list[str] = []
         warnings: list[str] = []
 
@@ -593,25 +599,42 @@ class RoutingPolicyV11:
             features.product_descriptions,
         )
         hs_ratio = _hs_match_ratio(criteria.target_hs_codes, features.hs_codes)
-        relevance_points = (
-            V11_WEIGHTS["product_hs_relevance"] * 0.6 * product_ratio
-            + V11_WEIGHTS["product_hs_relevance"] * 0.4 * hs_ratio
+        taxonomy_target_product = taxonomy.target_product_match(
+            features.product_descriptions
         )
-        reasons.append(_band_reason("PRODUCT_HS_MATCH", max(product_ratio, hs_ratio)))
-        fitness_signal = bool(
-            any(
-                keyword in _normalize(value)
-                for value in features.product_descriptions
-                for keyword in _FITNESS_KEYWORDS
-            )
-            or any(
-                hs.startswith(prefix)
-                for hs in features.hs_codes
-                for prefix in _FITNESS_HS_PREFIXES
-            )
+        taxonomy_target_hs = taxonomy.target_hs_match(features.hs_codes)
+        explicit_non_target_product = taxonomy.explicit_non_target_product(
+            features.product_descriptions
         )
+        explicit_non_target_hs = taxonomy.explicit_non_target_hs(features.hs_codes)
+        taxonomy_target = taxonomy_target_product or taxonomy_target_hs
+        explicit_non_target = explicit_non_target_product or explicit_non_target_hs
+        relevance_ratio = max(
+            product_ratio,
+            hs_ratio,
+            1.0 if taxonomy_target else 0.0,
+        )
+        relevance_points = V11_WEIGHTS["product_hs_relevance"] * min(
+            relevance_ratio, 1.0
+        )
+        reasons.append(_band_reason("PRODUCT_HS_MATCH", relevance_ratio))
+        if taxonomy_target_product:
+            reasons.append("TARGET_PRODUCT_MATCH")
+        if taxonomy_target_hs:
+            reasons.append("TARGET_HS_MATCH")
+        fitness_signal = taxonomy_target
         if fitness_signal:
             reasons.append("FITNESS_EQUIPMENT_SIGNAL")
+        if explicit_non_target_product:
+            reasons.append("EXPLICIT_NON_TARGET_PRODUCT")
+        if explicit_non_target_hs:
+            reasons.append("EXPLICIT_NON_TARGET_HS")
+        if not taxonomy_target and not explicit_non_target:
+            warnings.append("TARGET_RELEVANCE_UNKNOWN")
+            if features.product_descriptions:
+                warnings.append("PRODUCT_TAXONOMY_UNMATCHED")
+            if features.hs_codes:
+                warnings.append("HS_TAXONOMY_UNMATCHED")
 
         value_points = self._value_points(features.import_amount_raw)
         if value_points > 0:
@@ -671,7 +694,11 @@ class RoutingPolicyV11:
             2,
         )
 
-        exclusion = self._hard_exclusion(features, criteria, product_ratio, hs_ratio)
+        exclusion = self._hard_exclusion(
+            features,
+            criteria,
+            explicit_non_target=explicit_non_target,
+        )
         blocked = features.unresolved_company_conflict
         if blocked:
             reasons.append("UNRESOLVED_COMPANY_CONFLICT_BLOCKED")
@@ -734,8 +761,8 @@ class RoutingPolicyV11:
     def _hard_exclusion(
         features: RoutingFeatureInput,
         criteria: ProspectRoutingCriteria,
-        product_ratio: float,
-        hs_ratio: float,
+        *,
+        explicit_non_target: bool,
     ) -> str | None:
         if features.strong_exclusion:
             joined = " ".join(features.intermediary_signals).lower()
@@ -751,9 +778,7 @@ class RoutingPolicyV11:
                 for token in ("us", "usa", "united states", "美国")
             ):
                 return "NON_US_TARGET"
-        if bool(features.product_descriptions or features.hs_codes) and (
-            product_ratio == 0.0 and hs_ratio == 0.0
-        ):
+        if explicit_non_target:
             return "NON_TARGET_INDUSTRY"
         return None
 

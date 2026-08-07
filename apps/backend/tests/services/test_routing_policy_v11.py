@@ -12,6 +12,7 @@ from app.services.prospect_routing.scorer import (
     V11_RULES_VERSION,
     RoutingPolicyV11,
 )
+from app.services.prospect_routing.taxonomy import fitness_equipment_v1
 
 
 def _features(
@@ -25,10 +26,11 @@ def _features(
     origins: tuple[str, ...] = ("United States",),
     unresolved: bool = False,
     last_import_at: str | None = None,
+    company_name: str = "Acme Fitness",
 ) -> RoutingFeatureInput:
     return RoutingFeatureInput(
         company_id=uuid4(),
-        company_name="Acme Fitness",
+        company_name=company_name,
         website=website,
         profile_domain="acme.example",
         profile_address=None,
@@ -156,3 +158,104 @@ def test_preview_is_deterministic() -> None:
     assert first.pre_score == second.pre_score
     assert first.recommended_tier == second.recommended_tier
     assert first.reason_codes == second.reason_codes
+
+
+def test_no_target_match_is_not_d() -> None:
+    # Real products that simply do not match the fitness target, with no
+    # explicit other-industry evidence, must NOT be excluded to D.
+    features = _features(
+        products=("hydraulic pumps",),
+        hs=("8413",),
+        contacts=(_person(),),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is not ProspectTier.D
+    assert result.recommended_tier is ProspectTier.C
+    assert "TARGET_RELEVANCE_UNKNOWN" in result.warning_codes
+    assert "PRODUCT_TAXONOMY_UNMATCHED" in result.warning_codes
+    assert "NON_TARGET_INDUSTRY" not in result.reason_codes
+
+
+def test_unknown_taxonomy_is_c_not_d() -> None:
+    features = _features(
+        products=("specialty hardware",),
+        contacts=(_person(),),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is ProspectTier.C
+
+
+def test_explicit_non_target_product_is_d() -> None:
+    features = _features(
+        products=("food beverage packaging",),
+        contacts=(_person(),),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is ProspectTier.D
+    assert "NON_TARGET_INDUSTRY" in result.reason_codes
+    assert "EXPLICIT_NON_TARGET_PRODUCT" in result.reason_codes
+
+
+def test_explicit_non_target_hs_is_d() -> None:
+    features = _features(
+        hs=("9404",),
+        contacts=(_person(),),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is ProspectTier.D
+    assert "NON_TARGET_INDUSTRY" in result.reason_codes
+    assert "EXPLICIT_NON_TARGET_HS" in result.reason_codes
+
+
+def test_missing_hs_or_product_is_not_d() -> None:
+    for products, hs in ((("fitness equipment",), ()), ((), ("950691",))):
+        result = RoutingPolicyV11().evaluate(
+            criteria=_criteria(),
+            features=_features(products=products, hs=hs, contacts=(_person(),)),
+        )
+        assert result.recommended_tier is not ProspectTier.D
+
+
+def test_b_tier_is_not_company_name_hardcoded() -> None:
+    first = RoutingPolicyV11().evaluate(
+        criteria=_criteria(),
+        features=_features(
+            company_name="PURSUE MOVEMENT INC.",
+            products=("fitness equipment",),
+            hs=("950691",),
+            amount="$118,000",
+            contacts=(_person("logistics"),),
+            last_import_at="2026-07-01",
+        ),
+    )
+    second = RoutingPolicyV11().evaluate(
+        criteria=_criteria(),
+        features=_features(
+            company_name="Totally Different Co.",
+            products=("fitness equipment",),
+            hs=("950691",),
+            amount="$118,000",
+            contacts=(_person("logistics"),),
+            last_import_at="2026-07-01",
+        ),
+    )
+    assert first.recommended_tier == second.recommended_tier
+    assert first.pre_score == second.pre_score
+
+
+def test_blocked_entity_stays_blocked() -> None:
+    result = RoutingPolicyV11().evaluate(
+        criteria=_criteria(),
+        features=_features(products=("fitness equipment",), unresolved=True),
+    )
+    assert result.blocked is True
+    assert result.recommended_tier is None
+    assert "UNRESOLVED_COMPANY_CONFLICT_BLOCKED" in result.reason_codes
+
+
+def test_taxonomy_rules_version() -> None:
+    assert fitness_equipment_v1().rules_version == "fitness_equipment_v1"
