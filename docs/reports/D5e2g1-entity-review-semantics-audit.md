@@ -167,10 +167,16 @@ DEFER 不加确认框（no-op，无风险）。KEEP_SEPARATE 不加确认框（�
 
 ## 7. 生产 pending 数量说明
 
-任务书写 9 条，但上一轮 D5e2g 生产只读查询确认实际为 **10 条 pending**（5 条 company
-`company_name_similar` + 5 条 contact `same_company_name_only`）。前端不硬编码数量，
-从 `/entity-decisions?review_status=pending` 实时读取，因此 UI 显示的是真实数字。
-本轮本地开发库不包含生产数据（生产在部署实例上），报告沿用 D5e2g 已验证的 10 条。
+部署后对生产实例 `usimporterhunter.zeabur.app` 做只读验证
+（`GET /api/v1/import-sessions/{session}/entity-decisions?review_status=pending`）：
+
+- **9 条 pending**：5 条 company `review_required` + 4 条 contact `review_required`
+  （与任务书一致；D5e2g 报告当时为 10 条，此后已有 1 条 contact 决策被人工
+  review 为 `keep_separate`，属既有状态，非本轮产生）。
+- 前端不硬编码数量，从 `/entity-decisions?review_status=pending` 实时读取，
+  因此 Review Card 显示的是真实数字。
+- 本轮未对生产执行任何 Review/Routing/写入；本地开发库不包含生产数据
+  （生产在 Zeabur 部署实例上）。
 
 ---
 
