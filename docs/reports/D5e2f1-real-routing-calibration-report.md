@@ -4,9 +4,9 @@
 
 ## 最终状态
 
-**ROUTING_PREVIEW_BLOCKED** —— v1.1 校准策略已实现并通过本地测试；生产 v1.1
-Preview 数字待部署后生成（GitHub/Zeabur 网络当前不可达，推送/合并/部署被阻塞）；
-另有 10 条 Leo entity review 待完成。未执行任何 Routing Apply。
+**READY_FOR_LEO_ENTITY_AND_ROUTING_REVIEW** —— v1.1 校准策略已实现、测试通过、
+已合并（b405bc7）并部署生产；生产 v1.1 Preview 已生成且通过 sanity gate。
+未执行任何 Routing Apply；10 条 Leo entity review 待完成。
 
 ## 1. Old real-routing-v1 分布与根因
 
@@ -82,10 +82,24 @@ frequency / volume / recency，但 summary 中的真实字段可直接用作 sou
 - determinism + rules_version 断言；
 - v1 回归（test_prospect_routing 等）全部通过。
 
-## 5. 生产 v1.1 Preview
+## 5. 生产 v1.1 Preview（52 家真实 canonical）
 
-**待部署后执行**（网络阻塞）：将用当前 52 家真实 canonical 公司 + real-routing-v1.1
-重新输出 A/B/C/D/blocked 并与 v1 对比；不得为凑 A/B 数量调规则。
+| Tier | v1（旧） | v1.1 |
+| --- | --- | --- |
+| A | 0 | 0 |
+| B | 0 | **2**（PURSUE MOVEMENT 58.1；LION HEART GYM 50.1，均带
+  FITNESS_EQUIPMENT_SIGNAL） |
+| C | 0 | 0 |
+| D | 50（低分，missing recency 驱动） | **48（全部为显式
+  NON_TARGET_INDUSTRY：真实产品/HS 与 fitness 目标零匹配）** |
+| blocked | 2（ENTITY_REVIEW_PENDING） | 2（FULFLEX、PRO PAK，
+  ENTITY_REVIEW_PENDING） |
+
+- **关键验收**：因 missing-field codes 导致的 D = **0 / 48**（v1 的
+  IMPORT_RECENCY_NONE → D 问题已消除）；D 均由显式产品/HS 证据触发；
+- sanity gate：>80% D 来自 missing codes → False（通过）；A+B=0 且存在有效
+  目标数据 → False（B=2，通过）；
+- 确定性：同输入 + real-routing-v1.1 → 同结果；未为凑 A/B 数量调整规则。
 
 ## 6. 合规
 
@@ -100,6 +114,5 @@ parser、完整 Employment History、外部 company identity enrichment —— �
 
 ## 8. Remaining blockers
 
-1. GitHub/Zeabur 网络不可达：v1.1 代码推送、PR、合并、生产部署未完成；
-2. 生产 v1.1 Preview 数字待生成；
-3. Leo 完成 10 条 entity review 后确认 Preview，才可 Apply（A 类 ≤5 家/批）。
+1. Leo 完成 10 条 entity review（默认 DEFER）；
+2. Leo 确认 v1.1 Preview 后授权 Apply（A 类 ≤5 家/批；B 类仅 Preview）。
