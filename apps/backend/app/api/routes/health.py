@@ -108,9 +108,33 @@ async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
     """
     provider = settings.email_generator_provider
     research = settings.research_extractor_provider
+    draft_configured = {
+        "fake": False,
+        "openai": bool(
+            settings.openai_api_key.strip() and settings.openai_model.strip()
+        ),
+        "deepseek": bool(
+            settings.deepseek_api_key.strip()
+            and settings.deepseek_model.strip()
+            and settings.deepseek_base_url.strip()
+        ),
+    }[provider]
+    draft_model = (
+        settings.openai_model
+        if provider == "openai"
+        else settings.deepseek_model
+        if provider == "deepseek"
+        else "fake-static-v1"
+    )
     return RuntimeStatusResponse(
         provider=provider,
-        model=settings.openai_model if provider == "openai" else "fake-static-v1",
+        model=(
+            settings.deepseek_model
+            if provider == "deepseek"
+            else settings.openai_model
+            if provider == "openai"
+            else "fake-static-v1"
+        ),
         research_provider=research,
         research_model=(
             settings.resolved_research_model
@@ -119,6 +143,9 @@ async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
             if research == "deepseek"
             else "fake-research-v1"
         ),
+        draft_provider=provider,
+        draft_model=draft_model,
+        draft_available=provider != "fake" and draft_configured,
         environment=settings.app_env,
         real_data_gate="enabled" if settings.real_data_acknowledged else "blocked",
     )

@@ -51,12 +51,21 @@ class RuntimeStatusResponse(BaseModel):
     here requires the same review as exposing them publicly.
     """
 
-    provider: Literal["fake", "openai"]
+    provider: Literal["fake", "openai", "deepseek"]
     model: str
     #: The research extractor, reported separately because it is configured
     #: independently — a deployment can draft with a real model while still
     #: researching with the Fake one, and the panel must say so.
     research_provider: Literal["fake", "openai", "deepseek"]
     research_model: str
+    #: Draft generation capability, reported independently from research and
+    #: from email sending. A deployment can research with DeepSeek while
+    #: drafting with fake — the UI must say exactly which one is real.
+    draft_provider: Literal["fake", "openai", "deepseek"]
+    draft_model: str
+    draft_available: bool
+    #: Email sending is always disabled in this MVP. Draft generation and
+    #: email sending are separate capabilities.
+    email_send_enabled: bool = False
     environment: str
     real_data_gate: Literal["enabled", "blocked"]

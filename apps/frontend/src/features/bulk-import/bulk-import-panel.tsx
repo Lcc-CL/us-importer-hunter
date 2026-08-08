@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   Ban,
   CheckCircle2,
@@ -267,6 +273,7 @@ export function BulkImportPanel({
   const [routeTiers, setRouteTiers] = useState<Record<string, ProspectTier>>({});
   const [routeReasons, setRouteReasons] = useState<Record<string, string>>({});
   const [selectedACompanies, setSelectedACompanies] = useState<string[]>([]);
+  const defaultASelectionAppliedRef = useRef(false);
   const [createdBatchId, setCreatedBatchId] = useState<string | null>(
     initialRoutingRunId ? (initialBatchId ?? null) : null,
   );
@@ -349,16 +356,27 @@ export function BulkImportPanel({
     if (["completed", "partial_completed"].includes(saved.status)) {
       const page = await getProspectRoutes(routingRunId);
       setRoutes(page.routes);
-      const eligible = new Set(
-        page.routes
-          .filter(
-            (route) =>
-              route.effective_tier === "A" &&
-              ["confirmed", "overridden"].includes(route.review_status),
-          )
-          .map((route) => route.company_id),
+      const eligibleRoutes = page.routes.filter(
+        (route) =>
+          route.effective_tier === "A" &&
+          ["confirmed", "overridden"].includes(route.review_status),
       );
-      setSelectedACompanies((current) => current.filter((value) => eligible.has(value)));
+      const eligible = new Set(eligibleRoutes.map((route) => route.company_id));
+      if (!defaultASelectionAppliedRef.current && eligibleRoutes.length > 0) {
+        // Default selection: A <= 5 selects all A companies; A > 5 selects the
+        // top-5 by pre_score. Applied once per session; users may deselect.
+        defaultASelectionAppliedRef.current = true;
+        setSelectedACompanies(
+          [...eligibleRoutes]
+            .sort((a, b) => b.pre_score - a.pre_score)
+            .slice(0, 5)
+            .map((route) => route.company_id),
+        );
+      } else {
+        setSelectedACompanies((current) =>
+          current.filter((value) => eligible.has(value)),
+        );
+      }
       setRouteTiers((current) => {
         const next = { ...current };
         for (const route of page.routes) {
@@ -680,6 +698,7 @@ export function BulkImportPanel({
         preferred_pod: splitList(preferredPod),
       });
       setRoutingPreview(preview);
+      setError(null);
     } catch (caught: unknown) {
       setPreviewError(getClientErrorDetails(caught).message);
     } finally {
@@ -875,9 +894,7 @@ export function BulkImportPanel({
   const deepAnalysisProviderUnavailable =
     realDataMode &&
     Boolean(
-      health.runtime &&
-        (health.runtime.research_provider === "fake" ||
-          health.runtime.provider === "fake"),
+      health.runtime && !health.runtime.draft_available,
     );
   const batchExecutionActive = Boolean(
     batchExecution && ["pending", "leased", "running"].includes(batchExecution.status),

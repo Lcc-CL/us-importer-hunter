@@ -17,6 +17,10 @@ const FAKE_RUNTIME = {
   model: "fake-static-v1",
   research_provider: "fake",
   research_model: "fake-research-v1",
+  draft_provider: "fake",
+  draft_model: "fake-static-v1",
+  draft_available: false,
+  email_send_enabled: false,
   environment: "test",
   real_data_gate: "blocked",
 };
@@ -305,7 +309,12 @@ test("fake mode states clearly that no real writes are produced", async ({
   await page.goto("/");
   await expectHealthyCard(page);
   await expect(page.getByTestId("runtime-data-mode")).toHaveText("合成测试");
-  await expect(page.getByTestId("runtime-provider-label")).toContainText("Fake");
+  await expect(page.getByTestId("runtime-draft-capability")).toContainText(
+    "fake · Blocked",
+  );
+  await expect(page.getByTestId("runtime-research-capability")).toContainText(
+    "fake · Blocked",
+  );
   await expect(page.getByTestId("runtime-external-calls")).toContainText("未调用");
   await expect(page.getByTestId("runtime-no-real-writes")).toContainText(
     "当前不会产生真实业务写入",
@@ -319,6 +328,9 @@ test("real mode never shows fake-static-v1 as main copy", async ({ page }) => {
     ...FAKE_RUNTIME,
     provider: "openai",
     model: "gpt-test-model",
+    draft_provider: "openai",
+    draft_model: "gpt-test-model",
+    draft_available: true,
     real_data_gate: "enabled",
   });
 
@@ -326,7 +338,9 @@ test("real mode never shows fake-static-v1 as main copy", async ({ page }) => {
   await expectHealthyCard(page);
   await page.getByTestId("acceptance-real-data-mode").check();
   await expect(page.getByTestId("runtime-data-mode")).toHaveText("真实数据");
-  await expect(page.getByTestId("runtime-provider-label")).toContainText("真实 AI");
+  await expect(page.getByTestId("runtime-draft-capability")).toContainText(
+    "openai · Ready",
+  );
   await expect(page.getByTestId("runtime-real-write")).toHaveText("启用");
   const card = page.getByTestId("runtime-status-card");
   await expect(card).not.toContainText("fake-static-v1");

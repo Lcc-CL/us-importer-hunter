@@ -948,11 +948,16 @@ export interface ProspectDetailResponse {
 }
 
 export interface RuntimeStatusResponse {
-  provider: "fake" | "openai";
+  provider: "fake" | "openai" | "deepseek";
   model: string;
   /** The research extractor, configured independently of the draft provider. */
   research_provider: "fake" | "openai" | "deepseek";
   research_model: string;
+  /** Draft generation capability, reported independently of email sending. */
+  draft_provider: "fake" | "openai" | "deepseek";
+  draft_model: string;
+  draft_available: boolean;
+  email_send_enabled: boolean;
   environment: string;
   real_data_gate: "enabled" | "blocked";
 }
@@ -1070,6 +1075,8 @@ const KNOWN_ERROR_MESSAGES: Record<string, string> = {
   WORKFLOW_STATE_CONFLICT: "工作流状态冲突，请刷新后重试。",
   ROUTING_TARGET_REQUIRED: "请至少填写一个目标产品关键词或 HS Code。",
   unexpected_client_error: "发生意外错误，请稍后重试。",
+  provider_unavailable:
+    "Draft Provider 尚未配置，因此深度分析暂不能启动。",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

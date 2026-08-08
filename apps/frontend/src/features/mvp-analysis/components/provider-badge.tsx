@@ -198,7 +198,11 @@ export function ProviderBadge({ onStatusChange, realDataMode = false }: Provider
   }, [check]);
 
   const runtime = state.runtime;
-  const providerFake = runtime?.provider !== "openai";
+  const researchReal =
+    runtime?.research_provider === "openai" ||
+    runtime?.research_provider === "deepseek";
+  const draftReal = Boolean(runtime?.draft_available);
+  const anyRealProvider = researchReal || draftReal;
   const realWriteEnabled = realDataMode && state.realDataGate === "enabled";
   const statusStyle =
     state.phase === "checking"
@@ -323,7 +327,7 @@ export function ProviderBadge({ onStatusChange, realDataMode = false }: Provider
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-            <Sparkles className={`size-3.5 ${providerFake ? "text-slate-500" : "text-teal-700"}`} />
+            <Sparkles className={`size-3.5 ${anyRealProvider ? "text-teal-700" : "text-slate-500"}`} />
             {t("runtime.mode.title")}
           </p>
           <span
@@ -339,12 +343,36 @@ export function ProviderBadge({ onStatusChange, realDataMode = false }: Provider
         </div>
         <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
           <div>
-            <dt className="text-slate-500">{t("runtime.mode.provider")}</dt>
-            <dd className="font-medium text-slate-800" data-testid="runtime-provider-label">
+            <dt className="text-slate-500">{t("runtime.mode.research")}</dt>
+            <dd
+              className={
+                researchReal
+                  ? "font-medium text-emerald-800"
+                  : "font-medium text-slate-700"
+              }
+              data-testid="runtime-research-capability"
+            >
               {runtime
-                ? providerFake
-                  ? t("runtime.mode.providerFake")
-                  : t("runtime.mode.providerReal")
+                ? `${runtime.research_provider} · ${
+                    researchReal ? t("runtime.mode.ready") : t("runtime.mode.blocked")
+                  }`
+                : t("runtime.worker.noReason")}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">{t("runtime.mode.draft")}</dt>
+            <dd
+              className={
+                draftReal
+                  ? "font-medium text-emerald-800"
+                  : "font-medium text-amber-800"
+              }
+              data-testid="runtime-draft-capability"
+            >
+              {runtime
+                ? `${runtime.draft_provider} · ${
+                    draftReal ? t("runtime.mode.ready") : t("runtime.mode.blocked")
+                  }`
                 : t("runtime.worker.noReason")}
             </dd>
           </div>
@@ -375,9 +403,9 @@ export function ProviderBadge({ onStatusChange, realDataMode = false }: Provider
             <dt className="text-slate-500">{t("runtime.mode.externalCalls")}</dt>
             <dd className="font-medium text-slate-800" data-testid="runtime-external-calls">
               {runtime
-                ? providerFake
-                  ? t("runtime.mode.externalNotCalled")
-                  : t("runtime.mode.externalConfigured")
+                ? anyRealProvider
+                  ? t("runtime.mode.externalConfigured")
+                  : t("runtime.mode.externalNotCalled")
                 : t("runtime.worker.noReason")}
             </dd>
           </div>
@@ -396,7 +424,13 @@ export function ProviderBadge({ onStatusChange, realDataMode = false }: Provider
           </summary>
           <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 font-mono">
             <dt>{t("runtime.mode.draftProvider")}</dt>
-            <dd>{runtime ? `${runtime.provider} · ${runtime.model}` : t("runtime.worker.noReason")}</dd>
+            <dd>
+              {runtime
+                ? `${runtime.draft_provider} · ${runtime.draft_model} · ${
+                    draftReal ? t("runtime.mode.ready") : t("runtime.mode.blocked")
+                  }`
+                : t("runtime.worker.noReason")}
+            </dd>
             <dt>{t("runtime.mode.researchProvider")}</dt>
             <dd>
               {runtime

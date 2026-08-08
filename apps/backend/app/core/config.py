@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     redis_db: int = 0
 
     # AI
-    email_generator_provider: Literal["fake", "openai"] = "fake"
+    email_generator_provider: Literal["fake", "openai", "deepseek"] = "fake"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     #: Optional OpenAI-compatible endpoint. Empty means the SDK default.

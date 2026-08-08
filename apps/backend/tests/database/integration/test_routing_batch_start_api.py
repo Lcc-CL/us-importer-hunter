@@ -526,6 +526,26 @@ async def test_routing_batch_start_provider_guards_fail_closed(
         )
         assert forbidden.status_code == 503, forbidden.text
 
+    production_deepseek = Settings(
+        _env_file=None,
+        app_env="production",
+        research_extractor_provider="deepseek",
+        deepseek_api_key="sk-test-not-real",
+        deepseek_model="deepseek-v4-pro",
+        deepseek_base_url="https://api.deepseek.com",
+        email_generator_provider="deepseek",
+    )
+    async for client in make_client(
+        uow_factory,
+        workflow,
+        settings=production_deepseek,
+    ):
+        allowed = await client.post(
+            f"/api/v1/prospect-batches/{batch_id}/start",
+            json={"confirmation": True, "provider_mode": "configured"},
+        )
+        assert allowed.status_code == 202, allowed.text
+
     async with uow_factory() as uow:
         assert uow._session is not None  # noqa: SLF001
         job_count = await uow._session.scalar(  # noqa: SLF001
@@ -533,7 +553,7 @@ async def test_routing_batch_start_provider_guards_fail_closed(
                 ProspectBatchJobModel.batch_id == UUID(batch_id)
             )
         )
-    assert job_count == 0
+    assert job_count == 1
 
 
 async def test_five_company_routing_smoke_preserves_human_gates_and_recovers_retry(
