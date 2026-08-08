@@ -17,6 +17,10 @@ test("bulk import entity resolution review survives refresh", async ({
         model: "fake-static-v1",
         research_provider: "fake",
         research_model: "fake-research-v1",
+        draft_provider: "fake",
+        draft_model: "fake-static-v1",
+        draft_available: false,
+        email_send_enabled: false,
         environment: "test",
         real_data_gate: "enabled",
       }),
@@ -136,10 +140,18 @@ test("bulk import entity resolution review survives refresh", async ({
   await expect(page.getByTestId("prospect-routing-routes")).toBeVisible();
 
   await restoredRouting.getByRole("button", { name: "确认推荐", exact: true }).click();
+  await expect(page.getByTestId("deep-analysis-start")).toContainText("1 家");
+  // Deselecting updates the count immediately.
+  await page
+    .getByTestId("prospect-routing-routes")
+    .getByRole("checkbox", { name: /D5B1 E2E Atlas/ })
+    .uncheck();
+  await expect(page.getByTestId("deep-analysis-start")).toContainText("0 家");
   await page
     .getByTestId("prospect-routing-routes")
     .getByRole("checkbox", { name: /D5B1 E2E Atlas/ })
     .check();
+  await expect(page.getByTestId("deep-analysis-start")).toContainText("1 家");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByTestId("deep-analysis-start").click();
   await expect(page.getByTestId("prospect-routing-batch-created")).toBeVisible();

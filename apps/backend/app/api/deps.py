@@ -309,6 +309,21 @@ def get_email_draft_generator(settings: SettingsDep) -> EmailDraftGenerator:
             api_key=settings.openai_api_key or None,
             model=settings.openai_model,
         )
+    if settings.email_generator_provider == "deepseek":
+        if not settings.deepseek_api_key.strip():
+            raise ProviderUnavailableError(
+                "email generator is set to deepseek but DEEPSEEK_API_KEY is not configured"
+            )
+        if not settings.deepseek_model.strip():
+            raise ProviderUnavailableError(
+                "email generator is set to deepseek but no model is configured"
+            )
+        return OpenAIEmailDraftGenerator(
+            api_key=settings.deepseek_api_key,
+            model=settings.deepseek_model,
+            base_url=settings.deepseek_base_url or None,
+            provider="deepseek",
+        )
     raise ProviderUnavailableError("configured email generator is unavailable")
 
 
@@ -660,6 +675,11 @@ def _prospect_provider_configuration(
         "fake": True,
         "openai": bool(
             settings.openai_api_key.strip() and settings.openai_model.strip()
+        ),
+        "deepseek": bool(
+            settings.deepseek_api_key.strip()
+            and settings.deepseek_model.strip()
+            and settings.deepseek_base_url.strip()
         ),
     }[settings.email_generator_provider]
     return ProspectPipelineProviderConfiguration(

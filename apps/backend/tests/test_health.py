@@ -37,6 +37,10 @@ async def test_runtime_status_reports_provider_without_secrets(
         "model": "fake-static-v1",
         "research_provider": "fake",
         "research_model": "fake-research-v1",
+        "draft_provider": "fake",
+        "draft_model": "fake-static-v1",
+        "draft_available": False,
+        "email_send_enabled": False,
         "environment": "development",
         "real_data_gate": "blocked",
     }
@@ -44,6 +48,32 @@ async def test_runtime_status_reports_provider_without_secrets(
     assert "key" not in payload
     assert "base_url" not in payload
     assert "sk-" not in payload
+
+
+async def test_runtime_status_reports_deepseek_draft_capability() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="production",
+        email_generator_provider="deepseek",
+        deepseek_api_key="sk-test-not-real",
+        deepseek_model="deepseek-v4-pro",
+        deepseek_base_url="https://api.deepseek.com",
+        research_extractor_provider="deepseek",
+    )
+    app = create_app(settings)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/v1/health/runtime")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["research_provider"] == "deepseek"
+        assert body["draft_provider"] == "deepseek"
+        assert body["draft_model"] == "deepseek-v4-pro"
+        assert body["draft_available"] is True
+        assert body["email_send_enabled"] is False
+        assert body["real_data_gate"] == "blocked"
 
 
 def _heartbeat(age_seconds: float) -> str:
