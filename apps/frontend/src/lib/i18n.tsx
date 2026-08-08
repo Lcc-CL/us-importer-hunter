@@ -42,6 +42,8 @@ const zh = {
   "bulk.limits": "支持 CSV / XLSX；最大 20 MB / 20,000 行。",
   "bulk.boundary":
     "本步骤仅完成原始数据导入和质量检查，尚未进行公司归并、机会评分或邮件发送。",
+  "bulk.boundaryResolved":
+    "公司与联系人实体已完成归并。当前步骤仅生成开发优先级，不会启动 Research 或发送邮件。",
   "acceptance.kicker": "D5e · 真实闭环验收",
   "acceptance.currentStep": "当前步骤：Step {step} / 10",
   "acceptance.currentExecutable": "当前可执行：Step {step} · {label}",
@@ -61,7 +63,7 @@ const zh = {
   "acceptance.providerNotCalled": "真实 Provider：未调用",
   "acceptance.noSend": "系统发送邮件：否",
   "acceptance.entitySummary":
-    "正式已导入实体：Raw {rows} · Company {companies} · Contact {contacts} · Route {routes}",
+    "原始行 {rows} · 有效行 {accepted} · Canonical 公司 {companies} · Canonical 联系人 {contacts} · 已生成优先级 {routes}",
   "acceptance.preflightEstimate":
     "Preflight 估计：{companies} 家公司 · {contacts} 个联系人（区别于已持久化数据）",
   "acceptance.rawRows": "原始行",
@@ -851,6 +853,8 @@ const en: Record<MessageKey, string> = {
   "bulk.limits": "Supports CSV / XLSX; maximum 20 MB / 20,000 rows.",
   "bulk.boundary":
     "This step only imports raw data and checks quality. It has not merged companies, scored opportunities, or sent email.",
+  "bulk.boundaryResolved":
+    "Company and contact entities are resolved. This step only generates development priorities and will not start Research or send email.",
   "acceptance.kicker": "D5e · Real closure acceptance",
   "acceptance.currentStep": "Current step: {step} / 10",
   "acceptance.currentExecutable": "Currently executable: Step {step} · {label}",
@@ -870,7 +874,7 @@ const en: Record<MessageKey, string> = {
   "acceptance.providerNotCalled": "Real provider: not called",
   "acceptance.noSend": "System email sending: no",
   "acceptance.entitySummary":
-    "Persisted entities: Raw {rows} · Company {companies} · Contact {contacts} · Route {routes}",
+    "Raw rows {rows} · Accepted rows {accepted} · Canonical companies {companies} · Canonical contacts {contacts} · Priorities generated {routes}",
   "acceptance.preflightEstimate":
     "Preflight estimate: {companies} companies · {contacts} contacts (not yet persisted)",
   "acceptance.rawRows": "Raw rows",

@@ -225,6 +225,7 @@ export function BulkImportPanel({
   const [decisions, setDecisions] = useState<ImportEntityDecisionResponse[]>([]);
   const [resolving, setResolving] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
   const [routingRun, setRoutingRun] = useState<ProspectRoutingRunResponse | null>(null);
   const [routes, setRoutes] = useState<ProspectRouteResponse[]>([]);
   const [routingPreview, setRoutingPreview] = useState<RoutingPreviewResponse | null>(null);
@@ -415,9 +416,11 @@ export function BulkImportPanel({
   useEffect(() => {
     if (!session || !["receiving", "processing"].includes(session.status)) return;
     const timer = window.setInterval(() => {
-      void restore(session.session_id, page, rowStatus).catch((caught: unknown) => {
-        setError(getClientErrorDetails(caught).message);
-      });
+      void restore(session.session_id, page, rowStatus)
+        .then(() => setPollError(null))
+        .catch((caught: unknown) => {
+          setPollError(getClientErrorDetails(caught).message);
+        });
     }, 1500);
     return () => window.clearInterval(timer);
   }, [page, restore, rowStatus, session]);
@@ -429,9 +432,9 @@ export function BulkImportPanel({
     }
     const timer = window.setInterval(() => {
       void loadResolutionState(session.session_id)
-        .then(() => setError(null))
+        .then(() => setPollError(null))
         .catch((caught: unknown) => {
-          setError(getClientErrorDetails(caught).message);
+          setPollError(getClientErrorDetails(caught).message);
         });
     }, 1500);
     return () => window.clearInterval(timer);
@@ -445,9 +448,11 @@ export function BulkImportPanel({
       return;
     }
     const timer = window.setInterval(() => {
-      void loadRoutingState(routingRun.routing_run_id).catch((caught: unknown) => {
-        setError(getClientErrorDetails(caught).message);
-      });
+      void loadRoutingState(routingRun.routing_run_id)
+        .then(() => setPollError(null))
+        .catch((caught: unknown) => {
+          setPollError(getClientErrorDetails(caught).message);
+        });
     }, 1500);
     return () => window.clearInterval(timer);
   }, [loadRoutingState, routingRun]);
@@ -461,9 +466,11 @@ export function BulkImportPanel({
       return;
     }
     const timer = window.setInterval(() => {
-      void loadRoutedBatchState(createdBatchId).catch((caught: unknown) => {
-        setError(getClientErrorDetails(caught).message);
-      });
+      void loadRoutedBatchState(createdBatchId)
+        .then(() => setPollError(null))
+        .catch((caught: unknown) => {
+          setPollError(getClientErrorDetails(caught).message);
+        });
     }, 2000);
     return () => window.clearInterval(timer);
   }, [batchExecution, createdBatchId, loadRoutedBatchState]);
@@ -1040,13 +1047,13 @@ export function BulkImportPanel({
           <p className="mt-3 text-xs text-slate-600">
             {t("acceptance.entitySummary", {
               rows: session?.total_rows ?? 0,
-              companies: resolution
-                ? resolution.companies_created + resolution.companies_reused
-                : 0,
-              contacts: resolution
-                ? resolution.contacts_created + resolution.contacts_reused
-                : 0,
-              routes: routingRun?.total_companies ?? 0,
+              accepted: session?.accepted_rows ?? 0,
+              companies: resolution?.canonical_company_count ?? 0,
+              contacts: resolution?.canonical_contact_count ?? 0,
+              routes:
+                routingPreview?.companies.length ??
+                routingRun?.total_companies ??
+                0,
             })}
           </p>
           {preflight ? (
@@ -1292,13 +1299,27 @@ export function BulkImportPanel({
         </div>
       ) : null}
 
-      <p className="mx-5 mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 sm:mx-7">
-        {t("bulk.boundary")}
+      <p
+        className="mx-5 mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 sm:mx-7"
+        data-testid="stage-boundary"
+      >
+        {resolutionComplete ? t("bulk.boundaryResolved") : t("bulk.boundary")}
       </p>
 
       {error ? (
-        <p className="mx-5 mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:mx-7">
+        <p
+          className="mx-5 mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:mx-7"
+          data-testid="global-error"
+        >
           {error}
+        </p>
+      ) : null}
+      {pollError ? (
+        <p
+          className="mx-5 mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 sm:mx-7"
+          data-testid="poll-error"
+        >
+          {pollError}
         </p>
       ) : null}
 
@@ -1319,7 +1340,10 @@ export function BulkImportPanel({
           <p className="mt-2 text-sm text-slate-600">{t("acceptance.closureSummary")}</p>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <MetricCard label={t("acceptance.rows")} value={session?.total_rows ?? 0} />
-            <MetricCard label={t("acceptance.companies")} value={resolution ? resolution.companies_created + resolution.companies_reused : 0} />
+            <MetricCard
+              label={t("acceptance.companies")}
+              value={resolution?.canonical_company_count ?? 0}
+            />
             <MetricCard label={t("bulk.routingTotal")} value={routingRun?.total_companies ?? 0} />
             <MetricCard label={t("feedback.appliedEvents")} value={umailResult?.applied_event_count ?? 0} />
           </div>

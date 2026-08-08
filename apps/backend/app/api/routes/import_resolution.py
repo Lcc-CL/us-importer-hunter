@@ -58,7 +58,13 @@ async def get_import_resolution(
     workflow: ImportResolutionQueryDep,
 ) -> ImportResolutionResponse:
     resolution, job = await workflow.get(session_id)
-    return ImportResolutionResponse.from_domain(resolution, job)
+    company_count, contact_count = await workflow.get_canonical_counts(session_id)
+    return ImportResolutionResponse.from_domain(
+        resolution,
+        job,
+        canonical_company_count=company_count,
+        canonical_contact_count=contact_count,
+    )
 
 
 @router.get(

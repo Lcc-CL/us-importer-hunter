@@ -477,6 +477,8 @@ export interface ImportResolutionResponse {
   contacts_created: number;
   contacts_reused: number;
   company_contacts_created: number;
+  canonical_company_count: number;
+  canonical_contact_count: number;
   invalid_rows: number;
   failed_rows: number;
   attempt_count: number;
@@ -1066,6 +1068,8 @@ const KNOWN_ERROR_MESSAGES: Record<string, string> = {
   ROUTING_PREVIEW_INVALID: "Routing 预览未通过安全校验，请检查证据和规则。",
   ENTITY_RESOLUTION_PREVIEW_FAILED: "实体归并预览失败。",
   WORKFLOW_STATE_CONFLICT: "工作流状态冲突，请刷新后重试。",
+  ROUTING_TARGET_REQUIRED: "请至少填写一个目标产品关键词或 HS Code。",
+  unexpected_client_error: "发生意外错误，请稍后重试。",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1095,7 +1099,9 @@ export function getClientErrorDetails(error: unknown): ClientErrorDetails {
   }
   return {
     code: "unexpected_client_error",
-    message: "Something unexpected happened while processing the request.",
+    message:
+      KNOWN_ERROR_MESSAGES.unexpected_client_error ??
+      "Something unexpected happened while processing the request.",
     request_id: null,
   };
 }

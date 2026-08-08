@@ -673,6 +673,13 @@ class ImportResolutionQueryWorkflow:
             job = await uow.import_processing_jobs.get_latest_for_session(session_id)
             return resolution, job
 
+    async def get_canonical_counts(self, session_id: UUID) -> tuple[int, int]:
+        """Distinct canonical company/contact counts for the top-level stats."""
+        async with self._uow_factory() as uow:
+            if await uow.import_resolution.get_resolution(session_id) is None:
+                raise ResourceNotFoundError(f"import resolution not found: {session_id}")
+            return await uow.import_resolution.count_canonical_entities(session_id)
+
     async def list_decisions(
         self,
         *,

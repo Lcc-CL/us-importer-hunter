@@ -140,17 +140,29 @@ async def test_preview_and_apply_produce_identical_decisions(
         )
         assert resolution.status_code == 202, resolution.text
         assert await runner.run_once(owner="parity-resolution-worker") is True
+        resolution_body = await client.get(
+            f"/api/v1/import-sessions/{session_id}/resolution"
+        )
+        assert resolution_body.status_code == 200
+        canonical_companies = resolution_body.json()["canonical_company_count"]
+        canonical_contacts = resolution_body.json()["canonical_contact_count"]
+        assert canonical_companies == 4  # Atlas, Beta, Canada, Unknown
+        assert canonical_contacts >= 4
 
         preview_body = await preview(client, session_id)
         assert preview_body["rules_version"] == "real-routing-v1.1"
         assert preview_body["entity_pending_count"] == 1
+        assert len(
+            cast(list[dict[str, object]], preview_body["companies"])
+        ) == canonical_companies
+        totals = cast(dict[str, int], preview_body["totals"])
+        assert sum(totals.values()) == canonical_companies
         preview_companies = {
             str(company["company_id"]): company
             for company in cast(
                 list[dict[str, object]], preview_body["companies"]
             )
         }
-        assert len(preview_companies) == 4
 
         # Preview is deterministic across identical inputs.
         second_preview = await preview(client, session_id)
@@ -239,7 +251,7 @@ async def test_preview_and_apply_produce_identical_decisions(
         routes = cast(
             list[dict[str, object]], routes_response.json()["routes"]
         )
-        assert len(routes) == 4
+        assert len(routes) == canonical_companies
         routes_by_company = {str(route["company_id"]): route for route in routes}
 
         for company_id, preview_company in preview_companies.items():
@@ -359,3 +371,60 @@ async def test_preview_without_hs_or_pol_pod_still_succeeds(
         totals = cast(dict[str, int], body["totals"])
         assert sum(totals.values()) == 4
         assert body["rules_version"] == "real-routing-v1.1"
+
+
+async def test_keep_separate_adds_one_canonical_company_and_routing_counts_match(
+    uow_factory: UowFactory,
+) -> None:
+    """KEEP_SEPARATE creates one new canonical company; routing must count it
+    exactly once and never double-score anchors that map to the same company."""
+    runner = make_runner(uow_factory)
+    async for client in make_client(uow_factory):
+        session_id = await upload_fixture(client)
+        resolution = await client.post(
+            f"/api/v1/import-sessions/{session_id}/resolve"
+        )
+        assert resolution.status_code == 202
+        assert await runner.run_once(owner="parity-keep-separate-worker") is True
+
+        before = await client.get(
+            f"/api/v1/import-sessions/{session_id}/resolution"
+        )
+        before_body = before.json()
+        assert before_body["canonical_company_count"] == 4
+
+        decisions_response = await client.get(
+            f"/api/v1/import-sessions/{session_id}/entity-decisions",
+            params={"entity_type": "company", "review_status": "pending", "limit": 20},
+        )
+        pending = decisions_response.json()["decisions"]
+        assert len(pending) == 1
+        kept = await client.post(
+            f"/api/v1/import-entity-decisions/{pending[0]['decision_id']}/review",
+            json={"action": "keep_separate", "reviewed_by": "qa"},
+        )
+        assert kept.status_code == 200
+
+        after = await client.get(
+            f"/api/v1/import-sessions/{session_id}/resolution"
+        )
+        after_body = after.json()
+        assert after_body["canonical_company_count"] == 5
+
+        preview_body = await preview(client, session_id)
+        assert preview_body["entity_pending_count"] == 0
+        totals = cast(dict[str, int], preview_body["totals"])
+        assert len(
+            cast(list[dict[str, object]], preview_body["companies"])
+        ) == 5
+        assert sum(totals.values()) == 5
+        # The two original anchors (Atlas + Atlas LLC) now resolve to two
+        # distinct canonical companies; both appear exactly once.
+        names = {
+            str(company["company_name"])
+            for company in cast(
+                list[dict[str, object]], preview_body["companies"]
+            )
+        }
+        assert "Atlas Fitness" in names
+        assert "Atlas Fitness LLC" in names
