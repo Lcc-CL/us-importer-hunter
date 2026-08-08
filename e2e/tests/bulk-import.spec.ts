@@ -132,26 +132,34 @@ test("bulk import entity resolution review survives refresh", async ({
   await expect(routing.getByText("路由完成")).toBeVisible();
   await expect(page).toHaveURL(/routing_run_id=[0-9a-f-]{36}/);
   await page.getByTestId("acceptance-step-6").click();
-  await expect(restored.getByTestId("prospect-routing-routes")).toBeVisible();
+  await expect(restored.getByTestId("routing-split")).toBeVisible();
+  await expect(restored.getByTestId("a-selection-count")).toContainText(
+    "优先客户：1 家",
+  );
 
   await page.reload({ waitUntil: "networkidle" });
   const restoredRouting = page.getByTestId("prospect-routing-result");
   await expect(restoredRouting.getByText("路由完成")).toBeVisible();
-  await expect(page.getByTestId("prospect-routing-routes")).toBeVisible();
+  await expect(page.getByTestId("routing-split")).toBeVisible();
 
-  await restoredRouting.getByRole("button", { name: "确认推荐", exact: true }).click();
-  await expect(page.getByTestId("deep-analysis-start")).toContainText("1 家");
+  // A routes are confirmed by the 开始深度分析 CTA itself (Leo's explicit
+  // selection + click); the per-route table now lives in technical details.
+  await expect(page.getByTestId("deep-analysis-start")).toContainText("0/1");
+  await expect(page.getByTestId("deep-analysis-start")).toBeDisabled();
+  await expect(page.getByTestId("a-selection-hint")).toBeVisible();
   // Deselecting updates the count immediately.
   await page
-    .getByTestId("prospect-routing-routes")
-    .getByRole("checkbox", { name: /D5B1 E2E Atlas/ })
-    .uncheck();
-  await expect(page.getByTestId("deep-analysis-start")).toContainText("0 家");
-  await page
-    .getByTestId("prospect-routing-routes")
-    .getByRole("checkbox", { name: /D5B1 E2E Atlas/ })
+    .getByRole("checkbox", { name: /加入深度分析 D5B1 E2E Atlas/ })
     .check();
-  await expect(page.getByTestId("deep-analysis-start")).toContainText("1 家");
+  await expect(page.getByTestId("deep-analysis-start")).toContainText("1/1");
+  await page
+    .getByRole("checkbox", { name: /加入深度分析 D5B1 E2E Atlas/ })
+    .uncheck();
+  await expect(page.getByTestId("deep-analysis-start")).toContainText("0/1");
+  await page
+    .getByRole("checkbox", { name: /加入深度分析 D5B1 E2E Atlas/ })
+    .check();
+  await expect(page.getByTestId("deep-analysis-start")).toContainText("1/1");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByTestId("deep-analysis-start").click();
   await expect(page.getByTestId("prospect-routing-batch-created")).toBeVisible();
