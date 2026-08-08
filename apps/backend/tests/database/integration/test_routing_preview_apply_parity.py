@@ -326,3 +326,36 @@ async def test_pending_entity_review_blocks_apply_and_blocked_route_cannot_batch
             },
         )
         assert blocked_confirm.status_code == 409
+
+
+async def test_preview_without_hs_or_pol_pod_still_succeeds(
+    uow_factory: UowFactory,
+) -> None:
+    """Missing HS Code / POL / POD must never block the priority preview."""
+    runner = make_runner(uow_factory)
+    async for client in make_client(uow_factory):
+        session_id = await upload_fixture(client)
+        resolution = await client.post(
+            f"/api/v1/import-sessions/{session_id}/resolve"
+        )
+        assert resolution.status_code == 202
+        assert await runner.run_once(owner="parity-minimal-criteria-worker") is True
+
+        response = await client.post(
+            f"/api/v1/import-sessions/{session_id}/routing-preview",
+            json={
+                "criteria": {
+                    "target_product_keywords": ["fitness"],
+                    "target_hs_codes": [],
+                    "preferred_origin_countries": [],
+                    "preferred_pol": [],
+                    "preferred_pod": [],
+                },
+                "campaign_name": "minimal criteria",
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = cast(dict[str, object], response.json())
+        totals = cast(dict[str, int], body["totals"])
+        assert sum(totals.values()) == 4
+        assert body["rules_version"] == "real-routing-v1.1"
