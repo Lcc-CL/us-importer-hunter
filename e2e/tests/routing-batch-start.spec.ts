@@ -13,6 +13,7 @@ const RESEARCH_ID = "70000000-0000-4000-8000-000000000007";
 async function stubRoutingBatchApi(page: Page) {
   let started = false;
   let resumed = false;
+  let confirmed = false;
   let executionReads = 0;
   let postedStart: unknown = null;
 
@@ -316,6 +317,88 @@ async function stubRoutingBatchApi(page: Page) {
       });
     },
   );
+  await page.route(`**/api/v1/research/runs/${RESEARCH_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        research_id: RESEARCH_ID,
+        company_id: COMPANY_ID,
+        company_name: "Atlas Routed Hardware",
+        website: "https://atlas.example",
+        status: "completed",
+        failure_code: null,
+        started_at: "2026-08-02T12:00:05Z",
+        completed_at: "2026-08-02T12:00:06Z",
+        pages_fetched: 1,
+        pages_failed: 0,
+        claims_extracted: 1,
+        claims_validated: 1,
+        extractor: {
+          provider: "fake",
+          model: "fake-research-v1",
+          prompt_version: "website-research-v1",
+        },
+        profile: {},
+        pages: [
+          {
+            position: 0,
+            url: "https://atlas.example",
+            final_url: "https://atlas.example",
+            http_status: 200,
+            content_type: "text/html",
+            fetched_at: "2026-08-02T12:00:05Z",
+            content_chars: 100,
+            truncated: false,
+            discovery_reason: "home",
+          },
+        ],
+        claims: [
+          {
+            position: 0,
+            kind: "import_activity",
+            detail: "Atlas imports industrial hardware.",
+            evidence_snippet:
+              "We import industrial hardware on a monthly schedule.",
+            source_url: "https://atlas.example/about",
+            confidence: 0.9,
+          },
+        ],
+        promotions: confirmed
+          ? [
+              {
+                claim_position: 0,
+                decision: "accepted",
+                reviewed_at: "2026-08-02T12:01:00Z",
+                reviewer_name: "reviewer",
+                applied_to_company: true,
+                kind: "import_activity",
+                detail: "Atlas imports industrial hardware.",
+              },
+            ]
+          : [],
+        rejected_claims: [],
+        warnings: [],
+        unknown_dimensions: [],
+      }),
+    }),
+  );
+  await page.route(`**/api/v1/research/runs/${RESEARCH_ID}/confirm`, async (route) => {
+    confirmed = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        research_id: RESEARCH_ID,
+        action: "reviewed",
+        company_id: COMPANY_ID,
+        summary: { accepted: 1, edited: 0, rejected: 0, total: 1 },
+        promotions: [],
+        application_payload: null,
+        warnings: [],
+      }),
+    });
+  });
   return { postedStart: () => postedStart };
 }
 
@@ -353,21 +436,37 @@ test("routing batch explicit start, review gate, resume, and refresh recovery", 
     { timeout: 5_000 },
   );
   await expect(batch.getByText("没有发送邮件")).toBeVisible();
-  const evidenceLink = batch.getByTestId("review-routing-batch-evidence");
-  await expect(evidenceLink).toHaveAttribute("href", new RegExp(`research_id=${RESEARCH_ID}`));
+  await expect(batch.getByTestId("batch-running-status")).toBeVisible();
+  await expect(page.getByTestId("deep-analysis-running")).toBeVisible();
+  await expect(batch.getByTestId("deep-analysis-start")).toHaveCount(0);
+  await expect(page.getByTestId("human-review-center")).toBeVisible();
+  await expect(page.getByTestId("human-review-evidence")).toContainText("1");
+
+  // Inline evidence review: no company-workspace navigation required.
+  await batch.getByTestId("evidence-review-toggle").click();
+  await expect(batch.getByTestId("inline-evidence-review")).toBeVisible();
+  await expect(batch.getByText("Atlas imports industrial hardware.")).toBeVisible();
+  await expect(
+    batch.getByTestId("inline-claim-0").getByRole("link", { name: /atlas.example/ }),
+  ).toBeVisible();
+  await batch.getByTestId("inline-accept-0").click();
+  await batch.getByTestId("evidence-submit").click();
+
+  // Auto resume after the last evidence decision: no extra "continue" click.
+  await expect(batch.getByTestId("prospect-routing-batch-status")).toContainText(
+    "深度处理完成，草稿等待人工审核",
+    { timeout: 5_000 },
+  );
+  await expect(batch.getByText("已生成草稿 1")).toBeVisible();
+  await expect(batch.getByText("没有发送邮件")).toBeVisible();
 
   await page.reload({ waitUntil: "networkidle" });
   const restored = page.getByTestId("prospect-routing-batch-created");
   await expect(restored.getByTestId("prospect-routing-batch-status")).toContainText(
-    "等待人工审核 Research 证据",
-  );
-  await restored.getByTestId("resume-routing-batch-company").click();
-  await expect(restored.getByTestId("prospect-routing-batch-status")).toContainText(
     "深度处理完成，草稿等待人工审核",
-    { timeout: 5_000 },
   );
-  await expect(restored).toContainText("已生成草稿 1");
-  await expect(restored).toContainText("没有发送邮件");
+  await expect(restored.getByTestId("batch-running-status")).toBeVisible();
+  await expect(restored.getByTestId("global-error")).not.toBeVisible();
 
   expect(guard.duplicateKeyWarnings()).toEqual([]);
   expect(guard.problems()).toEqual([]);

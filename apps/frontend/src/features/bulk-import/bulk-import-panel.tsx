@@ -46,7 +46,6 @@ import {
   getProspectRoutingRun,
   getRoutingPreview,
   preflightNetEaseImport,
-  resumeProspectBatchCompany,
   retryProspectBatchCompany,
   reviewImportEntityDecision,
   reviewProspectRoute,
@@ -71,6 +70,7 @@ import {
   type UmailResultImportResponse,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { EvidenceReviewCard } from "./evidence-review-card";
 import { UmailExportPanel } from "./umail-export-panel";
 import { UmailFeedbackPanel } from "./umail-feedback-panel";
 import {
@@ -282,6 +282,10 @@ export function BulkImportPanel({
     useState<ProspectBatchExecutionResponse | null>(null);
   const [batchCompanies, setBatchCompanies] = useState<ProspectBatchCompanyResponse[]>([]);
   const [batchBusy, setBatchBusy] = useState(Boolean(initialRoutingRunId && initialBatchId));
+  const [expandedEvidenceCompany, setExpandedEvidenceCompany] = useState<string | null>(
+    null,
+  );
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [busy, setBusy] = useState(Boolean(initialSessionId));
   const [error, setError] = useState<string | null>(null);
   const [umailExportBatch, setUmailExportBatch] =
@@ -796,32 +800,6 @@ export function BulkImportPanel({
     }
   }
 
-  async function handleResumeRoutedCompany(companyId: string) {
-    if (
-      !createdBatchId ||
-      batchBusy ||
-      !backendOk ||
-      !postgresOk ||
-      !workerOk ||
-      !writesConfirmed
-    ) return;
-    setBatchBusy(true);
-    setError(null);
-    try {
-      const resumed = await resumeProspectBatchCompany(
-        createdBatchId,
-        companyId,
-        toBatchSender(storedSender),
-      );
-      persistBatchExecution(resumed.batch_id, resumed.job_id);
-      await loadRoutedBatchState(resumed.batch_id);
-    } catch (caught: unknown) {
-      setError(getClientErrorDetails(caught).message);
-    } finally {
-      setBatchBusy(false);
-    }
-  }
-
   async function handleRetryRoutedCompany(companyId: string) {
     if (
       !createdBatchId ||
@@ -900,6 +878,16 @@ export function BulkImportPanel({
     batchExecution && ["pending", "leased", "running"].includes(batchExecution.status),
   );
   const draftCount = batchCompanies.filter((company) => company.draft_id !== null).length;
+  const evidenceReviewCompanies = batchCompanies.filter(
+    (company) => company.current_stage === "awaiting_evidence_review",
+  );
+  const entityReviewCount = decisions.filter(
+    (decision) => decision.review_status === "pending",
+  ).length;
+  const draftReviewCount = batchCompanies.filter(
+    (company) => company.status === "needs_review" && company.draft_id !== null,
+  ).length;
+  const batchStarted = Boolean(batchExecution);
   const resolutionComplete = Boolean(
     resolution && ["completed", "partial_failed"].includes(resolution.resolution_status),
   );
@@ -1349,6 +1337,55 @@ export function BulkImportPanel({
         </p>
       ) : null}
 
+      <div
+        className="mx-5 mb-6 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 sm:mx-7"
+        data-testid="human-review-center"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-800">
+            {t("batch.humanReviewCenter")}
+          </p>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <button
+              className="rounded-full bg-white px-3 py-1 text-indigo-800 disabled:opacity-50"
+              data-testid="human-review-evidence"
+              onClick={() =>
+                document
+                  .getElementById("evidence-review-center")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              type="button"
+            >
+              {t("batch.humanReviewEvidence")}: {evidenceReviewCompanies.length}
+            </button>
+            <button
+              className="rounded-full bg-white px-3 py-1 text-indigo-800 disabled:opacity-50"
+              data-testid="human-review-entity"
+              onClick={() =>
+                document
+                  .getElementById("entity-review-center")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              type="button"
+            >
+              {t("batch.humanReviewEntity")}: {entityReviewCount}
+            </button>
+            <button
+              className="rounded-full bg-white px-3 py-1 text-indigo-800 disabled:opacity-50"
+              data-testid="human-review-draft"
+              onClick={() =>
+                document
+                  .getElementById("draft-review-center")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              type="button"
+            >
+              {t("batch.humanReviewDraft")}: {draftReviewCount}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {activeStep === 8 || activeStep === 9 ? (
         <UmailFeedbackPanel
           exportBatchId={umailExportBatch?.batch_id ?? initialUmailExportBatchId}
@@ -1526,7 +1563,11 @@ export function BulkImportPanel({
                     </span>
                   </div>
                   {decisions.length ? (
-                    <div className="mt-2 space-y-2" data-testid="import-resolution-reviews">
+                    <div
+                      className="mt-2 space-y-2"
+                      data-testid="import-resolution-reviews"
+                      id="entity-review-center"
+                    >
                       {decisions.map((decision) => (
                         <div
                           className="rounded-xl border border-slate-200 bg-white p-3"
@@ -2154,43 +2195,57 @@ export function BulkImportPanel({
                 {activeStep === 6 ? (
                   <>
                 <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    data-testid="deep-analysis-start"
-                    disabled={
-                      !backendOk ||
-                      !postgresOk ||
-                      !workerOk ||
-                      !writesConfirmed ||
-                      batchBusy ||
-                      selectedACompanies.length === 0 ||
-                      selectedACompanies.length > 5 ||
-                      deepAnalysisProviderUnavailable
-                    }
-                    onClick={() => void handleStartDeepAnalysis()}
-                    type="button"
-                  >
-                    {t("bulk.routingDeepAnalysis", {
-                      count: selectedACompanies.length,
-                    })}
-                  </button>
-                  <span className="text-xs text-slate-500">
-                    {t("bulk.routingBatchLimit")}
-                  </span>
-                  {deepAnalysisProviderUnavailable ? (
+                  {!batchStarted ? (
+                    <>
+                      <button
+                        className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        data-testid="deep-analysis-start"
+                        disabled={
+                          !backendOk ||
+                          !postgresOk ||
+                          !workerOk ||
+                          !writesConfirmed ||
+                          batchBusy ||
+                          selectedACompanies.length === 0 ||
+                          selectedACompanies.length > 5 ||
+                          deepAnalysisProviderUnavailable
+                        }
+                        onClick={() => void handleStartDeepAnalysis()}
+                        type="button"
+                      >
+                        {t("bulk.routingDeepAnalysis", {
+                          count: selectedACompanies.length,
+                        })}
+                      </button>
+                      <span className="text-xs text-slate-500">
+                        {t("bulk.routingBatchLimit")}
+                      </span>
+                      {deepAnalysisProviderUnavailable ? (
+                        <p
+                          className="text-xs font-medium text-amber-800"
+                          data-testid="deep-analysis-provider-blocker"
+                        >
+                          {t("batch.providerNotConfigured")}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
                     <p
-                      className="text-xs font-medium text-amber-800"
-                      data-testid="deep-analysis-provider-blocker"
+                      className="text-xs font-semibold text-emerald-800"
+                      data-testid="deep-analysis-running"
                     >
-                      {t("batch.providerNotConfigured")}
+                      {t("batch.deepAnalysisRunning")} ·{" "}
+                      {t("batch.deepAnalysisRunningDetail", {
+                        count: evidenceReviewCompanies.length,
+                      })}
                     </p>
-                  ) : null}
+                  )}
                 </div>
                 {createdBatchId && routedBatch ? (
                   <div
                     className="mt-4 rounded-2xl border border-emerald-200 bg-white p-4"
                     data-testid="prospect-routing-batch-created"
-                    id="prospect-routing-batch"
+                    id="draft-review-center"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -2208,26 +2263,36 @@ export function BulkImportPanel({
                           })}
                         </p>
                       </div>
-                      <button
-                        className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        data-testid="prospect-routing-batch-start"
-                        disabled={
-                          !backendOk ||
-                          !postgresOk ||
-                          !workerOk ||
-                          !writesConfirmed ||
-                          batchBusy ||
-                          batchExecutionActive ||
-                          deepAnalysisProviderUnavailable
-                        }
-                        onClick={() => void handleStartDeepAnalysis()}
-                        type="button"
-                      >
-                        <Play className="size-4" />
-                        {batchBusy || batchExecutionActive
-                          ? t("bulk.routingBatchStarting")
-                          : t("bulk.routingDeepAnalysisSimple")}
-                      </button>
+                      {!batchStarted ? (
+                        <button
+                          className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          data-testid="prospect-routing-batch-start"
+                          disabled={
+                            !backendOk ||
+                            !postgresOk ||
+                            !workerOk ||
+                            !writesConfirmed ||
+                            batchBusy ||
+                            batchExecutionActive ||
+                            deepAnalysisProviderUnavailable
+                          }
+                          onClick={() => void handleStartDeepAnalysis()}
+                          type="button"
+                        >
+                          <Play className="size-4" />
+                          {t("bulk.routingDeepAnalysisSimple")}
+                        </button>
+                      ) : (
+                        <p
+                          className="text-xs font-semibold text-emerald-800"
+                          data-testid="batch-running-status"
+                        >
+                          {t("batch.deepAnalysisRunning")} ·{" "}
+                          {t("batch.deepAnalysisRunningDetail", {
+                            count: evidenceReviewCompanies.length,
+                          })}
+                        </p>
+                      )}
                     </div>
 
                     <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
@@ -2272,7 +2337,11 @@ export function BulkImportPanel({
                       </span>
                     </div>
 
-                    <div className="mt-4 space-y-3" data-testid="prospect-routing-batch-companies">
+                    <div
+                      className="mt-4 space-y-3"
+                      data-testid="prospect-routing-batch-companies"
+                      id="evidence-review-center"
+                    >
                       {batchCompanies.map((company) => (
                         <article
                           className="rounded-xl border border-slate-200 bg-slate-50 p-3"
@@ -2307,47 +2376,67 @@ export function BulkImportPanel({
                           ) : null}
                           <div className="mt-3 flex flex-wrap gap-3">
                             <a
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700"
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600"
                               href={`/?${new URLSearchParams({
                                 company_id: company.company_id,
                                 batch_id: createdBatchId,
                                 ...(session ? { import_session_id: session.session_id } : {}),
                                 ...(routingRun ? { routing_run_id: routingRun.routing_run_id } : {}),
                               }).toString()}`}
+                              data-testid="view-company-details"
                             >
-                              {t("batch.openWorkspace")} <ExternalLink className="size-3" />
+                              {t("batch.viewCompanyDetails")}{" "}
+                              <ExternalLink className="size-3" />
                             </a>
                             {company.current_stage === "awaiting_evidence_review" && company.research_id ? (
                               <>
-                                <a
-                                  className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800"
-                                  data-testid="review-routing-batch-evidence"
-                                  href={`/?${new URLSearchParams({
-                                    batch_id: createdBatchId,
-                                    company_id: company.company_id,
-                                    research_id: company.research_id,
-                                    ...(session ? { import_session_id: session.session_id } : {}),
-                                    ...(routingRun ? { routing_run_id: routingRun.routing_run_id } : {}),
-                                  }).toString()}#research-panel`}
-                                >
-                                  <ShieldCheck className="size-3" /> {t("batch.reviewEvidence")}
-                                </a>
                                 <button
                                   className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 disabled:opacity-50"
-                                  data-testid="resume-routing-batch-company"
+                                  data-testid="evidence-review-toggle"
                                   disabled={
                                     !backendOk ||
                                     !postgresOk ||
                                     !workerOk ||
                                     !writesConfirmed ||
-                                    batchBusy ||
-                                    batchExecutionActive
+                                    evidenceBusy
                                   }
-                                  onClick={() => void handleResumeRoutedCompany(company.company_id)}
+                                  onClick={() =>
+                                    setExpandedEvidenceCompany((current) =>
+                                      current === company.company_id
+                                        ? null
+                                        : company.company_id,
+                                    )
+                                  }
                                   type="button"
                                 >
-                                  <CheckCircle2 className="size-3" /> {t("batch.resume")}
+                                  <ShieldCheck className="size-3" />
+                                  {expandedEvidenceCompany === company.company_id
+                                    ? t("batch.evidence.close")
+                                    : t("batch.evidence.review", {
+                                        count: company.blocking_claim_count,
+                                      })}
                                 </button>
+                                {expandedEvidenceCompany === company.company_id ? (
+                                  <div className="w-full">
+                                    <EvidenceReviewCard
+                                      batchId={createdBatchId}
+                                      canAct={
+                                        backendOk &&
+                                        postgresOk &&
+                                        workerOk &&
+                                        writesConfirmed
+                                      }
+                                      company={company}
+                                      onBusyChange={setEvidenceBusy}
+                                      onCompanyRefreshed={() => {
+                                        if (createdBatchId) {
+                                          void loadRoutedBatchState(createdBatchId);
+                                        }
+                                      }}
+                                      sender={toBatchSender(storedSender)}
+                                    />
+                                  </div>
+                                ) : null}
                               </>
                             ) : null}
                             {company.error_code && ROUTING_RETRYABLE_ERRORS.has(company.error_code) ? (
