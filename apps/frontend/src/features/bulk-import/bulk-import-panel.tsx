@@ -171,6 +171,27 @@ const NETEASE_MAPPING_GROUPS: MappingGroupDefinition[] = [
   },
 ];
 
+/**
+ * Minimal Campaign preset (D5e2h0). JSON config object, no Campaign CRUD:
+ * a single real business scenario today. Values auto-derive the Routing
+ * Preview parameters; the operator only reviews the summary and clicks
+ * "生成客户优先级".
+ */
+const FITNESS_EQUIPMENT_US_PRESET = {
+  id: "fitness-equipment-us-v1",
+  market: "美国",
+  industry: "健身器材",
+  taxonomy: "fitness_equipment_v1",
+  originPreference: "China",
+  routingPolicy: "real-routing-v1.1",
+  targetProductKeywords: "fitness, gym equipment",
+  targetHsCodes: "",
+  preferredOrigins: "China",
+  preferredPol: "",
+  preferredPod: "",
+  campaignName: "fitness-equipment-us-v1",
+} as const;
+
 export function BulkImportPanel({
   initialSessionId,
   initialRoutingRunId,
@@ -213,12 +234,24 @@ export function BulkImportPanel({
   const [confirmMergeDecision, setConfirmMergeDecision] =
     useState<ImportEntityDecisionResponse | null>(null);
   const [confirmRoutingApply, setConfirmRoutingApply] = useState(false);
-  const [productKeywords, setProductKeywords] = useState("");
-  const [hsCodes, setHsCodes] = useState("");
-  const [originCountries, setOriginCountries] = useState("");
-  const [preferredPol, setPreferredPol] = useState("");
-  const [preferredPod, setPreferredPod] = useState("");
-  const [campaignName, setCampaignName] = useState("");
+  const [productKeywords, setProductKeywords] = useState<string>(
+    FITNESS_EQUIPMENT_US_PRESET.targetProductKeywords,
+  );
+  const [hsCodes, setHsCodes] = useState<string>(
+    FITNESS_EQUIPMENT_US_PRESET.targetHsCodes,
+  );
+  const [originCountries, setOriginCountries] = useState<string>(
+    FITNESS_EQUIPMENT_US_PRESET.preferredOrigins,
+  );
+  const [preferredPol, setPreferredPol] = useState<string>(
+    FITNESS_EQUIPMENT_US_PRESET.preferredPol,
+  );
+  const [preferredPod, setPreferredPod] = useState<string>(
+    FITNESS_EQUIPMENT_US_PRESET.preferredPod,
+  );
+  const [campaignName, setCampaignName] = useState<string>(
+    FITNESS_EQUIPMENT_US_PRESET.campaignName,
+  );
   const [routingBusy, setRoutingBusy] = useState(false);
   const [reviewingRouteId, setReviewingRouteId] = useState<string | null>(null);
   const [routeTiers, setRouteTiers] = useState<Record<string, ProspectTier>>({});
@@ -1604,7 +1637,16 @@ export function BulkImportPanel({
                         onClick={() => setPreviewTierFilter(tier)}
                         type="button"
                       >
-                        {tier}: {routingPreview.totals[tier] ?? 0}
+                        {tier === "A"
+                          ? t("routing.tierA")
+                          : tier === "B"
+                            ? t("routing.tierB")
+                            : tier === "C"
+                              ? t("routing.tierC")
+                              : tier === "D"
+                                ? t("routing.tierD")
+                                : t("routing.tierBlocked")}
+                        : {routingPreview.totals[tier] ?? 0}
                       </button>
                     ))}
                     <button
@@ -1674,18 +1716,119 @@ export function BulkImportPanel({
                 </div>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
-                  {t("bulk.routingKicker")}
-                </p>
-                <h3 className="mt-1 text-base font-semibold text-slate-950">
-                  {t("bulk.routingTitle")}
-                </h3>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  {t("bulk.routingIntro")}
-                </p>
+            <div
+              className="mb-4 rounded-xl border border-emerald-200 bg-white p-4"
+              data-testid="routing-campaign-summary"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
+                    {t("bulk.routingKicker")}
+                  </p>
+                  <h3 className="mt-1 text-base font-semibold text-slate-950">
+                    {t("bulk.routingTitle")}
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {t("bulk.routingIntro")}
+                  </p>
+                </div>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-900">
+                  {t("bulk.routingPreset")}: {FITNESS_EQUIPMENT_US_PRESET.id}
+                </span>
               </div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+                {[
+                  [t("bulk.routingMarket"), FITNESS_EQUIPMENT_US_PRESET.market],
+                  [t("bulk.routingIndustry"), FITNESS_EQUIPMENT_US_PRESET.industry],
+                  [
+                    t("bulk.routingSupplyPreference"),
+                    originCountries || t("bulk.routingNoValue"),
+                  ],
+                  [
+                    t("bulk.routingRulesVersion"),
+                    routingPreview?.rules_version ??
+                      FITNESS_EQUIPMENT_US_PRESET.routingPolicy,
+                  ],
+                ].map(([label, value]) => (
+                  <div key={String(label)}>
+                    <dt className="text-[11px] text-slate-400">{String(label)}</dt>
+                    <dd className="mt-0.5 truncate text-xs font-semibold text-slate-800">
+                      {String(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            <details
+              className="mb-4 rounded-xl border border-emerald-200 bg-white p-3"
+              data-testid="routing-advanced-rules"
+            >
+              <summary className="cursor-pointer text-xs font-semibold text-slate-700">
+                {t("bulk.routingAdvancedTitle")}
+              </summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  [
+                    t("bulk.routingProducts"),
+                    productKeywords,
+                    setProductKeywords,
+                    "prospect-routing-products",
+                  ],
+                  [
+                    t("bulk.routingHsCodes"),
+                    hsCodes,
+                    setHsCodes,
+                    "prospect-routing-hs",
+                  ],
+                  [
+                    t("bulk.routingOrigins"),
+                    originCountries,
+                    setOriginCountries,
+                    "prospect-routing-origins",
+                  ],
+                  [
+                    t("bulk.routingPol"),
+                    preferredPol,
+                    setPreferredPol,
+                    "prospect-routing-pol",
+                  ],
+                  [
+                    t("bulk.routingPod"),
+                    preferredPod,
+                    setPreferredPod,
+                    "prospect-routing-pod",
+                  ],
+                ].map(([label, value, setter, testId]) => (
+                  <label className="text-xs font-medium text-slate-700" key={String(testId)}>
+                    {String(label)}
+                    <input
+                      className="mt-1 block w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                      data-testid={String(testId)}
+                      onChange={(event) =>
+                        (setter as (next: string) => void)(event.target.value)
+                      }
+                      placeholder={t("bulk.routingNoValue")}
+                      value={String(value)}
+                    />
+                  </label>
+                ))}
+                <div>
+                  <p className="text-xs font-medium text-slate-700">
+                    {t("bulk.routingRulesVersion")}
+                  </p>
+                  <p className="mt-1 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    {routingPreview?.rules_version ??
+                      FITNESS_EQUIPMENT_US_PRESET.routingPolicy}
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="max-w-md text-xs leading-5 text-slate-600">
+                {t("bulk.routingBoundary")}
+              </p>
               <button
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-800 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid="prospect-routing-start"
@@ -1739,66 +1882,6 @@ export function BulkImportPanel({
                   {t("routing.applyBlockerGate")}
                 </p>
               ) : null}
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                [
-                  t("bulk.routingProducts"),
-                  productKeywords,
-                  setProductKeywords,
-                  "hardware, tools",
-                  "prospect-routing-products",
-                ],
-                [
-                  t("bulk.routingHsCodes"),
-                  hsCodes,
-                  setHsCodes,
-                  "8205, 7318",
-                  "prospect-routing-hs",
-                ],
-                [
-                  t("bulk.routingOrigins"),
-                  originCountries,
-                  setOriginCountries,
-                  "China, Vietnam",
-                  "prospect-routing-origins",
-                ],
-                [
-                  t("bulk.routingPol"),
-                  preferredPol,
-                  setPreferredPol,
-                  "Shanghai",
-                  "prospect-routing-pol",
-                ],
-                [
-                  t("bulk.routingPod"),
-                  preferredPod,
-                  setPreferredPod,
-                  "Los Angeles",
-                  "prospect-routing-pod",
-                ],
-                [
-                  t("bulk.routingCampaign"),
-                  campaignName,
-                  setCampaignName,
-                  t("bulk.routingCampaignPlaceholder"),
-                  "prospect-routing-campaign",
-                ],
-              ].map(([label, value, setter, placeholder, testId]) => (
-                <label className="text-xs font-medium text-slate-700" key={String(testId)}>
-                  {String(label)}
-                  <input
-                    className="mt-1 block w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                    data-testid={String(testId)}
-                    onChange={(event) =>
-                      (setter as (next: string) => void)(event.target.value)
-                    }
-                    placeholder={String(placeholder)}
-                    value={String(value)}
-                  />
-                </label>
-              ))}
             </div>
 
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

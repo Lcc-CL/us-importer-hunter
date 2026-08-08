@@ -84,14 +84,15 @@ test("bulk import entity resolution review survives refresh", async ({
   await expect(restoredResolution.getByText("实体归并完成")).toBeVisible();
   await expect(restored.getByTestId("import-resolution-reviews")).toBeVisible();
 
-  // Step 5 routing must stay blocked while the entity review is pending.
+  // Step 5: the preset auto-fills the preview parameters; routing stays
+  // blocked while the entity review is pending.
   await page.getByTestId("acceptance-step-5").click();
-  await restored.getByTestId("prospect-routing-products").fill("fitness");
-  await restored.getByTestId("prospect-routing-hs").fill("950691");
-  await restored.getByTestId("prospect-routing-origins").fill("United States");
-  await restored.getByTestId("prospect-routing-pol").fill("Shanghai");
-  await restored.getByTestId("prospect-routing-pod").fill("Los Angeles");
-  await restored.getByTestId("prospect-routing-campaign").fill("D5e2g1 E2E fitness");
+  await expect(
+    restored.getByTestId("routing-campaign-summary"),
+  ).toContainText("fitness-equipment-us-v1");
+  await expect(restored.getByTestId("prospect-routing-products")).toHaveValue(
+    "fitness, gym equipment",
+  );
   await restored.getByTestId("routing-preview-generate").click();
   await expect(
     restored.getByTestId("routing-apply-blocker").getByText("仍有 1 条实体需要审核。"),
