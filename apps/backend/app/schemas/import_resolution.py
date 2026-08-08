@@ -40,6 +40,8 @@ class ImportResolutionResponse(BaseModel):
     contacts_created: int
     contacts_reused: int
     company_contacts_created: int
+    canonical_company_count: int = 0
+    canonical_contact_count: int = 0
     invalid_rows: int
     failed_rows: int
     attempt_count: int
@@ -56,6 +58,9 @@ class ImportResolutionResponse(BaseModel):
         cls,
         resolution: ImportResolution,
         job: ImportProcessingJob | None,
+        *,
+        canonical_company_count: int = 0,
+        canonical_contact_count: int = 0,
     ) -> "ImportResolutionResponse":
         return cls(
             session_id=resolution.import_session_id,
@@ -70,6 +75,8 @@ class ImportResolutionResponse(BaseModel):
             contacts_created=resolution.contacts_created,
             contacts_reused=resolution.contacts_reused,
             company_contacts_created=resolution.company_contacts_created,
+            canonical_company_count=canonical_company_count,
+            canonical_contact_count=canonical_contact_count,
             invalid_rows=resolution.invalid_rows,
             failed_rows=resolution.failed_rows,
             attempt_count=job.attempt_count if job else 0,

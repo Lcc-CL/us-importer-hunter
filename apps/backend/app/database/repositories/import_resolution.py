@@ -29,6 +29,7 @@ from app.domain.import_resolution import (
     ContactIdentityCandidate,
     ImportDecisionView,
     ImportEntityDecision,
+    ImportEntityDecisionKind,
     ImportEntityReviewStatus,
     ImportEntityType,
     ImportJobStatus,
@@ -290,8 +291,35 @@ class SqlAlchemyImportResolutionRepository:
                         row_payloads.get(model.raw_import_row_id, {})
                     ),
                 )
-            )
+        )
         return views, total
+
+    async def count_canonical_entities(
+        self, session_id: UUID
+    ) -> tuple[int, int]:
+        rows = (
+            await self._session.execute(
+                select(
+                    ImportEntityDecisionModel.entity_type,
+                    ImportEntityDecisionModel.candidate_entity_id,
+                ).where(
+                    ImportEntityDecisionModel.import_session_id == session_id,
+                    ImportEntityDecisionModel.candidate_entity_id.is_not(None),
+                    ImportEntityDecisionModel.decision
+                    != ImportEntityDecisionKind.REJECTED.value,
+                )
+            )
+        ).tuples().all()
+        company_ids: set[UUID] = set()
+        contact_ids: set[UUID] = set()
+        for entity_type, candidate_id in rows:
+            if candidate_id is None:
+                continue
+            if entity_type == ImportEntityType.COMPANY.value:
+                company_ids.add(candidate_id)
+            elif entity_type == ImportEntityType.CONTACT.value:
+                contact_ids.add(candidate_id)
+        return len(company_ids), len(contact_ids)
 
     async def list_company_candidates(self) -> list[CompanyResolutionCandidate]:
         rows = await self._session.execute(

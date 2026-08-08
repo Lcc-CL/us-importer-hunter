@@ -70,6 +70,9 @@ test("bulk import entity resolution review survives refresh", async ({
   await panel.getByTestId("import-resolution-start").click();
   const resolution = panel.getByTestId("import-resolution-result");
   await expect(resolution.getByText("实体归并完成")).toBeVisible();
+  await expect(panel.getByTestId("stage-boundary")).toContainText(
+    "公司与联系人实体已完成归并",
+  );
   await expect(
     resolution.getByText("公司待复核", { exact: true }).locator("..").getByText("1", {
       exact: true,
@@ -90,10 +93,14 @@ test("bulk import entity resolution review survives refresh", async ({
   await expect(
     restored.getByTestId("routing-campaign-summary"),
   ).toContainText("fitness-equipment-us-v1");
+  await expect(page.getByTestId("acceptance-step-nav")).toContainText(
+    "Canonical 公司",
+  );
   await expect(restored.getByTestId("prospect-routing-products")).toHaveValue(
     "fitness, gym equipment",
   );
   await restored.getByTestId("routing-preview-generate").click();
+  await expect(restored.getByTestId("global-error")).not.toBeVisible();
   await expect(
     restored.getByTestId("routing-apply-blocker").getByText("仍有 1 条实体需要审核。"),
   ).toBeVisible();

@@ -296,6 +296,17 @@ class ImportResolutionRepository(Protocol):
         limit: int,
     ) -> tuple[list[ImportDecisionView], int]: ...
 
+    async def count_canonical_entities(
+        self, session_id: UUID
+    ) -> tuple[int, int]:
+        """Distinct canonical company/contact candidates for an import session.
+
+        Counts unique candidate_entity_id values (rejected decisions excluded).
+        This is the business identity count shown in the Step 5 stats; it is
+        NOT the per-row decision count.
+        """
+        ...
+
     async def list_company_candidates(self) -> list[CompanyResolutionCandidate]: ...
 
     async def list_external_identities(self) -> list[CompanyExternalIdentity]: ...
