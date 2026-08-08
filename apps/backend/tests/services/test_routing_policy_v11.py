@@ -24,6 +24,7 @@ def _features(
     contacts: tuple[RoutingContactSnapshot, ...] = (),
     strong_exclusion: bool = False,
     origins: tuple[str, ...] = ("United States",),
+    importer: tuple[str, ...] = ("United States",),
     unresolved: bool = False,
     last_import_at: str | None = None,
     company_name: str = "Acme Fitness",
@@ -39,6 +40,7 @@ def _features(
         hs_codes=hs,
         shipment_dates=(),
         origin_countries=origins,
+        importer_country=importer,
         pols=(),
         pods=(),
         source_row_count=3,
@@ -158,6 +160,91 @@ def test_preview_is_deterministic() -> None:
     assert first.pre_score == second.pre_score
     assert first.recommended_tier == second.recommended_tier
     assert first.reason_codes == second.reason_codes
+
+
+def test_us_importer_with_china_origin_is_never_non_us_target() -> None:
+    # An American importer buying from China must stay routable; the shipment
+    # origin must never drive the NON_US_TARGET exclusion.
+    features = _features(
+        products=("fitness equipment",),
+        hs=("950691",),
+        contacts=(_person(),),
+        origins=("China",),
+        importer=("United States",),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is not ProspectTier.D
+    assert "NON_US_TARGET" not in result.reason_codes
+    assert "TARGET_B_CANDIDATE" in result.reason_codes or (
+        "TARGET_C_CANDIDATE" in result.reason_codes
+    )
+
+
+def test_china_origin_without_importer_country_is_not_d() -> None:
+    # Unknown importer country + China shipment origin: UNKNOWN, not D.
+    features = _features(
+        products=("fitness equipment",),
+        hs=("950691",),
+        contacts=(_person(),),
+        origins=("China",),
+        importer=(),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is not ProspectTier.D
+    assert "NON_US_TARGET" not in result.reason_codes
+    assert "IMPORTER_COUNTRY_UNKNOWN" in result.warning_codes
+
+
+def test_explicit_non_us_importer_is_d() -> None:
+    features = _features(
+        products=("fitness equipment",),
+        hs=("950691",),
+        contacts=(_person(),),
+        importer=("Canada",),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is ProspectTier.D
+    assert "NON_US_TARGET" in result.reason_codes
+
+
+def test_unknown_importer_country_is_c_not_d() -> None:
+    features = _features(
+        products=("fitness equipment",),
+        hs=("950691",),
+        contacts=(_person(),),
+        importer=(),
+    )
+    result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=features)
+
+    assert result.recommended_tier is not ProspectTier.D
+    assert "IMPORTER_COUNTRY_UNKNOWN" in result.warning_codes
+
+
+def test_department_mailbox_does_not_change_country_judgment() -> None:
+    us_features = _features(
+        products=("fitness equipment",),
+        contacts=(_department(),),
+        origins=("China",),
+        importer=("United States",),
+    )
+    canada_features = _features(
+        products=("fitness equipment",),
+        contacts=(_department(),),
+        origins=("China",),
+        importer=("Canada",),
+    )
+    us_result = RoutingPolicyV11().evaluate(criteria=_criteria(), features=us_features)
+    canada_result = RoutingPolicyV11().evaluate(
+        criteria=_criteria(), features=canada_features
+    )
+
+    assert "NON_US_TARGET" not in us_result.reason_codes
+    assert us_result.recommended_tier is not ProspectTier.D
+    assert canada_result.recommended_tier is ProspectTier.D
+    assert "NON_US_TARGET" in canada_result.reason_codes
 
 
 def test_no_target_match_is_not_d() -> None:

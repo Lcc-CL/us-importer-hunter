@@ -590,7 +590,9 @@ async def test_routing_preview_blocks_pending_entity_until_all_resolved(
             if company["tier"] == "blocked"
         ]
         assert blocked_companies
-        assert "ENTITY_REVIEW_PENDING" in blocked_companies[0]["reason_codes"]
+        assert "UNRESOLVED_COMPANY_CONFLICT_BLOCKED" in blocked_companies[0][
+            "reason_codes"
+        ]
 
         merged = await review(client, str(company_decision["decision_id"]), "merge")
         assert merged["decision"] == "manual_merge"

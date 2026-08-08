@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from app.domain.clock import utcnow
 from app.domain.exceptions import DomainError, InvalidStateTransition
 
-ROUTING_RULES_VERSION = "d5c-deterministic-routing-v1"
+ROUTING_RULES_VERSION = "real-routing-v1.1"
 
 
 class ProspectRoutingRunStatus(StrEnum):
@@ -457,6 +457,8 @@ class RoutingFeatureInput:
     product_descriptions: tuple[str, ...]
     hs_codes: tuple[str, ...]
     shipment_dates: tuple[date, ...]
+    # Shipment / supplier origin country (产品/供应商来源国). Never drives
+    # NON_US_TARGET; used only for source-fact completeness and origin matching.
     origin_countries: tuple[str, ...]
     pols: tuple[str, ...]
     pods: tuple[str, ...]
@@ -469,6 +471,8 @@ class RoutingFeatureInput:
     import_amount_raw: str | None = None
     last_import_at: str | None = None
     supplier: tuple[str, ...] = ()
+    # Importer company country (进口商所在国家/地区). Unknown is UNKNOWN, not D.
+    importer_country: tuple[str, ...] = ()
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:

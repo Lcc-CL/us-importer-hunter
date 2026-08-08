@@ -29,12 +29,8 @@ from app.domain.prospect_routing import (
     RoutingSourceCompany,
 )
 from app.domain.repositories import ImportResolutionUnitOfWork
-from app.services.prospect_routing import (
-    DEFAULT_WEIGHTS,
-    DeterministicProspectRoutingScorer,
-    RoutingFeatureProjector,
-)
-from app.services.prospect_routing.scorer import RoutingPolicyV11
+from app.services.prospect_routing import RoutingFeatureProjector
+from app.services.prospect_routing.scorer import V11_WEIGHTS, RoutingPolicyV11
 from app.services.prospect_routing.taxonomy import fitness_equipment_v1
 from app.shared.exceptions import (
     ApplicationConflictError,
@@ -156,7 +152,7 @@ class ProspectRoutingSubmissionWorkflow:
                     configuration_hash=configuration_hash,
                     entity_state_hash=entity_state_hash,
                     criteria=criteria,
-                    weights_snapshot=DEFAULT_WEIGHTS,
+                    weights_snapshot=V11_WEIGHTS,
                 )
                 await uow.prospect_routing.add_run(run)
                 await uow.flush()
@@ -195,7 +191,8 @@ class ProspectRoutingExecutionWorkflow:
     def __init__(self, uow_factory: RoutingUowFactory) -> None:
         self._uow_factory = uow_factory
         self._projector = RoutingFeatureProjector()
-        self._scorer = DeterministicProspectRoutingScorer()
+        self._scorer = RoutingPolicyV11()
+        self._taxonomy = fitness_equipment_v1()
 
     async def execute(
         self,
@@ -230,11 +227,12 @@ class ProspectRoutingExecutionWorkflow:
         for position, source in enumerate(sources, start=1):
             features = self._projector.project(source, mapping=mapping)
             routes.append(
-                self._scorer.score(
+                self._scorer.score_route(
                     routing_run_id=run.id,
                     execution_generation=run.execution_generation,
                     criteria=run.criteria,
                     features=features,
+                    taxonomy=self._taxonomy,
                 )
             )
             if heartbeat is not None and position % 100 == 0:
@@ -370,38 +368,16 @@ class ProspectRoutingQueryWorkflow:
         totals: dict[str, int] = {"A": 0, "B": 0, "C": 0, "D": 0, "blocked": 0}
         companies: list[dict[str, Any]] = []
         for source in sources:
-            if source.company_id in pending_ids:
-                totals["blocked"] += 1
-                companies.append(
-                    {
-                        "company_id": str(source.company_id),
-                        "company_name": source.company_name,
-                        "tier": "blocked",
-                        "pre_score": 0.0,
-                        "reason_codes": ["ENTITY_REVIEW_PENDING"],
-                        "positive_reasons": [],
-                        "unknown_evidence": ["ENTITY_REVIEW_PENDING"],
-                        "explicit_negative": [],
-                        "product_signal": False,
-                        "hs_signal": False,
-                        "import_signal": False,
-                        "contact_quality": 0.0,
-                        "data_completeness": 0.0,
-                        "person_contact_count": 0,
-                        "department_contact_count": 0,
-                        "rules_version": policy.rules_version,
-                    }
-                )
-                continue
             features = projector.project(source, mapping=mapping)
             result = policy.evaluate(
                 criteria=criteria,
                 features=features,
                 taxonomy=taxonomy,
             )
+            evaluator_blocked = result.blocked or source.company_id in pending_ids
             tier = (
                 "blocked"
-                if result.blocked
+                if evaluator_blocked
                 else result.recommended_tier.value
                 if result.recommended_tier is not None
                 else "blocked"
@@ -411,13 +387,31 @@ class ProspectRoutingQueryWorkflow:
             explicit = [
                 code for code in result.reason_codes if code.startswith("EXPLICIT_")
             ]
+            explicit.extend(
+                code
+                for code in result.reason_codes
+                if code
+                in {
+                    "NON_US_TARGET",
+                    "FREIGHT_FORWARDER",
+                    "CUSTOMS_BROKER",
+                    "LOGISTICS_PROVIDER",
+                    "NON_TARGET_INDUSTRY",
+                    "INVALID_COMPANY",
+                    "CLEAR_DATA_CONFLICT",
+                    "USER_EXCLUDED",
+                }
+            )
+            reason_codes = list(result.reason_codes)
+            if source.company_id in pending_ids and not result.blocked:
+                reason_codes.append("UNRESOLVED_COMPANY_CONFLICT_BLOCKED")
             companies.append(
                 {
                     "company_id": str(source.company_id),
                     "company_name": source.company_name,
                     "tier": tier,
                     "pre_score": result.pre_score,
-                    "reason_codes": list(result.reason_codes[:8]),
+                    "reason_codes": reason_codes,
                     "positive_reasons": [
                         code
                         for code in result.reason_codes
@@ -664,7 +658,7 @@ def _configuration_hash(criteria: ProspectRoutingCriteria) -> str:
     payload = {
         "rules_version": ROUTING_RULES_VERSION,
         "criteria": criteria.to_json(),
-        "weights": DEFAULT_WEIGHTS,
+        "weights": V11_WEIGHTS,
     }
     return _sha256(payload)
 

@@ -114,7 +114,7 @@ async function stubRoutingBatchApi(page: Page) {
       body: JSON.stringify({
         routing_run_id: ROUTING_RUN_ID,
         import_session_id: SESSION_ID,
-        rules_version: "d5c-deterministic-routing-v1",
+        rules_version: "real-routing-v1.1",
         current_execution_generation: 1,
         available_generations: [1],
         status: "completed",

@@ -68,7 +68,7 @@ async def test_500_company_export_stays_inside_mvp_budget(
                 {
                     "id": routing_run_id,
                     "import_session_id": session_id,
-                    "rules_version": "d5c-deterministic-routing-v1",
+                    "rules_version": "real-routing-v1.1",
                     "configuration_hash": hashlib.sha256(b"config").hexdigest(),
                     "entity_state_hash": hashlib.sha256(b"state").hexdigest(),
                     "execution_generation": 1,

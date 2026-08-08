@@ -120,7 +120,7 @@ async def _seed_feedback_exports(uow_factory: UowFactory) -> dict[str, UUID]:
                 {
                     "id": routing_run_id,
                     "import_session_id": session_id,
-                    "rules_version": "d5c-deterministic-routing-v1",
+                    "rules_version": "real-routing-v1.1",
                     "configuration_hash": hashlib.sha256(b"d5d2b-config").hexdigest(),
                     "entity_state_hash": hashlib.sha256(b"d5d2b-state").hexdigest(),
                     "execution_generation": 1,
