@@ -151,8 +151,37 @@ A=2 · B=1 · C=39 · D=8 · blocked=2（52 家；entity_pending_count=9）
 
 ### 部署后生产 Preview 快照（只读）
 
-> 部署完成后填充：新 totals、逐家 tier/score 变化，尤其是：
-> TUFF TORQ / PURSUE MOVEMENT / LION HEART GYM / FULFLEX / PRO PAK 与 8 个显式 D。
+部署后（`e5c988e`，`rules_version=real-routing-v1.1`，`preview_valid=True`，
+`entity_pending_count=9`，52 家）：
+
+```text
+修复前：A=2 · B=1 · C=39 · D=8 · blocked=2
+修复后：A=2 · B=1 · C=27 · D=20 · blocked=2
+```
+
+变化全部由 Country 语义修复驱动：
+
+- **A/B 不变**：TUFF TORQ（A 93.95）、PURSUE MOVEMENT（A 76.45）、
+  LION HEART GYM（B 68.45）——美国进口商 + 中国来源国不再被误排除，继续 A/B。
+- **12 家 C → D**：ACCELERATED SYSTEMS、ENCOM WIRELESS、RADIANT TECHNOLOGIES、
+  WEISHAUPT、MATRIX ELECTRONICS、JOBAL MANUFACTURING、MANLUK INDUSTRIES、
+  OCEAN CHOICE INTERNATIONAL、PREMIER PERFORMANCE CANADA、SOREL FORGE、
+  SUN RICH FRESH FOODS、VITA HEALTH PRODUCTS——均为 `国家/地区=加拿大`
+  的显式非美国进口商，新增 `NON_US_TARGET`（explicit non-US importer → D，
+  符合任务语义；这不是缺值惩罚）。
+- **1 家原有 D 叠加 NON_US_TARGET**：EN POINTE ENTERPRISES LTD.（加拿大 + 显式
+  非目标行业），tier 不变（D），reason_codes 增加 `NON_US_TARGET`。
+- **blocked 两家现在有真实 evaluator 输出**：FULFLEX（pre_score 52.74）、
+  PRO PAK（68.95），reason 含 `UNRESOLVED_COMPANY_CONFLICT_BLOCKED`——与 Apply
+  会持久化的路由完全一致（此前 preview 只返回 `ENTITY_REVIEW_PENDING`/0.0）。
+- **未知国家（140 行缺失）未进入 D**：全部保持 C（unknown，不惩罚）。
+- 其余 27 家 C 与原有显式非目标 D（BEAUTY SYSTEMS、BEST SP、BURLINGTON、
+  CNH UK、DY CONCRETE PUMPS、STREAMLINE PACKAGING、THE J M SMUCKER 等）逐家
+  tier/score/reason 与修复前一致。
+
+52 家逐家比对：仅以上 14 家发生 tier/score 变化（12 家 C→D + 2 家 blocked 的
+pre_score 从 0.0 变为真实值）；其余 38 家完全一致。`company_id` 集合前后一致
+（52 = 52）。
 
 ---
 
