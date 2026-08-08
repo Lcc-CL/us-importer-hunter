@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -273,7 +272,17 @@ export function BulkImportPanel({
   const [routeTiers, setRouteTiers] = useState<Record<string, ProspectTier>>({});
   const [routeReasons, setRouteReasons] = useState<Record<string, string>>({});
   const [selectedACompanies, setSelectedACompanies] = useState<string[]>([]);
-  const defaultASelectionAppliedRef = useRef(false);
+  const [bSelection, setBSelection] = useState<Set<string>>(() => new Set());
+  const [aSkipped, setASkipped] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("a_skip") === "1",
+  );
+  const [bSkipped, setBSkipped] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("b_skip") === "1",
+  );
   const [createdBatchId, setCreatedBatchId] = useState<string | null>(
     initialRoutingRunId ? (initialBatchId ?? null) : null,
   );
@@ -360,27 +369,20 @@ export function BulkImportPanel({
     if (["completed", "partial_completed"].includes(saved.status)) {
       const page = await getProspectRoutes(routingRunId);
       setRoutes(page.routes);
-      const eligibleRoutes = page.routes.filter(
-        (route) =>
-          route.effective_tier === "A" &&
-          ["confirmed", "overridden"].includes(route.review_status),
+      // No auto-selection: the operator explicitly checks A companies for deep
+      // analysis and B companies for batch outreach (D5e2h5).
+      const selectable = new Set(
+        page.routes
+          .filter(
+            (route) =>
+              route.effective_tier === "A" &&
+              ["confirmed", "overridden"].includes(route.review_status),
+          )
+          .map((route) => route.company_id),
       );
-      const eligible = new Set(eligibleRoutes.map((route) => route.company_id));
-      if (!defaultASelectionAppliedRef.current && eligibleRoutes.length > 0) {
-        // Default selection: A <= 5 selects all A companies; A > 5 selects the
-        // top-5 by pre_score. Applied once per session; users may deselect.
-        defaultASelectionAppliedRef.current = true;
-        setSelectedACompanies(
-          [...eligibleRoutes]
-            .sort((a, b) => b.pre_score - a.pre_score)
-            .slice(0, 5)
-            .map((route) => route.company_id),
-        );
-      } else {
-        setSelectedACompanies((current) =>
-          current.filter((value) => eligible.has(value)),
-        );
-      }
+      setSelectedACompanies((current) =>
+        current.filter((value) => selectable.has(value)),
+      );
       setRouteTiers((current) => {
         const next = { ...current };
         for (const route of page.routes) {
@@ -422,7 +424,16 @@ export function BulkImportPanel({
           }
         }
       } catch (caught: unknown) {
-        if (active) setError(getClientErrorDetails(caught).message);
+        if (active) {
+          if (
+            caught instanceof Error &&
+            caught.message.includes("not sourced from sales routing")
+          ) {
+            setError(t("batch.notRoutingBatch"));
+          } else {
+            setError(getClientErrorDetails(caught).message);
+          }
+        }
       } finally {
         if (active) {
           setBusy(false);
@@ -442,6 +453,7 @@ export function BulkImportPanel({
     loadRoutedBatchState,
     loadRoutingState,
     restore,
+    t,
   ]);
 
   useEffect(() => {
@@ -754,6 +766,34 @@ export function BulkImportPanel({
     });
   }
 
+  function toggleBCompany(companyId: string) {
+    setBSelection((current) => {
+      const next = new Set(current);
+      if (next.has(companyId)) next.delete(companyId);
+      else next.add(companyId);
+      return next;
+    });
+  }
+
+  function persistBranchSkip(branch: "a" | "b", value: boolean) {
+    const url = new URL(window.location.href);
+    if (value) url.searchParams.set(`${branch}_skip`, "1");
+    else url.searchParams.delete(`${branch}_skip`);
+    window.history.replaceState(null, "", url);
+  }
+
+  function handleSkipABranch() {
+    setASkipped(true);
+    persistBranchSkip("a", true);
+    setError(null);
+  }
+
+  function handleSkipBBranch() {
+    setBSkipped(true);
+    persistBranchSkip("b", true);
+    setError(null);
+  }
+
   /**
    * One-click deep analysis: creates the prospect batch (if needed) and
    * enqueues the worker job in a single action. The worker then advances
@@ -777,6 +817,16 @@ export function BulkImportPanel({
     setBatchBusy(true);
     setError(null);
     try {
+      // Selecting A companies plus this CTA is Leo's confirmation: persist the
+      // route approvals (existing review API) before the batch can start.
+      for (const route of aRoutes) {
+        if (
+          selectedACompanies.includes(route.company_id) &&
+          !["confirmed", "overridden"].includes(route.review_status)
+        ) {
+          await reviewProspectRoute(route.route_id, "confirm", {});
+        }
+      }
       let batchId = createdBatchId;
       if (!batchId) {
         const created = await createRoutedProspectBatch(
@@ -793,6 +843,36 @@ export function BulkImportPanel({
       });
       persistBatchExecution(started.batch_id, started.job_id);
       await loadRoutedBatchState(started.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
+  async function handleConfirmBBatch() {
+    if (
+      !routingRun ||
+      batchBusy ||
+      !backendOk ||
+      !postgresOk ||
+      !workerOk ||
+      !writesConfirmed ||
+      bSelection.size === 0
+    ) return;
+    setBatchBusy(true);
+    setError(null);
+    try {
+      for (const route of bRoutes) {
+        if (
+          bSelection.has(route.company_id) &&
+          !["confirmed", "overridden"].includes(route.review_status)
+        ) {
+          await reviewProspectRoute(route.route_id, "confirm", {});
+        }
+      }
+      // Refresh persisted route state: confirmed B routes unlock Step 7.
+      await loadRoutingState(routingRun.routing_run_id);
     } catch (caught: unknown) {
       setError(getClientErrorDetails(caught).message);
     } finally {
@@ -857,13 +937,13 @@ export function BulkImportPanel({
   const pageCount = Math.max(1, Math.ceil(rowTotal / PAGE_SIZE));
   const selectableACompanyIds = new Set(
     routes
-      .filter(
-        (route) =>
-          route.effective_tier === "A" &&
-          ["confirmed", "overridden"].includes(route.review_status),
-      )
+      .filter((route) => route.effective_tier === "A")
       .map((route) => route.company_id),
   );
+  const aRoutes = routes.filter((route) => route.effective_tier === "A");
+  const bRoutes = routes.filter((route) => route.effective_tier === "B");
+  const aCount = aRoutes.length;
+  const bCount = bRoutes.length;
   const routedBatchStatus = getRoutedBatchStatus(
     routedBatch,
     batchExecution,
@@ -899,14 +979,15 @@ export function BulkImportPanel({
       route.effective_tier === "B" &&
       ["confirmed", "overridden"].includes(route.review_status),
   );
+  const bBranchResolved = hasBRoute || bSkipped || bCount === 0;
   const acceptanceSteps = [
     { label: t("acceptance.step1"), complete: Boolean(session) || Boolean(preflight), unlocked: true, reason: "" },
     { label: t("acceptance.step2"), complete: Boolean(session) || mappingConfirmed, unlocked: Boolean(preflight) || Boolean(session), reason: t("acceptance.unlockPreflight") },
     { label: t("acceptance.step3"), complete: Boolean(session), unlocked: mappingConfirmed || Boolean(session), reason: t("acceptance.unlockMapping") },
     { label: t("acceptance.step4"), complete: resolutionComplete, unlocked: Boolean(session), reason: t("acceptance.unlockSession") },
     { label: t("acceptance.step5"), complete: routingComplete, unlocked: resolutionComplete, reason: t("acceptance.unlockResolution") },
-    { label: t("acceptance.step6"), complete: Boolean(routedBatch || hasBRoute), unlocked: routingComplete, reason: t("acceptance.unlockRouting") },
-    { label: t("acceptance.step7"), complete: Boolean(umailExportBatch || initialUmailExportBatchId), unlocked: routingComplete && hasBRoute, reason: t("acceptance.unlockBRoute") },
+    { label: t("acceptance.step6"), complete: routingComplete && bBranchResolved, unlocked: routingComplete, reason: t("acceptance.unlockRouting") },
+    { label: t("acceptance.step7"), complete: Boolean(umailExportBatch || initialUmailExportBatchId), unlocked: routingComplete && bBranchResolved, reason: t("acceptance.unlockBRoute") },
     { label: t("acceptance.step8"), complete: Boolean(umailResult), unlocked: Boolean(umailExportBatch || initialUmailExportBatchId), reason: t("acceptance.unlockExport") },
     { label: t("acceptance.step9"), complete: Boolean(umailResult?.status.includes("applied")), unlocked: Boolean(umailResult), reason: t("acceptance.unlockPreview") },
     { label: t("acceptance.step10"), complete: false, unlocked: Boolean(umailResult?.status.includes("applied")), reason: t("acceptance.unlockApply") },
@@ -2029,10 +2110,14 @@ export function BulkImportPanel({
                 </div>
 
                 {activeStep === 6 && routes.length ? (
-                  <div
-                    className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white"
-                    data-testid="prospect-routing-routes"
-                  >
+                  <details className="mt-4 rounded-xl border border-slate-200 bg-white">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-600">
+                      {t("bulk.routingRoutesDetail")}
+                    </summary>
+                    <div
+                      className="overflow-x-auto border-t border-slate-200"
+                      data-testid="prospect-routing-routes"
+                    >
                     <table className="min-w-[1100px] divide-y divide-slate-200 text-left text-xs">
                       <thead className="bg-slate-50 text-slate-600">
                         <tr>
@@ -2177,10 +2262,20 @@ export function BulkImportPanel({
                         })}
                       </tbody>
                     </table>
-                  </div>
+                    </div>
+                  </details>
                 ) : null}
 
                 {activeStep === 7 ? (
+                  <>
+                  {bCount === 0 ? (
+                    <p
+                      className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                      data-testid="step7-no-b"
+                    >
+                      {t("bulk.routingNoB")}
+                    </p>
+                  ) : null}
                   <UmailExportPanel
                     campaign={campaignName}
                     health={health}
@@ -2190,10 +2285,134 @@ export function BulkImportPanel({
                     routingRunId={routingRun.routing_run_id}
                     onBatchChange={setUmailExportBatch}
                   />
+                  </>
                 ) : null}
 
                 {activeStep === 6 ? (
                   <>
+                <div
+                  className="rounded-2xl border border-indigo-200 bg-white p-4"
+                  data-testid="routing-split"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-800">
+                    {t("bulk.routingSplitTitle")}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {t("bulk.routingSplitIntro", {
+                      a: aCount,
+                      b: bCount,
+                      c: routes.filter((route) => route.effective_tier === "C").length,
+                      d: routes.filter((route) => route.effective_tier === "D").length,
+                    })}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {t("bulk.routingSplitLegend")}
+                  </p>
+                </div>
+
+                <div
+                  className="mt-4 rounded-2xl border border-emerald-200 bg-white p-4"
+                  data-testid="routing-branch-a"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {t("bulk.routingBranchA")}
+                    </p>
+                    <span className="text-xs text-slate-500" data-testid="a-selection-count">
+                      {t("bulk.routingPriorityCustomers", { count: aCount })} ·{" "}
+                      {t("bulk.routingSelectedForDeep", {
+                        count: selectedACompanies.length,
+                      })}
+                    </span>
+                  </div>
+                  {aRoutes.length ? (
+                    <ul className="mt-3 space-y-2" data-testid="a-company-list">
+                      {aRoutes.map((route) => (
+                        <li
+                          className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                          key={route.company_id}
+                        >
+                          <input
+                            aria-label={`${t("bulk.routingSelectA")} ${route.company_name}`}
+                            checked={selectedACompanies.includes(route.company_id)}
+                            data-testid={`a-select-${route.company_id}`}
+                            onChange={() => toggleACompany(route.company_id)}
+                            type="checkbox"
+                          />
+                          <span className="font-semibold text-slate-800">
+                            {route.company_name}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            score {route.pre_score.toFixed(1)}
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            {["confirmed", "overridden"].includes(route.review_status)
+                              ? t("bulk.routingReviewStatus.confirmed")
+                              : t("bulk.routingReviewStatus.suggested")}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {aSkipped ? (
+                    <p className="mt-3 text-xs font-medium text-emerald-800" data-testid="a-skip-saved">
+                      {t("bulk.routingSkipASaved")}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div
+                  className="mt-4 rounded-2xl border border-sky-200 bg-white p-4"
+                  data-testid="routing-branch-b"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {t("bulk.routingBranchB")}
+                    </p>
+                    <span className="text-xs text-slate-500">
+                      {t("bulk.routingPriorityCustomers", { count: bCount })}
+                    </span>
+                  </div>
+                  {bRoutes.length ? (
+                    <ul className="mt-3 space-y-2" data-testid="b-company-list">
+                      {bRoutes.map((route) => (
+                        <li
+                          className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                          key={route.company_id}
+                        >
+                          <input
+                            aria-label={`${t("bulk.routingSelectB")} ${route.company_name}`}
+                            checked={bSelection.has(route.company_id)}
+                            data-testid={`b-select-${route.company_id}`}
+                            onChange={() => toggleBCompany(route.company_id)}
+                            type="checkbox"
+                          />
+                          <span className="font-semibold text-slate-800">
+                            {route.company_name}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            score {route.pre_score.toFixed(1)}
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            {["confirmed", "overridden"].includes(route.review_status)
+                              ? t("bulk.routingReviewStatus.confirmed")
+                              : t("bulk.routingReviewStatus.suggested")}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-xs text-slate-500" data-testid="b-no-companies">
+                      {t("bulk.routingNoB")}
+                    </p>
+                  )}
+                  {bSkipped ? (
+                    <p className="mt-3 text-xs font-medium text-emerald-800" data-testid="b-skip-saved">
+                      {t("bulk.routingSkipBSaved")}
+                    </p>
+                  ) : null}
+                </div>
+
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   {!batchStarted ? (
                     <>
@@ -2213,13 +2432,29 @@ export function BulkImportPanel({
                         onClick={() => void handleStartDeepAnalysis()}
                         type="button"
                       >
-                        {t("bulk.routingDeepAnalysis", {
-                          count: selectedACompanies.length,
+                        {t("bulk.routingDeepAnalysisRatio", {
+                          selected: selectedACompanies.length,
+                          total: aCount,
                         })}
                       </button>
-                      <span className="text-xs text-slate-500">
-                        {t("bulk.routingBatchLimit")}
-                      </span>
+                      {selectedACompanies.length === 0 && !aSkipped ? (
+                        <span
+                          className="text-xs text-slate-500"
+                          data-testid="a-selection-hint"
+                        >
+                          {t("bulk.routingASelectionHint")}
+                        </span>
+                      ) : null}
+                      {!aSkipped ? (
+                        <button
+                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                          data-testid="a-skip-button"
+                          onClick={() => handleSkipABranch()}
+                          type="button"
+                        >
+                          {t("bulk.routingSkipA")}
+                        </button>
+                      ) : null}
                       {deepAnalysisProviderUnavailable ? (
                         <p
                           className="text-xs font-medium text-amber-800"
@@ -2240,6 +2475,44 @@ export function BulkImportPanel({
                       })}
                     </p>
                   )}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {bRoutes.length ? (
+                    <>
+                      <button
+                        className="rounded-xl bg-sky-800 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        data-testid="confirm-b-batch"
+                        disabled={
+                          !backendOk ||
+                          !postgresOk ||
+                          !workerOk ||
+                          !writesConfirmed ||
+                          batchBusy ||
+                          bSelection.size === 0 ||
+                          bSkipped
+                        }
+                        onClick={() => void handleConfirmBBatch()}
+                        type="button"
+                      >
+                        {t("bulk.routingConfirmB", { count: bSelection.size })}
+                      </button>
+                      {bSelection.size === 0 && !bSkipped ? (
+                        <span className="text-xs text-slate-500" data-testid="b-selection-hint">
+                          {t("bulk.routingBSelectionHint")}
+                        </span>
+                      ) : null}
+                      {!bSkipped ? (
+                        <button
+                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                          data-testid="b-skip-button"
+                          onClick={() => handleSkipBBranch()}
+                          type="button"
+                        >
+                          {t("bulk.routingSkipB")}
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
                 {createdBatchId && routedBatch ? (
                   <div

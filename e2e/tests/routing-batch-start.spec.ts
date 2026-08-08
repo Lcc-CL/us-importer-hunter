@@ -471,3 +471,248 @@ test("routing batch explicit start, review gate, resume, and refresh recovery", 
   expect(guard.duplicateKeyWarnings()).toEqual([]);
   expect(guard.problems()).toEqual([]);
 });
+
+const B_COMPANY_ID = "b0000000-0000-4000-8000-00000000000b";
+
+async function stubStep7UnlockApi(page: Page) {
+  let bConfirmed = false;
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "sender_profile_v1",
+      JSON.stringify({
+        sender_name: "Alex Morgan",
+        sender_company: "Harbor Bridge Logistics",
+        value_proposition: "We simplify Asia-to-US freight.",
+      }),
+    );
+  });
+  await page.route("**/api/v1/health/runtime", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: "fake",
+        model: "fake-static-v1",
+        research_provider: "fake",
+        research_model: "fake-research-v1",
+        draft_provider: "fake",
+        draft_model: "fake-static-v1",
+        draft_available: false,
+        email_send_enabled: false,
+        environment: "test",
+        real_data_gate: "blocked",
+      }),
+    }),
+  );
+  await page.route(`**/api/v1/import-sessions/${SESSION_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        session_id: SESSION_ID,
+        source: "netease_foreign_trade",
+        original_filename: "routing.csv",
+        file_type: "csv",
+        file_size_bytes: 1024,
+        file_sha256: "a".repeat(64),
+        encoding: "utf-8",
+        status: "completed",
+        total_rows: 12,
+        accepted_rows: 12,
+        invalid_rows: 0,
+        duplicate_rows: 0,
+        mapping_json: { logical_fields: {} },
+        error_summary: null,
+        created_at: "2026-08-02T12:00:00Z",
+        completed_at: "2026-08-02T12:00:01Z",
+      }),
+    }),
+  );
+  await page.route(`**/api/v1/import-sessions/${SESSION_ID}/rows**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ rows: [], page: 1, limit: 20, total: 0 }),
+    }),
+  );
+  await page.route(`**/api/v1/import-sessions/${SESSION_ID}/resolution`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        import_session_id: SESSION_ID,
+        resolution_status: "completed",
+        processing_status: "completed",
+        total_rows: 12,
+        processed_rows: 12,
+        companies_created: 2,
+        companies_reused: 0,
+        company_reviews_required: 0,
+        contacts_created: 2,
+        contacts_reused: 0,
+        company_contacts_created: 2,
+        canonical_company_count: 2,
+        canonical_contact_count: 2,
+        invalid_rows: 0,
+        failed_rows: 0,
+        started_at: "2026-08-02T12:00:01Z",
+        completed_at: "2026-08-02T12:00:02Z",
+        error_summary: null,
+        job_id: null,
+        attempt_count: 1,
+        max_attempts: 3,
+        heartbeat_at: null,
+      }),
+    }),
+  );
+  await page.route(`**/api/v1/import-sessions/${SESSION_ID}/entity-decisions**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ decisions: [], page: 1, limit: 100, total: 0 }),
+    }),
+  );
+  await page.route(`**/api/v1/prospect-routing-runs/${ROUTING_RUN_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        routing_run_id: ROUTING_RUN_ID,
+        import_session_id: SESSION_ID,
+        rules_version: "real-routing-v1.1",
+        current_execution_generation: 1,
+        available_generations: [1],
+        status: "completed",
+        total_companies: 2,
+        routed_companies: 2,
+        blocked_companies: 0,
+        tier_a_count: 1,
+        tier_b_count: 1,
+        tier_c_count: 0,
+        tier_d_count: 0,
+        criteria: {
+          target_product_keywords: ["fitness"],
+          target_hs_codes: ["950691"],
+          preferred_origin_countries: [],
+          preferred_pol: [],
+          preferred_pod: [],
+          campaign_name: "D5e2h5 step7",
+          notes: null,
+        },
+        weights_snapshot: {},
+        processing_status: "completed",
+        job_id: null,
+        attempt_count: 1,
+        max_attempts: 3,
+        heartbeat_at: null,
+        error_summary: null,
+        created_at: "2026-08-02T12:00:02Z",
+        started_at: "2026-08-02T12:00:02Z",
+        completed_at: "2026-08-02T12:00:03Z",
+        updated_at: "2026-08-02T12:00:03Z",
+      }),
+    }),
+  );
+  const routeRow = (companyId: string, name: string, tier: "A" | "B") => ({
+    route_id: `${companyId}-route`,
+    routing_run_id: ROUTING_RUN_ID,
+    execution_generation: 1,
+    company_id: companyId,
+    company_name: name,
+    pre_score: tier === "A" ? 88 : 55,
+    recommended_tier: tier,
+    effective_tier: tier,
+    feature_snapshot: {},
+    reason_codes: [tier === "A" ? "TARGET_A_CANDIDATE" : "TARGET_B_CANDIDATE"],
+    warning_codes: [],
+    review_status:
+      tier === "B" && bConfirmed
+        ? "confirmed"
+        : "suggested",
+    override_reason: null,
+    reviewed_by: bConfirmed && tier === "B" ? "Browser Reviewer" : null,
+    reviewed_at: bConfirmed && tier === "B" ? "2026-08-02T12:00:05Z" : null,
+    contact_count: 1,
+    has_usable_contact: true,
+    has_usable_email: true,
+    preferred_role_category: "procurement",
+    created_at: "2026-08-02T12:00:03Z",
+    updated_at: "2026-08-02T12:00:03Z",
+  });
+  await page.route(`**/api/v1/prospect-routing-runs/${ROUTING_RUN_ID}/routes**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        routing_run_id: ROUTING_RUN_ID,
+        execution_generation: 1,
+        routes: [
+          routeRow(COMPANY_ID, "Atlas Priority Fitness", "A"),
+          routeRow(B_COMPANY_ID, "Beta Batch Fitness", "B"),
+        ],
+        page: 1,
+        limit: 200,
+        total: 2,
+      }),
+    }),
+  );
+  await page.route(`**/api/v1/prospect-routes/*/review`, async (route) => {
+    bConfirmed = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        route_id: `${B_COMPANY_ID}-route`,
+        routing_run_id: ROUTING_RUN_ID,
+        execution_generation: 1,
+        company_id: B_COMPANY_ID,
+        company_name: "Beta Batch Fitness",
+        pre_score: 55,
+        recommended_tier: "B",
+        effective_tier: "B",
+        feature_snapshot: {},
+        reason_codes: ["TARGET_B_CANDIDATE"],
+        warning_codes: [],
+        review_status: "confirmed",
+        override_reason: null,
+        reviewed_by: "Browser Reviewer",
+        reviewed_at: "2026-08-02T12:00:05Z",
+        contact_count: 1,
+        has_usable_contact: true,
+        has_usable_email: true,
+        preferred_role_category: "procurement",
+        created_at: "2026-08-02T12:00:03Z",
+        updated_at: "2026-08-02T12:00:05Z",
+      }),
+    });
+  });
+}
+
+test("B confirmation unlocks Step 7 without touching A", async ({ page }) => {
+  const guard = attachConsoleGuard(page);
+  await stubStep7UnlockApi(page);
+  await page.goto(
+    `/?step=6&import_session_id=${SESSION_ID}&routing_run_id=${ROUTING_RUN_ID}`,
+  );
+
+  await expect(page.getByTestId("routing-split")).toBeVisible();
+  await expect(page.getByTestId("a-selection-count")).toContainText("优先客户：1 家");
+  await expect(page.getByTestId("routing-branch-b")).toContainText("Beta Batch Fitness");
+  // Step 7 is locked until a B route is human-confirmed.
+  await expect(page.getByTestId("acceptance-step-7")).toBeDisabled();
+
+  await page
+    .getByRole("checkbox", { name: /加入批量开发 Beta Batch Fitness/ })
+    .check();
+  await expect(page.getByTestId("confirm-b-batch")).toContainText("1");
+  await page.getByTestId("confirm-b-batch").click();
+
+  // Route confirmation is persisted; Step 7 unlocks and is navigable.
+  await expect(page.getByTestId("acceptance-step-7")).toBeEnabled();
+  await page.getByTestId("acceptance-step-7").click();
+  await expect(page.getByTestId("umail-export-panel")).toBeVisible();
+  await expect(page.getByTestId("global-error")).not.toBeVisible();
+
+  expect(guard.duplicateKeyWarnings()).toEqual([]);
+  expect(guard.problems()).toEqual([]);
+});

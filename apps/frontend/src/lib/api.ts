@@ -1077,6 +1077,10 @@ const KNOWN_ERROR_MESSAGES: Record<string, string> = {
   unexpected_client_error: "发生意外错误，请稍后重试。",
   provider_unavailable:
     "Draft Provider 尚未配置，因此深度分析暂不能启动。",
+  ROUTING_BATCH_COMPANIES_REQUIRED: "请选择至少 1 家优先客户。",
+  ROUTING_BATCH_COMPANIES_DUPLICATED: "所选客户重复，请重新选择。",
+  ROUTING_BATCH_LIMIT_EXCEEDED: "深度分析每批最多 5 家。",
+  ROUTING_BATCH_COMPANY_OUTSIDE_RUN: "所选公司不属于当前路由结果。",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
