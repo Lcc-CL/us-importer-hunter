@@ -21,7 +21,7 @@ from app.domain.clock import utcnow
 from app.domain.import_resolution import ImportJobType, ImportProcessingJob
 from app.domain.prospect_routing import ProspectRoutingCriteria, ProspectRoutingRun
 from app.main import create_app
-from app.services.prospect_routing import DEFAULT_WEIGHTS
+from app.services.prospect_routing.scorer import V11_WEIGHTS
 from app.workflows.import_resolution import (
     ImportEntityResolutionWorkflow,
     ImportProcessingJobCoordinator,
@@ -342,7 +342,10 @@ async def test_routing_recalculation_review_and_batch_do_not_start_deep_processi
         assert len(routes) == 2
         blocked = next(route for route in routes if route["review_status"] == "blocked")
         beta = next(route for route in routes if route["review_status"] != "blocked")
-        assert beta["recommended_tier"] == "A"
+        assert beta["recommended_tier"] == "C"
+        assert "TARGET_RELEVANCE_UNKNOWN" in cast(
+            list[str], beta["reason_codes"]
+        )
         assert "UNRESOLVED_COMPANY_CONFLICT_BLOCKED" in cast(
             list[str], blocked["reason_codes"]
         )
@@ -419,7 +422,7 @@ async def test_routing_recalculation_review_and_batch_do_not_start_deep_processi
 
         refreshed_routes = await client.get(
             f"/api/v1/prospect-routing-runs/{routing_run_id}/routes",
-            params={"tier": "A", "has_contact": True, "limit": 20},
+            params={"tier": "D", "has_contact": True, "limit": 20},
         )
         assert refreshed_routes.json()["execution_generation"] == 2
         a_routes = cast(list[dict[str, object]], refreshed_routes.json()["routes"])
@@ -428,7 +431,10 @@ async def test_routing_recalculation_review_and_batch_do_not_start_deep_processi
         generation_two_unblocked = next(
             route for route in a_routes if route["company_id"] == blocked["company_id"]
         )
-        assert generation_two_unblocked["recommended_tier"] == "A"
+        assert generation_two_unblocked["recommended_tier"] == "D"
+        assert "NON_TARGET_INDUSTRY" in cast(
+            list[str], generation_two_unblocked["reason_codes"]
+        )
         assert "UNRESOLVED_COMPANY_CONFLICT_BLOCKED" not in cast(
             list[str], generation_two_unblocked["reason_codes"]
         )
@@ -590,7 +596,7 @@ async def test_mixed_abcd_and_blocked_fixture_has_auditable_statistics(
             run_body["tier_c_count"],
             run_body["tier_d_count"],
             run_body["blocked_companies"],
-        ) == (2, 2, 2, 2, 2)
+        ) == (0, 0, 6, 2, 2)
 
         routes_response = await client.get(
             f"/api/v1/prospect-routing-runs/{routing_run_id}/routes",
@@ -604,20 +610,23 @@ async def test_mixed_abcd_and_blocked_fixture_has_auditable_statistics(
             for tier in ("A", "B", "C", "D")
         }
         assert {tier: len(items) for tier, items in grouped.items()} == {
-            "A": 2,
-            "B": 2,
-            "C": 2,
+            "A": 0,
+            "B": 0,
+            "C": 6,
             "D": 2,
         }
         blocked_routes = [
             route for route in routes if route["review_status"] == "blocked"
         ]
         assert len(blocked_routes) == 2
-        for tier, items in grouped.items():
-            assert all(
-                f"ROUTED_{tier}" in cast(list[str], route["reason_codes"])
-                for route in items
-            )
+        assert all(
+            "TARGET_RELEVANCE_UNKNOWN" in cast(list[str], route["reason_codes"])
+            for route in grouped["C"]
+        )
+        assert all(
+            "NON_TARGET_INDUSTRY" in cast(list[str], route["reason_codes"])
+            for route in grouped["D"]
+        )
         assert all(
             "UNRESOLVED_COMPANY_CONFLICT_BLOCKED"
             in cast(list[str], route["reason_codes"])
@@ -633,7 +642,7 @@ async def test_routing_job_stale_recovery_and_retry_exhaustion(
 
     run = ProspectRoutingRun.create(
         import_session_id=session_id,
-        rules_version="d5c-deterministic-routing-v1",
+        rules_version="real-routing-v1.1",
         configuration_hash="a" * 64,
         entity_state_hash="b" * 64,
         criteria=ProspectRoutingCriteria(
@@ -645,7 +654,7 @@ async def test_routing_job_stale_recovery_and_retry_exhaustion(
             campaign_name=None,
             notes=None,
         ),
-        weights_snapshot=DEFAULT_WEIGHTS,
+        weights_snapshot=V11_WEIGHTS,
     )
     stale_at = utcnow() - timedelta(minutes=5)
     job = ImportProcessingJob.create(

@@ -134,7 +134,11 @@ const NETEASE_MAPPING_GROUPS: MappingGroupDefinition[] = [
       { key: "quantity", labelZh: "数量", labelEn: "Quantity" },
       { key: "weight", labelZh: "重量", labelEn: "Weight" },
       { key: "amount", labelZh: "金额", labelEn: "Amount" },
-      { key: "origin_country", labelZh: "原产国", labelEn: "Origin country" },
+      {
+        key: "origin_country",
+        labelZh: "产品/供应商来源国",
+        labelEn: "Shipment/Supplier origin country",
+      },
     ],
   },
   {
@@ -142,7 +146,11 @@ const NETEASE_MAPPING_GROUPS: MappingGroupDefinition[] = [
     labelEn: "Address and region",
     fields: [
       { key: "address", labelZh: "公司地址", labelEn: "Company address" },
-      { key: "country", labelZh: "国家 / 地区", labelEn: "Country / region" },
+      {
+        key: "country",
+        labelZh: "进口商所在国家/地区",
+        labelEn: "Importer company country",
+      },
       { key: "phone", labelZh: "公司电话", labelEn: "Company phone" },
       { key: "pol", labelZh: "起运港", labelEn: "Port of loading" },
       { key: "pod", labelZh: "目的港", labelEn: "Port of discharge" },

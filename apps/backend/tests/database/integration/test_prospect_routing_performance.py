@@ -215,9 +215,9 @@ async def test_route_500_companies_5000_contacts_10000_rows_with_conflicts(
     assert body["total_companies"] == 500
     assert body["routed_companies"] == 450
     assert body["blocked_companies"] == 50
-    assert body["tier_a_count"] == 450
+    assert body["tier_a_count"] == 0
     assert body["tier_b_count"] == 0
-    assert body["tier_c_count"] == 0
+    assert body["tier_c_count"] == 450
     assert body["tier_d_count"] == 0
 
     async with uow_factory() as uow:

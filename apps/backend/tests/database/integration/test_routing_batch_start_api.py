@@ -51,11 +51,41 @@ from tests.database.integration.test_prospect_batch_api import (
     create_discovery_company,
     run_pending_job,
 )
-from tests.database.integration.test_prospect_routing_api import (
-    MAPPING,
-    company_rows,
-    make_runner,
+from tests.database.integration.test_prospect_routing_api import make_runner
+
+FITNESS_MAPPING = (
+    '{"company_name":"company","external_company_id":"external_id",'
+    '"website":"website","address":"address","company_type":"company_type",'
+    '"country":"country","contact_name":"contact","contact_email":"email",'
+    '"contact_title":"title","product_description":"product","hs_code":"hs",'
+    '"shipment_date":"date","origin_country":"origin","pol":"pol","pod":"pod",'
+    '"amount":"amount","last_import_at":"last_import"}'
 )
+FITNESS_HEADER = (
+    "company,external_id,website,address,company_type,country,contact,email,title,"
+    "product,hs,date,origin,pol,pod,amount,last_import"
+)
+
+
+def fitness_company_rows(
+    *,
+    name: str,
+    external_id: str,
+    website: str,
+    address: str,
+    contact: str,
+    email: str,
+    title: str,
+) -> list[str]:
+    # A-tier under real-routing-v1.1: fitness target + US importer country +
+    # China shipment origin + import value + recency + usable contact.
+    return [
+        (
+            f"{name},{external_id},{website},{address},importer,United States,"
+            f"{contact},{email},{title},fitness equipment,950691,2026-07-01,"
+            "China,Shanghai,Los Angeles,118000,2026-07-01"
+        )
+    ]
 
 
 async def make_client(
@@ -86,7 +116,7 @@ async def create_confirmed_routing_batch(
     for index, name in enumerate(names, start=1):
         identity = hashlib.sha256(name.encode()).hexdigest()[:12]
         rows.extend(
-            company_rows(
+            fitness_company_rows(
                 name=name,
                 external_id=f"D5D1-{identity}",
                 website=f"d5d1-{identity}.example",
@@ -98,13 +128,12 @@ async def create_confirmed_routing_batch(
         )
     uploaded = await client.post(
         "/api/v1/import-sessions",
-        data={"source": "d5d1_routing_start", "mapping": MAPPING},
+        data={"source": "d5d1_routing_start", "mapping": FITNESS_MAPPING},
         files={
             "file": (
                 "d5d1-routing.csv",
                 (
-                    "company,external_id,website,address,company_type,contact,email,title,"
-                    "product,hs,date,origin,pol,pod\n" + "\n".join(rows)
+                    f"{FITNESS_HEADER}\n" + "\n".join(rows)
                 ).encode(),
                 "text/csv",
             )
@@ -120,8 +149,8 @@ async def create_confirmed_routing_batch(
         f"/api/v1/import-sessions/{session_id}/routing-runs",
         json={
             "criteria": {
-                "target_product_keywords": ["hardware"],
-                "target_hs_codes": ["8205"],
+                "target_product_keywords": ["fitness", "gym equipment"],
+                "target_hs_codes": ["9506", "950691"],
                 "preferred_origin_countries": ["China"],
                 "preferred_pol": ["Shanghai"],
                 "preferred_pod": ["Los Angeles"],

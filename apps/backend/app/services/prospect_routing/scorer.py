@@ -73,6 +73,14 @@ ASIA_COUNTRIES = frozenset(
 )
 
 ROUTING_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "country": (
+        "country",
+        "company_country",
+        "国家",
+        "国家/地区",
+        "地区",
+        "公司国家",
+    ),
     "product_description": (
         "product_description",
         "product",
@@ -139,6 +147,7 @@ class RoutingFeatureProjector:
         products: list[str] = []
         hs_codes: list[str] = []
         shipment_dates: list[date] = []
+        importer_countries: list[str] = []
         origins: list[str] = []
         pols: list[str] = []
         pods: list[str] = []
@@ -150,6 +159,7 @@ class RoutingFeatureProjector:
             fields = _fields(row.raw_payload)
             products.extend(_split(_value(fields, mapping, "product_description")))
             hs_codes.extend(_split(_value(fields, mapping, "hs_code")))
+            importer_countries.extend(_split(_value(fields, mapping, "country")))
             origins.extend(_split(_value(fields, mapping, "origin_country")))
             pols.extend(_split(_value(fields, mapping, "pol")))
             pods.extend(_split(_value(fields, mapping, "pod")))
@@ -184,6 +194,7 @@ class RoutingFeatureProjector:
             hs_codes=_dedupe(hs_codes),
             shipment_dates=tuple(shipment_dates),
             origin_countries=_dedupe(origins),
+            importer_country=_dedupe(importer_countries),
             pols=_dedupe(pols),
             pods=_dedupe(pods),
             source_row_count=len(company.rows),
@@ -541,6 +552,42 @@ class RoutingPolicyV11:
 
     rules_version = V11_RULES_VERSION
 
+    def score_route(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        criteria: ProspectRoutingCriteria,
+        features: RoutingFeatureInput,
+        taxonomy: TargetTaxonomyConfig | None = None,
+    ) -> ProspectRoute:
+        """Single evaluator entry used by Routing Apply (persisted ProspectRoute).
+
+        Identical decision to `evaluate()` (the same core RoutingPreview reads);
+        this only wraps the result into a persisted route.
+        """
+        result = self.evaluate(
+            criteria=criteria,
+            features=features,
+            taxonomy=taxonomy,
+        )
+        return ProspectRoute.create(
+            routing_run_id=routing_run_id,
+            execution_generation=execution_generation,
+            company_id=features.company_id,
+            company_name=features.company_name,
+            pre_score=result.pre_score,
+            recommended_tier=result.recommended_tier,
+            feature_snapshot_json=result.feature_snapshot,
+            reason_codes=result.reason_codes,
+            warning_codes=result.warning_codes,
+            blocked=result.blocked,
+            contact_count=result.contact_count,
+            has_usable_contact=result.has_usable_contact,
+            has_usable_email=result.has_usable_email,
+            preferred_role_category=result.preferred_role_category,
+        )
+
     def evaluate(
         self,
         *,
@@ -593,6 +640,8 @@ class RoutingPolicyV11:
             warnings.append("IMPORT_RECENCY_UNKNOWN")
         if not features.import_amount_raw:
             warnings.append("IMPORT_VALUE_UNKNOWN")
+        if not features.importer_country:
+            warnings.append("IMPORTER_COUNTRY_UNKNOWN")
 
         product_ratio = _keyword_match_ratio(
             criteria.target_product_keywords,
@@ -730,6 +779,8 @@ class RoutingPolicyV11:
             "product_match_score": round(product_ratio * 100, 2),
             "hs_code_match_score": round(hs_ratio * 100, 2),
             "fitness_signal": fitness_signal,
+            "importer_country": list(features.importer_country),
+            "observed_origin_countries": list(features.origin_countries),
             "import_amount_raw": features.import_amount_raw,
             "last_import_at": features.last_import_at,
             "contact_count": len(features.contacts),
@@ -778,8 +829,10 @@ class RoutingPolicyV11:
             if "broker" in joined or "报关" in joined:
                 return "CUSTOMS_BROKER"
             return "LOGISTICS_PROVIDER"
-        if features.origin_countries:
-            normalized = {_normalize(value) for value in features.origin_countries}
+        # NON_US_TARGET is an importer-identity judgment and may only come from
+        # the importer company country, never from shipment/supplier origin.
+        if features.importer_country:
+            normalized = {_normalize(value) for value in features.importer_country}
             if not any(
                 token in normalized
                 for token in ("us", "usa", "united states", "美国")

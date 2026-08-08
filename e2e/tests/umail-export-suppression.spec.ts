@@ -153,7 +153,7 @@ async function stubApi(page: Page) {
         processing_job_id: null,
         processing_status: "completed",
         status: "completed",
-        rules_version: "d5c-deterministic-routing-v1",
+        rules_version: "real-routing-v1.1",
         execution_generation: 1,
         current_execution_generation: 1,
         available_generations: [1],
