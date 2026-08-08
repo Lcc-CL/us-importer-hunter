@@ -108,17 +108,22 @@ Step 5 主界面已收敛为「客户开发优先级」：Campaign 摘要 + 一�
 部署后 production 只读 smoke（`https://usimporterhunter.zeabur.app`）：
 
 - frontend 200、`/api/v1/health` ok
-- 生产 ImportSession 只读：pending entity = 9（未变）
-- 生产 Preview（只读）：`real-routing-v1.1`、`preview_valid=True`、
-  A=2 · B=1 · C=27 · D=20 · blocked=2（与 D5e2g.2 部署后一致，Preview 数据未变）
+- 生产 ImportSession 只读：**pending entity = 0** —— 9 条 Entity Review 已在
+  D5e2g.2 与 D5e2h0 之间由 Leo 完成（2 条 company `manual_merge` + 3 条 company
+  `keep_separate` + 5 条 contact `keep_separate`），非本系统/本轮执行。
+- 生产 Preview（只读，D5e2h0 preset 参数，无 HS/POL/POD）：
+  `real-routing-v1.1`、`preview_valid=True`、**A=2 · B=1 · C=31 · D=21 · blocked=0**
+  （52 家全部出 tier；此前 blocked 的 FULFLEX→C 60.24、PRO PAK→C 68.95；
+  TUFF TORQ A 93.95、PURSUE MOVEMENT A 76.45、LION HEART GYM B 68.45 不变）。
 - ProspectRoute=0、Opportunity=0、Research=0、Umail=0、邮件=0
 
 ---
 
 ## 7. 下一步 Leo 需要点击什么
 
-1. 完成剩余 **9 条 Entity Review**（Step 4）。
-2. 进入 Step 5，查看 Campaign 摘要（无需填写任何字段）。
-3. 点击「生成开发优先级预览」，核对 A/B/C/D/Blocked。
+1. Step 4 已全部完成（pending=0，Leo 已人工复核）。
+2. 进入 Step 5，查看 Campaign 摘要（无需填写任何字段，参数由 preset 自动推导）。
+3. 点击「生成开发优先级预览」，核对 A/B/C/D（当前生产 Preview 为
+   A=2 · B=1 · C=31 · D=21）。
 4. 确认无误后启用真实数据开关，点击「生成客户优先级」并在确认框确认——**必须由
    Leo 本人执行**，系统不会自动 Apply、不会发送邮件。
