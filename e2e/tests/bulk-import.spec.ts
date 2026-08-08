@@ -140,10 +140,10 @@ test("bulk import entity resolution review survives refresh", async ({
     .getByTestId("prospect-routing-routes")
     .getByRole("checkbox", { name: /D5B1 E2E Atlas/ })
     .check();
-  await page.getByTestId("prospect-routing-create-batch").click();
-  await expect(page.getByTestId("prospect-routing-batch-created")).toContainText(
-    "Batch 已创建，深度处理尚未启动",
-  );
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByTestId("deep-analysis-start").click();
+  await expect(page.getByTestId("prospect-routing-batch-created")).toBeVisible();
+  await expect(page.getByText("深度处理已启动", { exact: false })).toBeVisible();
 
   expect(guard.duplicateKeyWarnings()).toEqual([]);
   expect(guard.problems()).toEqual([]);

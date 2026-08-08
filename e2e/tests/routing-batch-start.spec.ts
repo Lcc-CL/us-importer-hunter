@@ -329,7 +329,8 @@ test("routing batch explicit start, review gate, resume, and refresh recovery", 
   );
 
   const batch = page.getByTestId("prospect-routing-batch-created");
-  await expect(batch).toContainText("来源：销售路由 · generation 1");
+  await expect(batch).toContainText("来源：销售路由");
+  await expect(batch).toContainText("generation 1");
   await expect(batch.getByTestId("prospect-routing-batch-status")).toContainText(
     "尚未启动",
   );

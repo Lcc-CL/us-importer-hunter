@@ -91,6 +91,15 @@ const ROUTING_RETRYABLE_ERRORS = new Set([
   "PIPELINE_UNEXPECTED_ERROR",
 ]);
 
+function formatBatchTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 interface BulkImportPanelProps {
   initialSessionId?: string;
   initialRoutingRunId?: string;
@@ -722,47 +731,40 @@ export function BulkImportPanel({
     });
   }
 
-  async function handleCreateRoutingBatch() {
+  /**
+   * One-click deep analysis: creates the prospect batch (if needed) and
+   * enqueues the worker job in a single action. The worker then advances
+   * research → scoring → contact → decision maker → draft automatically;
+   * the only pauses are evidence review, entity/DM ambiguity, provider
+   * failure, and final draft approval.
+   */
+  async function handleStartDeepAnalysis() {
     if (
       !routingRun ||
-      routingBusy ||
-      !backendOk ||
-      !postgresOk ||
-      !workerOk ||
-      !writesConfirmed ||
-      !selectedACompanies.length
-    ) return;
-    setRoutingBusy(true);
-    setError(null);
-    try {
-      const created = await createRoutedProspectBatch(
-        routingRun.routing_run_id,
-        selectedACompanies,
-      );
-      setCreatedBatchId(created.batch_id);
-      persistBatchExecution(created.batch_id);
-      await loadRoutedBatchState(created.batch_id);
-    } catch (caught: unknown) {
-      setError(getClientErrorDetails(caught).message);
-    } finally {
-      setRoutingBusy(false);
-    }
-  }
-
-  async function handleStartRoutedBatch() {
-    if (
-      !createdBatchId ||
       batchBusy ||
       !backendOk ||
       !postgresOk ||
       !workerOk ||
-      !writesConfirmed
+      !writesConfirmed ||
+      batchExecutionActive ||
+      (!createdBatchId &&
+        (selectedACompanies.length === 0 || selectedACompanies.length > 5))
     ) return;
     if (!window.confirm(t("bulk.routingBatchStartConfirmation"))) return;
     setBatchBusy(true);
     setError(null);
     try {
-      const started = await startRoutedProspectBatch(createdBatchId, {
+      let batchId = createdBatchId;
+      if (!batchId) {
+        const created = await createRoutedProspectBatch(
+          routingRun.routing_run_id,
+          selectedACompanies,
+        );
+        batchId = created.batch_id;
+        setCreatedBatchId(batchId);
+        persistBatchExecution(batchId);
+      }
+      const started = await startRoutedProspectBatch(batchId, {
         confirmation: true,
         sender: toBatchSender(storedSender),
       });
@@ -870,6 +872,13 @@ export function BulkImportPanel({
     batchExecution,
     batchCompanies,
   );
+  const deepAnalysisProviderUnavailable =
+    realDataMode &&
+    Boolean(
+      health.runtime &&
+        (health.runtime.research_provider === "fake" ||
+          health.runtime.provider === "fake"),
+    );
   const batchExecutionActive = Boolean(
     batchExecution && ["pending", "leased", "running"].includes(batchExecution.status),
   );
@@ -2130,24 +2139,35 @@ export function BulkImportPanel({
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <button
                     className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    data-testid="prospect-routing-create-batch"
+                    data-testid="deep-analysis-start"
                     disabled={
                       !backendOk ||
                       !postgresOk ||
                       !workerOk ||
                       !writesConfirmed ||
-                      routingBusy ||
+                      batchBusy ||
                       selectedACompanies.length === 0 ||
-                      selectedACompanies.length > 5
+                      selectedACompanies.length > 5 ||
+                      deepAnalysisProviderUnavailable
                     }
-                    onClick={() => void handleCreateRoutingBatch()}
+                    onClick={() => void handleStartDeepAnalysis()}
                     type="button"
                   >
-                    {t("bulk.routingCreateBatch", { count: selectedACompanies.length })}
+                    {t("bulk.routingDeepAnalysis", {
+                      count: selectedACompanies.length,
+                    })}
                   </button>
                   <span className="text-xs text-slate-500">
                     {t("bulk.routingBatchLimit")}
                   </span>
+                  {deepAnalysisProviderUnavailable ? (
+                    <p
+                      className="text-xs font-medium text-amber-800"
+                      data-testid="deep-analysis-provider-blocker"
+                    >
+                      {t("batch.providerNotConfigured")}
+                    </p>
+                  ) : null}
                 </div>
                 {createdBatchId && routedBatch ? (
                   <div
@@ -2158,13 +2178,17 @@ export function BulkImportPanel({
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">
-                          {t("bulk.routingBatchSource")} · generation {routedBatch.routing_execution_generation}
+                          {t("bulk.routingBatchSource")}
                         </p>
-                        <p className="mt-1 font-mono text-xs text-slate-500">
-                          {createdBatchId}
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-slate-900" data-testid="prospect-routing-batch-status">
+                        <p className="mt-1 text-sm font-semibold text-slate-900" data-testid="prospect-routing-batch-status">
                           {t(`bulk.routingBatchStatus.${routedBatchStatus}`)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500" data-testid="prospect-routing-batch-progress">
+                          {t("batch.progress", {
+                            completed: routedBatch.completed_count,
+                            needsReview: routedBatch.needs_review_count,
+                            failed: routedBatch.failed_count,
+                          })}
                         </p>
                       </div>
                       <button
@@ -2176,17 +2200,30 @@ export function BulkImportPanel({
                           !workerOk ||
                           !writesConfirmed ||
                           batchBusy ||
-                          Boolean(batchExecution)
+                          batchExecutionActive ||
+                          deepAnalysisProviderUnavailable
                         }
-                        onClick={() => void handleStartRoutedBatch()}
+                        onClick={() => void handleStartDeepAnalysis()}
                         type="button"
                       >
                         <Play className="size-4" />
                         {batchBusy || batchExecutionActive
                           ? t("bulk.routingBatchStarting")
-                          : t("bulk.routingBatchStart")}
+                          : t("bulk.routingDeepAnalysisSimple")}
                       </button>
                     </div>
+
+                    <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <summary className="cursor-pointer text-[11px] font-semibold text-slate-500">
+                        {t("batch.technicalDetails")}
+                      </summary>
+                      <div className="mt-2 space-y-1 font-mono text-[10px] text-slate-500">
+                        <p>
+                          generation {routedBatch.routing_execution_generation}
+                        </p>
+                        <p>{createdBatchId}</p>
+                      </div>
+                    </details>
 
                     <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
                       {t("bulk.routingBatchStartWarning")}
@@ -2237,6 +2274,15 @@ export function BulkImportPanel({
                               {t(`batch.companyStatus.${company.status}`)}
                             </span>
                           </div>
+                          {company.started_at || company.completed_at ? (
+                            <p className="mt-1 text-[10px] text-slate-400">
+                              {t("batch.lastUpdated", {
+                                time: formatBatchTime(
+                                  company.completed_at ?? company.started_at ?? "",
+                                ),
+                              })}
+                            </p>
+                          ) : null}
                           {company.error_code ? (
                             <p className="mt-2 text-xs text-amber-800">
                               {company.error_code} · {company.error_summary}
