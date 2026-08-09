@@ -97,7 +97,7 @@ Migration 验证：
 | 不同 Company + 相同 content | 分离 identity，不建立 duplicate link |
 | standalone research | 不创建 company corpus |
 | failed/empty fetch | 不创建 Document |
-| injection-like/thin content | 创建 `quarantined` Document，不进入未来 ready retrieval |
+| injection-like/thin/truncated content | 创建 `quarantined` Document，不进入未来 ready retrieval |
 
 历史 Document 的 `id`、content、hash、originating run 与 fetched time 不被覆盖。
 
@@ -124,7 +124,8 @@ PostgreSQL integration test 使用两个独立 session/UoW 同时写入相同 Co
 - raw HTML、headers、cookies、credentials 不持久化。
 - script、style、noscript、iframe、form、navigation 与识别的 boilerplate 在 cleaner 中移除。
 - cleaned text 最大 40,000 字符，并保存 cleaner version 与 truncated metadata。
-- injection-like content 与 thin page 进入 quarantine，而不是 ready corpus。
+- injection-like content、thin page 与被 40,000 字符 budget 截断的内容进入 quarantine，
+  而不是 ready corpus；截断内容记录 `content_truncated` reason，不能被后续 RAG 当作完整文档。
 - failed fetch、空 cleaned content 与被 fetch budget 拒绝的响应不创建空 Document。
 - page、originating run 与 version lineage 对 Document deletion 使用 `RESTRICT`。
 

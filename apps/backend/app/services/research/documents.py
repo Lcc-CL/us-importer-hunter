@@ -151,6 +151,8 @@ def _document_status(
     payload: ResearchDocumentIngestionInput,
 ) -> tuple[ResearchDocumentStatus, list[str]]:
     reasons: list[str] = []
+    if payload.cleaned.truncated:
+        reasons.append("content_truncated")
     if payload.cleaned.injection_hits:
         reasons.append("prompt_injection_pattern")
     if payload.cleaned.is_thin(payload.thin_page_chars):

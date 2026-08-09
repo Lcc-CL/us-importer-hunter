@@ -55,8 +55,9 @@ unique index，保证每个 `(company_id, canonical_url)` 最多一个 current D
 - 不保存 headers、cookies、credentials、raw HTML。
 - JSON metadata 使用白名单生成的数据：content type、长度、截断、发现原因、meta description、
   quarantine reason。
-- injection-like 或 thin content 标记 `quarantined`；legacy extractor 行为 R1 不变，但未来
-  retrieval 只能读取 `ready` corpus。
+- injection-like、thin 或超过 cleaned-text budget 后被截断的内容标记 `quarantined`；
+  legacy extractor 行为 R1 不变，但未来 retrieval 只能读取 `ready` corpus。截断内容保留
+  `truncated=true` 与 `content_truncated` quarantine reason，不得被视为完整 Document。
 - failed fetch、oversized response、SSRF/redirect rejection 不创建 Document。
 
 ## 后果

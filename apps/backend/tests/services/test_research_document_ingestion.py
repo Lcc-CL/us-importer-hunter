@@ -105,6 +105,7 @@ def payload(
             fetched_at=datetime(2026, 8, 9, tzinfo=UTC),
             content_chars=cleaned.char_count,
             bytes_read=len(html),
+            truncated=cleaned.truncated,
             discovery_reason="ranked:about",
         ),
         cleaned=cleaned,
@@ -295,6 +296,26 @@ async def test_malicious_content_is_quarantined_and_empty_content_is_skipped() -
     assert malicious.document.status is ResearchDocumentStatus.QUARANTINED
     assert empty.action is DocumentIngestionAction.SKIPPED_EMPTY
     assert empty.document is None
+
+
+async def test_truncated_content_is_quarantined_and_never_ready() -> None:
+    repository: ResearchDocumentRepository = InMemoryResearchDocumentRepository()
+    result = await ResearchDocumentIngestionService().ingest(
+        repository,
+        payload(
+            company_id=uuid4(),
+            run_id=uuid4(),
+            source_url="https://acme.example/large-page",
+            final_url="https://acme.example/large-page",
+            html=f"<main><p>{'x' * 40_001}</p></main>",
+        ),
+    )
+
+    assert result.document is not None
+    assert result.document.status is ResearchDocumentStatus.QUARANTINED
+    assert result.document.metadata["truncated"] is True
+    assert "content_truncated" in result.document.metadata["quarantine_reasons"]
+    assert len(result.document.content) == 40_000
 
 
 def test_cleaned_heading_and_list_structure_is_preserved_without_active_content() -> None:
