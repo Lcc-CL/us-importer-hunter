@@ -52,7 +52,7 @@ from app.domain.prospect_routing import (
     ProspectTier,
     RoutingSourceCompany,
 )
-from app.domain.research import ResearchRun
+from app.domain.research import ResearchDocument, ResearchDocumentStatus, ResearchRun
 from app.domain.task import Task
 from app.domain.umail_export import (
     SuppressionEntry,
@@ -542,11 +542,42 @@ class ResearchRunRepository(Protocol):
 
     async def save(self, run: "ResearchRun") -> None: ...
 
+    async def link_page_document(
+        self, research_id: UUID, page_position: int, document_id: UUID
+    ) -> None: ...
+
     async def list_for_company(
         self, company_id: UUID, *, limit: int = 20
     ) -> "list[ResearchRun]": ...
 
     async def list_for_website(self, website: str, *, limit: int = 10) -> "list[ResearchRun]": ...
+
+
+class ResearchDocumentRepository(Protocol):
+    async def lock_ingestion_scope(
+        self, company_id: UUID, canonical_url: str, content_hash: str
+    ) -> None: ...
+
+    async def get_by_id(self, document_id: UUID) -> ResearchDocument | None: ...
+
+    async def get_current_for_url(
+        self, company_id: UUID, canonical_url: str, *, for_update: bool = False
+    ) -> ResearchDocument | None: ...
+
+    async def find_current_content_root(
+        self,
+        company_id: UUID,
+        content_hash: str,
+        status: ResearchDocumentStatus,
+        *,
+        exclude_canonical_url: str,
+    ) -> ResearchDocument | None: ...
+
+    async def add(self, document: ResearchDocument) -> None: ...
+
+    async def save(self, document: ResearchDocument) -> None: ...
+
+    async def list_for_company(self, company_id: UUID) -> list[ResearchDocument]: ...
 
 
 class ImportEvidenceRepository(Protocol):
@@ -771,6 +802,27 @@ class UmailFeedbackUnitOfWork(Protocol):
     umail_exports: UmailExportRepository
 
     async def __aenter__(self) -> "UmailFeedbackUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class ResearchUnitOfWork(Protocol):
+    companies: CompanyRepository
+    research_runs: ResearchRunRepository
+    research_documents: ResearchDocumentRepository
+
+    async def __aenter__(self) -> "ResearchUnitOfWork": ...
 
     async def __aexit__(
         self,

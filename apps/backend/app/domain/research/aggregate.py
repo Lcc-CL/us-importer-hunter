@@ -4,6 +4,7 @@ Owns its pages, claims, rejections and promotions. It never creates a Company
 and never scores anything — a run is a proposal (ADR-0025).
 """
 
+import dataclasses
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -99,6 +100,15 @@ class ResearchRun:
         if any(existing.position == page.position for existing in self._pages):
             raise DomainError(f"page position already recorded: {page.position}")
         self._pages.append(page)
+
+    def link_page_document(self, page_position: int, document_id: UUID) -> None:
+        for index, page in enumerate(self._pages):
+            if page.position == page_position:
+                if page.document_id is not None and page.document_id != document_id:
+                    raise InvalidStateTransition("research page already links another document")
+                self._pages[index] = dataclasses.replace(page, document_id=document_id)
+                return
+        raise DomainError(f"research page does not exist: {page_position}")
 
     def record_page_failure(self, warning: str) -> None:
         self._pages_failed += 1

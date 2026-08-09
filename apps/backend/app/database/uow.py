@@ -33,6 +33,7 @@ from app.database.repositories import (
     SqlAlchemyProspectBatchRepository,
     SqlAlchemyProspectJobRepository,
     SqlAlchemyProspectRoutingRepository,
+    SqlAlchemyResearchDocumentRepository,
     SqlAlchemyResearchRunRepository,
     SqlAlchemyTaskRepository,
     SqlAlchemyUmailExportRepository,
@@ -54,6 +55,7 @@ from app.domain.repositories import (
     ProspectBatchRepository,
     ProspectJobRepository,
     ProspectRoutingRepository,
+    ResearchDocumentRepository,
     ResearchRunRepository,
     TaskRepository,
     UmailExportRepository,
@@ -70,6 +72,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
     research_runs: ResearchRunRepository
+    research_documents: ResearchDocumentRepository
     tasks: TaskRepository
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
@@ -104,6 +107,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)
         self.outreaches = SqlAlchemyOutreachRepository(self._session)
         self.research_runs = SqlAlchemyResearchRunRepository(self._session)
+        self.research_documents = SqlAlchemyResearchDocumentRepository(self._session)
         self.tasks = SqlAlchemyTaskRepository(self._session)
         return self
 

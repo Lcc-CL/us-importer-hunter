@@ -107,6 +107,7 @@ class ResearchPage:
     bytes_read: int = 0
     truncated: bool = False
     discovery_reason: str = "homepage"
+    document_id: UUID | None = None
 
     def __post_init__(self) -> None:
         if self.position < 0:

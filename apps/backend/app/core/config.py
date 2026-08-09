@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     #: with no loss of validated claims, while 13k cost 13% of them. See
     #: docs/validation/v0.2-real-company-evaluation.md §token.
     research_extractor_max_input_chars: int = 18_000
+    # R1 persists durable cleaned documents only. Vector retrieval and grounded
+    # generation remain disabled until later release gates are complete.
+    rag_research_enabled: bool = False
 
     # Website research (v0.2, ADR-0026). Limits are configuration, never
     # literals in the fetch loop.

@@ -20,6 +20,7 @@ from app.domain.repositories import (
     DiscoveryTaskUnitOfWork,
     ImportResolutionUnitOfWork,
     ProspectBatchUnitOfWork,
+    ResearchUnitOfWork,
     UmailExportUnitOfWork,
     UmailFeedbackUnitOfWork,
     UnitOfWork,
@@ -567,7 +568,7 @@ def get_research_workflow(
         )
 
     return ResearchWorkflow(
-        uow_factory=uow_factory,
+        uow_factory=cast(Callable[[], ResearchUnitOfWork], uow_factory),
         extractor=extractor,
         fetcher_factory=fetcher_factory,
         limits=limits,
