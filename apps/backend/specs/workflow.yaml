@@ -299,9 +299,21 @@ workflows:
 
   research:
     package: app.workflows.research
-    description: On-demand deep-dive analysis of a single company.
-    emits: [CompanyFactsChanged, ImportRecordsUpdated]
-    status: planned
+    description: >
+      Fetch and clean a deterministic, guarded website page set; persist or
+      reuse immutable company-scoped ResearchDocuments; run the existing
+      ResearchExtractor and ClaimValidator; then wait for human evidence
+      review. R1 adds no chunking, embedding or retrieval and does not change
+      Claim, Opportunity, Routing or Draft behavior.
+    steps:
+      - { id: resolve_company, service: company_repository_read }
+      - { id: discover_and_fetch_pages, tool: website_safe_fetcher }
+      - { id: clean_pages, tool: website_cleaner }
+      - { id: persist_cleaned_documents, service: research_document_ingestion }
+      - { id: extract_claims, service: research_extractor }
+      - { id: validate_claims, service: claim_validator }
+      - { id: persist_run, aggregate: research_run }
+    status: implemented
 
   email:
     package: app.workflows.email

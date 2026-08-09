@@ -1,5 +1,12 @@
 """Research services: extraction and claim validation (v0.2 phase 2)."""
 
+from app.services.research.documents import (
+    DocumentIngestionAction,
+    ResearchDocumentIngestionInput,
+    ResearchDocumentIngestionResult,
+    ResearchDocumentIngestionService,
+    canonicalize_document_url,
+)
 from app.services.research.extractors import (
     FAKE_PROMPT_VERSION,
     ExtractionInput,
@@ -23,6 +30,7 @@ __all__ = [
     "FAKE_PROMPT_VERSION",
     "MAX_ATTEMPTS",
     "ClaimValidator",
+    "DocumentIngestionAction",
     "ExtractionError",
     "ExtractionErrorCode",
     "ExtractionInput",
@@ -31,5 +39,9 @@ __all__ = [
     "OpenAIResearchExtractor",
     "PageContent",
     "ResearchExtractor",
+    "ResearchDocumentIngestionInput",
+    "ResearchDocumentIngestionResult",
+    "ResearchDocumentIngestionService",
     "ValidationOutcome",
+    "canonicalize_document_url",
 ]

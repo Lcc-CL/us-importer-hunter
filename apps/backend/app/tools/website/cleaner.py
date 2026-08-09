@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 from selectolax.parser import HTMLParser
 
+CLEANER_VERSION = "website-cleaner-v1"
+
 DROP_TAGS = (
     "script",
     "style",

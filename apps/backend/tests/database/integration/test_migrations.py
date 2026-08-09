@@ -115,6 +115,7 @@ EXPECTED_TABLES = {
     "umail_result_imports",
     "umail_result_rows",
     "contact_engagement_events",
+    "research_documents",
     "companies",
     "company_aliases",
     "company_sources",
@@ -154,6 +155,8 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     } <= export_row_columns
     result_row_columns = asyncio.run(_column_names(migration_db_url, "umail_result_rows"))
     assert {"matched_export_row_id", "match_method", "row_fingerprint"} <= result_row_columns
+    research_page_columns = asyncio.run(_column_names(migration_db_url, "research_pages"))
+    assert "document_id" in research_page_columns
 
     run_alembic(["downgrade", "base"], MIGRATION_DB)
     tables_after_downgrade = asyncio.run(_table_names(migration_db_url))
@@ -176,6 +179,9 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     } <= export_row_columns_again
     assert {"matched_export_row_id", "match_method", "row_fingerprint"} <= asyncio.run(
         _column_names(migration_db_url, "umail_result_rows")
+    )
+    assert "document_id" in asyncio.run(
+        _column_names(migration_db_url, "research_pages")
     )
 
 

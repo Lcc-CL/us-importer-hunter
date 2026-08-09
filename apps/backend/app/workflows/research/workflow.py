@@ -23,7 +23,7 @@ from uuid import UUID
 import httpx
 
 from app.domain.clock import utcnow
-from app.domain.repositories import UnitOfWork
+from app.domain.repositories import ResearchUnitOfWork
 from app.domain.research import (
     OutputLanguage,
     ResearchFailureCode,
@@ -37,6 +37,8 @@ from app.services.research import (
     ExtractionError,
     ExtractionInput,
     PageContent,
+    ResearchDocumentIngestionInput,
+    ResearchDocumentIngestionService,
     ResearchExtractor,
 )
 from app.tools.website import (
@@ -135,11 +137,14 @@ ClientFactory = Callable[[], httpx.AsyncClient]
 
 @dataclass
 class ResearchWorkflow:
-    uow_factory: Callable[[], UnitOfWork]
+    uow_factory: Callable[[], ResearchUnitOfWork]
     extractor: ResearchExtractor
     fetcher_factory: FetcherFactory
     client_factory: ClientFactory = create_research_client
     validator: ClaimValidator = field(default_factory=ClaimValidator)
+    document_ingestion: ResearchDocumentIngestionService = field(
+        default_factory=ResearchDocumentIngestionService
+    )
     limits: ResearchLimits = field(default_factory=ResearchLimits)
     now: Callable[[], float] = time.monotonic
 
@@ -165,11 +170,11 @@ class ResearchWorkflow:
             scope = SiteScope.from_url(website)
         except ValueError:
             run.fail(ResearchFailureCode.INVALID_URL, f"unusable website url: {website!r}")
-            return await self._persist(run)
+            return await self._persist(run, [])
 
         pages, budget_exhausted, aborted = await self._collect_pages(run, website, scope)
         if aborted is not None:
-            return await self._persist(run)
+            return await self._persist(run, pages)
 
         extraction_failed = await self._extract_and_validate(run, company_name, website, pages)
 
@@ -177,7 +182,7 @@ class ResearchWorkflow:
         run.complete(
             partial=bool(failure_code) or run.pages_failed > 0, failure_code=failure_code
         )
-        return await self._persist(run)
+        return await self._persist(run, pages)
 
     # -- steps ----------------------------------------------------------
 
@@ -342,9 +347,29 @@ class ResearchWorkflow:
             return ResearchFailureCode.BUDGET_EXCEEDED
         return None
 
-    async def _persist(self, run: ResearchRun) -> ResearchOutcome:
+    async def _persist(self, run: ResearchRun, pages: list[ReadPage]) -> ResearchOutcome:
         async with self.uow_factory() as uow:
             await uow.research_runs.add(run)
+            await uow.flush()
+            for page in pages:
+                result = await self.document_ingestion.ingest(
+                    uow.research_documents,
+                    ResearchDocumentIngestionInput(
+                        company_id=run.company_id,
+                        research_run_id=run.id,
+                        page=page.record,
+                        cleaned=page.cleaned,
+                        thin_page_chars=self.limits.thin_page_chars,
+                    ),
+                )
+                if result.document is None:
+                    continue
+                run.link_page_document(page.record.position, result.document.id)
+                await uow.research_runs.link_page_document(
+                    run.id,
+                    page.record.position,
+                    result.document.id,
+                )
             await uow.commit()
         return ResearchOutcome(
             action=_action_for(run.status),
