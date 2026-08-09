@@ -116,6 +116,7 @@ EXPECTED_TABLES = {
     "umail_result_rows",
     "contact_engagement_events",
     "research_documents",
+    "research_document_chunks",
     "companies",
     "company_aliases",
     "company_sources",
@@ -157,6 +158,17 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     assert {"matched_export_row_id", "match_method", "row_fingerprint"} <= result_row_columns
     research_page_columns = asyncio.run(_column_names(migration_db_url, "research_pages"))
     assert "document_id" in research_page_columns
+    assert {
+        "document_id",
+        "company_id",
+        "chunk_index",
+        "token_count",
+        "start_offset",
+        "end_offset",
+        "heading_path",
+        "chunker_version",
+        "tokenizer_profile",
+    } <= asyncio.run(_column_names(migration_db_url, "research_document_chunks"))
 
     run_alembic(["downgrade", "base"], MIGRATION_DB)
     tables_after_downgrade = asyncio.run(_table_names(migration_db_url))
@@ -182,6 +194,9 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     )
     assert "document_id" in asyncio.run(
         _column_names(migration_db_url, "research_pages")
+    )
+    assert "chunker_version" in asyncio.run(
+        _column_names(migration_db_url, "research_document_chunks")
     )
 
 

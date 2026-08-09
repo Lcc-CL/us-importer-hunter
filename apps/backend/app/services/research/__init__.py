@@ -1,5 +1,19 @@
 """Research services: extraction and claim validation (v0.2 phase 2)."""
 
+from app.services.research.chunking import (
+    CHUNKER_ALGORITHM_VERSION,
+    TOKENIZER_PROFILE,
+    ChunkingAction,
+    ChunkingConfig,
+    ChunkingConflictError,
+    ChunkingMetrics,
+    ChunkingPlan,
+    ChunkingResult,
+    DeterministicDocumentChunker,
+    DeterministicLocalTokenizer,
+    ResearchDocumentChunkingService,
+    render_chunk_visualization,
+)
 from app.services.research.documents import (
     DocumentIngestionAction,
     ResearchDocumentIngestionInput,
@@ -30,6 +44,16 @@ __all__ = [
     "FAKE_PROMPT_VERSION",
     "MAX_ATTEMPTS",
     "ClaimValidator",
+    "CHUNKER_ALGORITHM_VERSION",
+    "TOKENIZER_PROFILE",
+    "ChunkingAction",
+    "ChunkingConfig",
+    "ChunkingConflictError",
+    "ChunkingMetrics",
+    "ChunkingPlan",
+    "ChunkingResult",
+    "DeterministicDocumentChunker",
+    "DeterministicLocalTokenizer",
     "DocumentIngestionAction",
     "ExtractionError",
     "ExtractionErrorCode",
@@ -42,6 +66,8 @@ __all__ = [
     "ResearchDocumentIngestionInput",
     "ResearchDocumentIngestionResult",
     "ResearchDocumentIngestionService",
+    "ResearchDocumentChunkingService",
+    "render_chunk_visualization",
     "ValidationOutcome",
     "canonicalize_document_url",
 ]

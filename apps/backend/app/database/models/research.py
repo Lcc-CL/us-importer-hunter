@@ -121,6 +121,61 @@ class ResearchDocumentModel(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
 
+class ResearchDocumentChunkModel(Base):
+    __tablename__ = "research_document_chunks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["document_id", "company_id"],
+            ["research_documents.id", "research_documents.company_id"],
+            ondelete="RESTRICT",
+            name="fk_research_document_chunks_document_company",
+        ),
+        UniqueConstraint(
+            "document_id",
+            "chunker_version",
+            "chunk_index",
+            name="uq_research_document_chunks_sequence",
+        ),
+        UniqueConstraint(
+            "document_id",
+            "chunker_version",
+            "start_offset",
+            "end_offset",
+            name="uq_research_document_chunks_offsets",
+        ),
+        CheckConstraint("status = 'ready'", name="ck_research_document_chunks_status"),
+        CheckConstraint(
+            "chunk_index >= 0 AND token_count > 0",
+            name="ck_research_document_chunks_counts",
+        ),
+        CheckConstraint(
+            "start_offset >= 0 AND end_offset > start_offset",
+            name="ck_research_document_chunks_offsets",
+        ),
+        CheckConstraint(
+            "length(content) > 0 AND length(content_hash) = 64",
+            name="ck_research_document_chunks_content",
+        ),
+        Index("ix_research_document_chunks_company", "company_id"),
+        Index("ix_research_document_chunks_document", "document_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    document_id: Mapped[UUID] = mapped_column()
+    company_id: Mapped[UUID] = mapped_column()
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    token_count: Mapped[int] = mapped_column(Integer)
+    start_offset: Mapped[int] = mapped_column(Integer)
+    end_offset: Mapped[int] = mapped_column(Integer)
+    heading_path: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    chunker_version: Mapped[str] = mapped_column(String(100))
+    tokenizer_profile: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20))
+
+
 class ResearchRunModel(Base):
     __tablename__ = "research_runs"
     __table_args__ = (

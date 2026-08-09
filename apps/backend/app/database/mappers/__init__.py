@@ -22,7 +22,11 @@ from app.database.mappers.outreach import OutreachMapper
 from app.database.mappers.prospect_batch import ProspectBatchMapper
 from app.database.mappers.prospect_job import ProspectJobMapper
 from app.database.mappers.prospect_routing import ProspectRoutingMapper
-from app.database.mappers.research import ResearchDocumentMapper, ResearchRunMapper
+from app.database.mappers.research import (
+    ResearchDocumentChunkMapper,
+    ResearchDocumentMapper,
+    ResearchRunMapper,
+)
 from app.database.mappers.task import TaskMapper
 from app.database.mappers.umail_export import UmailExportMapper
 from app.database.mappers.umail_feedback import UmailFeedbackMapper
@@ -43,6 +47,7 @@ __all__ = [
     "ProspectRoutingMapper",
     "ProspectJobMapper",
     "ResearchRunMapper",
+    "ResearchDocumentChunkMapper",
     "ResearchDocumentMapper",
     "TaskMapper",
     "UmailExportMapper",

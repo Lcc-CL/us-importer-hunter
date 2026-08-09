@@ -5,6 +5,7 @@ from typing import Any
 
 from app.database.models.research import (
     ResearchClaimModel,
+    ResearchDocumentChunkModel,
     ResearchDocumentModel,
     ResearchPageModel,
     ResearchPromotionModel,
@@ -18,6 +19,8 @@ from app.domain.research import (
     RejectedClaim,
     ResearchClaim,
     ResearchDocument,
+    ResearchDocumentChunk,
+    ResearchDocumentChunkStatus,
     ResearchDocumentSourceType,
     ResearchDocumentStatus,
     ResearchDocumentTrustLevel,
@@ -28,6 +31,46 @@ from app.domain.research import (
     ResearchRun,
     ResearchRunStatus,
 )
+
+
+class ResearchDocumentChunkMapper:
+    @staticmethod
+    def to_model(chunk: ResearchDocumentChunk) -> ResearchDocumentChunkModel:
+        return ResearchDocumentChunkModel(
+            id=chunk.id,
+            document_id=chunk.document_id,
+            company_id=chunk.company_id,
+            chunk_index=chunk.chunk_index,
+            content=chunk.content,
+            content_hash=chunk.content_hash,
+            token_count=chunk.token_count,
+            start_offset=chunk.start_offset,
+            end_offset=chunk.end_offset,
+            heading_path=list(chunk.heading_path),
+            metadata_json=chunk.metadata,
+            chunker_version=chunk.chunker_version,
+            tokenizer_profile=chunk.tokenizer_profile,
+            status=chunk.status.value,
+        )
+
+    @staticmethod
+    def to_domain(model: ResearchDocumentChunkModel) -> ResearchDocumentChunk:
+        return ResearchDocumentChunk(
+            chunk_id=model.id,
+            document_id=model.document_id,
+            company_id=model.company_id,
+            chunk_index=model.chunk_index,
+            content=model.content,
+            content_hash=model.content_hash,
+            token_count=model.token_count,
+            start_offset=model.start_offset,
+            end_offset=model.end_offset,
+            heading_path=tuple(model.heading_path),
+            metadata=model.metadata_json or {},
+            chunker_version=model.chunker_version,
+            tokenizer_profile=model.tokenizer_profile,
+            status=ResearchDocumentChunkStatus(model.status),
+        )
 
 
 class ResearchDocumentMapper:

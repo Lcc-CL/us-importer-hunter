@@ -52,7 +52,12 @@ from app.domain.prospect_routing import (
     ProspectTier,
     RoutingSourceCompany,
 )
-from app.domain.research import ResearchDocument, ResearchDocumentStatus, ResearchRun
+from app.domain.research import (
+    ResearchDocument,
+    ResearchDocumentChunk,
+    ResearchDocumentStatus,
+    ResearchRun,
+)
 from app.domain.task import Task
 from app.domain.umail_export import (
     SuppressionEntry,
@@ -578,6 +583,16 @@ class ResearchDocumentRepository(Protocol):
     async def save(self, document: ResearchDocument) -> None: ...
 
     async def list_for_company(self, company_id: UUID) -> list[ResearchDocument]: ...
+
+
+class ResearchDocumentChunkRepository(Protocol):
+    async def lock_chunking_scope(self, document_id: UUID, chunker_version: str) -> None: ...
+
+    async def list_for_document(
+        self, document_id: UUID, chunker_version: str
+    ) -> list[ResearchDocumentChunk]: ...
+
+    async def add_many(self, chunks: tuple[ResearchDocumentChunk, ...]) -> None: ...
 
 
 class ImportEvidenceRepository(Protocol):

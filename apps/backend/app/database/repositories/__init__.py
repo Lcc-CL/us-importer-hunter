@@ -28,6 +28,7 @@ from app.database.repositories.prospect_batch import SqlAlchemyProspectBatchRepo
 from app.database.repositories.prospect_job import SqlAlchemyProspectJobRepository
 from app.database.repositories.prospect_routing import SqlAlchemyProspectRoutingRepository
 from app.database.repositories.research import (
+    SqlAlchemyResearchDocumentChunkRepository,
     SqlAlchemyResearchDocumentRepository,
     SqlAlchemyResearchRunRepository,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "SqlAlchemyProspectJobRepository",
     "SqlAlchemyProspectRoutingRepository",
     "SqlAlchemyResearchRunRepository",
+    "SqlAlchemyResearchDocumentChunkRepository",
     "SqlAlchemyResearchDocumentRepository",
     "SqlAlchemyTaskRepository",
     "SqlAlchemyUmailExportRepository",

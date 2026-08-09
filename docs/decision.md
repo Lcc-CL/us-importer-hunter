@@ -36,3 +36,4 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0028](ADR/0028-research-document-ownership.md) | Evidence-Grounded Research Document ownership | 2026-08-09 |
 | [0029](ADR/0029-cleaned-content-retention-versioning.md) | Cleaned content retention and immutable versioning | 2026-08-09 |
 | [0030](ADR/0030-pgvector-first-direction.md) | PostgreSQL + pgvector first direction | 2026-08-09 |
+| [0031](ADR/0031-deterministic-research-document-chunking.md) | Deterministic ResearchDocument chunking contract | 2026-08-09 |

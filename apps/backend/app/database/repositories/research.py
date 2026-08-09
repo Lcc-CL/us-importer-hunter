@@ -6,13 +6,23 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.mappers import ResearchDocumentMapper, ResearchRunMapper
+from app.database.mappers import (
+    ResearchDocumentChunkMapper,
+    ResearchDocumentMapper,
+    ResearchRunMapper,
+)
 from app.database.models.research import (
+    ResearchDocumentChunkModel,
     ResearchDocumentModel,
     ResearchPageModel,
     ResearchRunModel,
 )
-from app.domain.research import ResearchDocument, ResearchDocumentStatus, ResearchRun
+from app.domain.research import (
+    ResearchDocument,
+    ResearchDocumentChunk,
+    ResearchDocumentStatus,
+    ResearchRun,
+)
 
 
 def _advisory_lock_key(value: str) -> int:
@@ -92,6 +102,37 @@ class SqlAlchemyResearchDocumentRepository:
             )
         )
         return [ResearchDocumentMapper.to_domain(model) for model in result.scalars().all()]
+
+
+class SqlAlchemyResearchDocumentChunkRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def lock_chunking_scope(self, document_id: UUID, chunker_version: str) -> None:
+        lock_key = _advisory_lock_key(
+            f"research-document-chunks:{document_id}:{chunker_version}"
+        )
+        await self._session.execute(select(func.pg_advisory_xact_lock(lock_key)))
+
+    async def list_for_document(
+        self, document_id: UUID, chunker_version: str
+    ) -> list[ResearchDocumentChunk]:
+        result = await self._session.execute(
+            select(ResearchDocumentChunkModel)
+            .where(
+                ResearchDocumentChunkModel.document_id == document_id,
+                ResearchDocumentChunkModel.chunker_version == chunker_version,
+            )
+            .order_by(ResearchDocumentChunkModel.chunk_index)
+        )
+        return [
+            ResearchDocumentChunkMapper.to_domain(model) for model in result.scalars().all()
+        ]
+
+    async def add_many(self, chunks: tuple[ResearchDocumentChunk, ...]) -> None:
+        self._session.add_all(
+            [ResearchDocumentChunkMapper.to_model(chunk) for chunk in chunks]
+        )
 
 
 class SqlAlchemyResearchRunRepository:
