@@ -5,6 +5,12 @@ Produces claims for human review only — never Company or Opportunity state
 """
 
 from app.domain.research.aggregate import ResearchRun
+from app.domain.research.chunk import (
+    ResearchDocumentChunk,
+    ResearchDocumentChunkStatus,
+    research_document_chunk_content_hash,
+    stable_research_document_chunk_id,
+)
 from app.domain.research.document import (
     MAX_RESEARCH_DOCUMENT_CHARS,
     ResearchDocument,
@@ -43,6 +49,8 @@ __all__ = [
     "ProposedClaim",
     "RejectedClaim",
     "ResearchClaim",
+    "ResearchDocumentChunk",
+    "ResearchDocumentChunkStatus",
     "ResearchDocument",
     "ResearchDocumentSourceType",
     "ResearchDocumentStatus",
@@ -54,4 +62,6 @@ __all__ = [
     "ResearchRun",
     "ResearchRunStatus",
     "research_document_content_hash",
+    "research_document_chunk_content_hash",
+    "stable_research_document_chunk_id",
 ]

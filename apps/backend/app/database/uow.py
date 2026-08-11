@@ -33,6 +33,7 @@ from app.database.repositories import (
     SqlAlchemyProspectBatchRepository,
     SqlAlchemyProspectJobRepository,
     SqlAlchemyProspectRoutingRepository,
+    SqlAlchemyResearchDocumentChunkRepository,
     SqlAlchemyResearchDocumentRepository,
     SqlAlchemyResearchRunRepository,
     SqlAlchemyTaskRepository,
@@ -55,6 +56,7 @@ from app.domain.repositories import (
     ProspectBatchRepository,
     ProspectJobRepository,
     ProspectRoutingRepository,
+    ResearchDocumentChunkRepository,
     ResearchDocumentRepository,
     ResearchRunRepository,
     TaskRepository,
@@ -73,6 +75,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     outreaches: OutreachRepository
     research_runs: ResearchRunRepository
     research_documents: ResearchDocumentRepository
+    research_document_chunks: ResearchDocumentChunkRepository
     tasks: TaskRepository
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
@@ -108,6 +111,9 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self.outreaches = SqlAlchemyOutreachRepository(self._session)
         self.research_runs = SqlAlchemyResearchRunRepository(self._session)
         self.research_documents = SqlAlchemyResearchDocumentRepository(self._session)
+        self.research_document_chunks = SqlAlchemyResearchDocumentChunkRepository(
+            self._session
+        )
         self.tasks = SqlAlchemyTaskRepository(self._session)
         return self
 

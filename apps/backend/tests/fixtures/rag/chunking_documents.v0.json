@@ -1,0 +1,86 @@
+[
+  {
+    "id": "homepage",
+    "document_id": "10000000-0000-0000-0000-000000000001",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "homepage",
+    "content": "# Acme Industrial\nGlobal sourcing and distribution for industrial fasteners.\n\n## Markets\nWe serve importers, distributors, and manufacturers across the United States."
+  },
+  {
+    "id": "about-page",
+    "document_id": "10000000-0000-0000-0000-000000000002",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "about",
+    "content": "# About Acme\nAcme was founded in 1998 and operates distribution centers in California and Texas.\n\n## Supply Network\nThe company sources steel components from factories in China and Vietnam."
+  },
+  {
+    "id": "product-page",
+    "document_id": "10000000-0000-0000-0000-000000000003",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "products",
+    "content": "# Products\n## Fasteners\nBolts\nScrews\nWashers\n\n## Material Handling\nPallet jacks\nIndustrial carts\nWarehouse racks"
+  },
+  {
+    "id": "blog-news",
+    "document_id": "10000000-0000-0000-0000-000000000004",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "news",
+    "content": "# Acme Opens Texas Distribution Center\nThe new facility adds receiving capacity near major Gulf ports.\n\n## Operations Update\nAcme expects shorter inland transit times for imported industrial products."
+  },
+  {
+    "id": "long-paragraph",
+    "document_id": "10000000-0000-0000-0000-000000000005",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "about",
+    "prefix": "# Import Operations\n",
+    "repeat_sentence": "Acme coordinates monthly container imports from Asian suppliers through multiple United States ports. ",
+    "repeat_count": 140
+  },
+  {
+    "id": "heading-list",
+    "document_id": "10000000-0000-0000-0000-000000000006",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "capabilities",
+    "content": "# Capabilities\n## Warehousing\n- Cross-docking\n- Inventory storage\n- Pick and pack\n\n## Distribution\n- Retail replenishment\n- Dealer delivery"
+  },
+  {
+    "id": "very-short-sections",
+    "document_id": "10000000-0000-0000-0000-000000000007",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "about",
+    "content": "# Locations\nCalifornia.\n\n## Founded\n1998.\n\n## Team\nEighty employees."
+  },
+  {
+    "id": "oversized-section",
+    "document_id": "10000000-0000-0000-0000-000000000008",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "products",
+    "prefix": "# Industrial Catalog\n",
+    "repeat_sentence": "The catalog lists corrosion resistant components for construction and manufacturing customers. ",
+    "repeat_count": 150
+  },
+  {
+    "id": "repeated-footer-nav",
+    "document_id": "10000000-0000-0000-0000-000000000009",
+    "company_id": "20000000-0000-0000-0000-000000000001",
+    "company": "Acme Industrial",
+    "source_type": "homepage",
+    "content": "# Company Overview\nAcme imports industrial fasteners for regional distribution.\nRequest a quote\nProduct card: stainless bolts\nProduct card: stainless bolts\nAll rights reserved"
+  },
+  {
+    "id": "text-pdf-pages",
+    "document_id": "10000000-0000-0000-0000-000000000010",
+    "company_id": "20000000-0000-0000-0000-000000000002",
+    "company": "Pacific Components",
+    "source_type": "pdf",
+    "content": "[[Page 1]]\n# Supplier Overview\nPacific Components sources precision parts from Japan.\n\n[[Page 2]]\n# Logistics\nThe company uses ocean freight for regular replenishment and air freight for urgent orders."
+  }
+]
