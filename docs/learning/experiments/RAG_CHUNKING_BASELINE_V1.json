@@ -1,0 +1,388 @@
+{
+  "baseline_id": "RAG_CHUNKING_BASELINE_V1",
+  "status": "ACCEPTED_HUMAN_BASELINE",
+  "created_at": "2026-08-11T09:14:20Z",
+  "evaluated_commit": "24382397a00bf573db02e73f2a7fad2adc22ee7e",
+  "branch": "feat/rag-r2a-deterministic-chunking",
+  "pull_request": 34,
+  "chunker": {
+    "strategy": "structure-recursive-v1",
+    "version": "structure-recursive-v1:e89d30e35ee3",
+    "tokenizer": "unicode-lexical-v1",
+    "target_tokens": 500,
+    "hard_max": 900,
+    "overlap_max": 80,
+    "short_chunk_review_threshold_exclusive": 50
+  },
+  "dataset": {
+    "questions_total": 10,
+    "chunks_reviewed": 19,
+    "fixtures": 10,
+    "scope": "RAG_CHUNKING_BASELINE_V1 evaluation-framework baseline"
+  },
+  "metrics": {
+    "question_evidence_coverage": 0.9,
+    "complete_answer_rate": 0.7,
+    "partial_answer_rate": 0.2,
+    "unanswerable_rate": 0.1,
+    "average_minimum_chunks_answerable_only": 1.11,
+    "median_minimum_chunks_answerable_only": 1,
+    "max_minimum_chunks_answerable_only": 2,
+    "boundary_break_count": 1,
+    "short_chunk_merge_candidate_count": 1,
+    "valid_short_chunk_count": 9,
+    "minimal_sufficient_evidence_cases": 6,
+    "evidence_redundancy_cases": 1,
+    "retrieval_redundancy_candidates": 1,
+    "hard_limit_violation": 0,
+    "offset_roundtrip_error": 0,
+    "stable_identity_rate": 1.0,
+    "boilerplate_ratio": 0.0015,
+    "duplicate_ratio": 0.0013,
+    "raw_overlap_ratio": 0.1114
+  },
+  "distributions": {
+    "answerability": {
+      "YES": 7,
+      "PARTIAL": 2,
+      "NO": 1
+    },
+    "relevance": {
+      "RELEVANT": 13,
+      "PARTIALLY_RELEVANT": 4,
+      "NOT_RELEVANT": 2
+    },
+    "boundary": {
+      "GOOD": 18,
+      "BROKEN_BEFORE": 1,
+      "BROKEN_AFTER": 0,
+      "BROKEN_BOTH": 0
+    },
+    "short_chunk_class": {
+      "NOT_APPLICABLE": 9,
+      "VALID_ATOMIC_FACT": 3,
+      "VALID_HEADING_CONTEXT": 6,
+      "FRAGMENTED": 0,
+      "BOILERPLATE": 0,
+      "SHOULD_MERGE_PREVIOUS": 1,
+      "SHOULD_MERGE_NEXT": 0
+    },
+    "claim_entailment": {
+      "ENTAILED": 1,
+      "NOT_ENTAILED": 1,
+      "NOT_EVALUATED": 17
+    },
+    "citation_sufficiency": {
+      "SUFFICIENT": 1,
+      "INSUFFICIENT": 1,
+      "NOT_EVALUATED": 17
+    }
+  },
+  "questions": [
+    {
+      "question_id": "Q01_MAIN_PRODUCTS",
+      "answerable": "YES",
+      "minimum_chunks_required": 2,
+      "evidence_missing": "NONE",
+      "candidates": [
+        {
+          "chunk_id": "2daad9a3-5b68-5e72-a0b4-70e623cad4c4",
+          "token_count": 11,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_ATOMIC_FACT"
+        },
+        {
+          "chunk_id": "d26f680f-dbe5-5247-843f-4c7788358d85",
+          "token_count": 5,
+          "relevance": "RELEVANT",
+          "boundary": "BROKEN_BEFORE",
+          "short_chunk_class": "SHOULD_MERGE_PREVIOUS"
+        }
+      ],
+      "findings": [
+        "SHORT_CHUNK_MERGE_CANDIDATE"
+      ]
+    },
+    {
+      "question_id": "Q02_FITNESS_RELEVANCE",
+      "answerable": "PARTIAL",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "明确的公司产品分类、完整产品目录或业务描述",
+      "candidates": [
+        {
+          "chunk_id": "0d5af75e-23ba-518b-944a-e90ae81b7c7b",
+          "token_count": 507,
+          "relevance": "PARTIALLY_RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        },
+        {
+          "chunk_id": "a9546ade-0385-5876-9d40-c317f775fa4c",
+          "token_count": 504,
+          "relevance": "PARTIALLY_RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        },
+        {
+          "chunk_id": "3cbbc09d-4c88-541e-aeb2-fe670a4f5ee0",
+          "token_count": 504,
+          "relevance": "PARTIALLY_RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        },
+        {
+          "chunk_id": "87f8d4d7-7089-5724-8389-91656c1f384b",
+          "token_count": 504,
+          "relevance": "PARTIALLY_RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        }
+      ],
+      "findings": [
+        "RETRIEVAL_REDUNDANCY_CANDIDATE"
+      ]
+    },
+    {
+      "question_id": "Q03_IMPORT_DISTRIBUTION_EVIDENCE",
+      "answerable": "YES",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "NONE",
+      "candidates": [
+        {
+          "chunk_id": "c00b7385-45db-5b35-9ba3-ec5d65a199f0",
+          "token_count": 507,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        },
+        {
+          "chunk_id": "6b783be7-0503-5a4d-b773-9609d0b75d7b",
+          "token_count": 504,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        },
+        {
+          "chunk_id": "05be6072-e616-5649-9d29-55144ec3d49b",
+          "token_count": 504,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        },
+        {
+          "chunk_id": "29e63226-a7db-50f2-a951-99e1cf4beb28",
+          "token_count": 504,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        },
+        {
+          "chunk_id": "e08a2235-2487-591d-ba93-f2f9c5af9f17",
+          "token_count": 224,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "NOT_APPLICABLE"
+        }
+      ],
+      "findings": [
+        "EVIDENCE_REDUNDANCY_OBSERVED"
+      ]
+    },
+    {
+      "question_id": "Q04_CHINA_SUPPLY_CHAIN_EVIDENCE",
+      "answerable": "YES",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "NONE",
+      "candidates": [
+        {
+          "chunk_id": "4ec0891b-2262-5b87-9683-46302ebc0232",
+          "token_count": 33,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_HEADING_CONTEXT"
+        }
+      ],
+      "findings": [
+        "VALID_SHORT_CHUNK_OBSERVED"
+      ]
+    },
+    {
+      "question_id": "Q05_PRODUCT_OR_HS_TARGET_MATCH",
+      "answerable": "PARTIAL",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "HS code / HS classification",
+      "candidates": [
+        {
+          "chunk_id": "8abf37e9-47b1-5864-8b49-e6e1e7e92d1e",
+          "token_count": 18,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_HEADING_CONTEXT"
+        }
+      ],
+      "findings": [
+        "RETRIEVAL_RELEVANT_BUT_INCOMPLETE_EVIDENCE"
+      ]
+    },
+    {
+      "question_id": "Q06_COMPANY_BUSINESS_ROLE",
+      "answerable": "YES",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "NONE",
+      "candidates": [
+        {
+          "chunk_id": "abdf3398-2b90-5196-b517-9cad40c52ffe",
+          "token_count": 27,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_HEADING_CONTEXT"
+        }
+      ],
+      "findings": [
+        "CUSTOMER_ROLE != COMPANY_ROLE",
+        "RETRIEVAL_RELEVANCE != CLAIM_ENTAILMENT"
+      ]
+    },
+    {
+      "question_id": "Q07_NON_TARGET_BUSINESS",
+      "answerable": "NO",
+      "minimum_chunks_required": 0,
+      "evidence_missing": "主营业务、产品、服务或行业分类证据",
+      "candidates": [
+        {
+          "chunk_id": "1575b6d9-124b-5f92-85ac-6a86db0b5b97",
+          "token_count": 15,
+          "relevance": "NOT_RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_HEADING_CONTEXT"
+        }
+      ],
+      "findings": [
+        "ABSENCE_OF_EVIDENCE != EVIDENCE_OF_ABSENCE",
+        "ENTITY_RELEVANCE != QUESTION_RELEVANCE"
+      ]
+    },
+    {
+      "question_id": "Q08_PAGE_PRODUCT_OR_FULFILLMENT_FACTS",
+      "answerable": "YES",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "NONE",
+      "candidates": [
+        {
+          "chunk_id": "087d4224-4b0e-5aa2-8112-5559e2223b25",
+          "token_count": 23,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_HEADING_CONTEXT"
+        }
+      ],
+      "findings": [
+        "SHORT_CHUNK != BAD_CHUNK"
+      ]
+    },
+    {
+      "question_id": "Q09_OPPORTUNITY_SUPPORTING_FACTS",
+      "answerable": "YES",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "NONE",
+      "candidates": [
+        {
+          "chunk_id": "f480fed7-390b-5782-ad26-8813b27bd6c2",
+          "token_count": 32,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_HEADING_CONTEXT"
+        }
+      ],
+      "findings": [
+        "COMPANY_FACT != OPPORTUNITY_JUDGMENT"
+      ]
+    },
+    {
+      "question_id": "Q10_BEST_CITATION_FOR_FREIGHT_MODE_CLAIM",
+      "answerable": "YES",
+      "minimum_chunks_required": 1,
+      "evidence_missing": "NONE",
+      "best_citation": "12628577-8370-53be-b73c-5d731531c7ef",
+      "candidates": [
+        {
+          "chunk_id": "040d7eb2-187c-5585-b660-3e6d029d290c",
+          "token_count": 11,
+          "relevance": "NOT_RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_ATOMIC_FACT",
+          "claim_entailment": "NOT_ENTAILED",
+          "citation_sufficiency": "INSUFFICIENT"
+        },
+        {
+          "chunk_id": "12628577-8370-53be-b73c-5d731531c7ef",
+          "token_count": 17,
+          "relevance": "RELEVANT",
+          "boundary": "GOOD",
+          "short_chunk_class": "VALID_ATOMIC_FACT",
+          "claim_entailment": "ENTAILED",
+          "citation_sufficiency": "SUFFICIENT"
+        }
+      ],
+      "findings": [
+        "CHUNK_QUALITY != QUERY_RELEVANCE",
+        "QUERY_RELEVANCE != CLAIM_ENTAILMENT",
+        "CLAIM_ENTAILMENT != CITATION_SUFFICIENCY",
+        "BEST_CITATION = MINIMAL_SUFFICIENT_EVIDENCE"
+      ]
+    }
+  ],
+  "known_failure_cases": [
+    {
+      "question_id": "Q01_MAIN_PRODUCTS",
+      "chunk_id": "d26f680f-dbe5-5247-843f-4c7788358d85",
+      "failure": "BROKEN_BEFORE / SHOULD_MERGE_PREVIOUS",
+      "impact": "Evidence preserved and Q1 answerable with two chunks; isolated merge candidate, not systematic truncation."
+    }
+  ],
+  "known_redundancy_cases": [
+    {
+      "question_id": "Q02_FITNESS_RELEVANCE",
+      "classification": "RETRIEVAL_REDUNDANCY_CANDIDATE",
+      "attribution": "Retriever not implemented; future evaluation must separate source repetition, overlap, and ranking diversity."
+    },
+    {
+      "question_id": "Q03_IMPORT_DISTRIBUTION_EVIDENCE",
+      "classification": "EVIDENCE_REDUNDANCY_OBSERVED",
+      "attribution": "Source-level repetition and chunk overlap observed; chunker-only causality not isolated."
+    }
+  ],
+  "minimal_sufficient_evidence_question_ids": [
+    "Q03_IMPORT_DISTRIBUTION_EVIDENCE",
+    "Q04_CHINA_SUPPLY_CHAIN_EVIDENCE",
+    "Q06_COMPANY_BUSINESS_ROLE",
+    "Q08_PAGE_PRODUCT_OR_FULFILLMENT_FACTS",
+    "Q09_OPPORTUNITY_SUPPORTING_FACTS",
+    "Q10_BEST_CITATION_FOR_FREIGHT_MODE_CLAIM"
+  ],
+  "decision": {
+    "result": "KEEP_CURRENT_CHUNKER",
+    "parameter_changes": false,
+    "rationale": "Human Ground Truth shows one isolated merge candidate, no systematic semantic truncation, no evidence loss, no hard-limit or offset failures, and nine valid short evidence units. Redundancy attribution is not isolated enough to justify target, hard-max, overlap, minimum-size, or automatic-short-merge changes."
+  },
+  "validation_gate": {
+    "targeted_tests": "32 passed",
+    "full_pytest": "1307 passed",
+    "ruff": "passed",
+    "mypy_strict": "passed (445 source files)",
+    "alembic_head": "b2d4e6f8a0c1",
+    "alembic_current": "b2d4e6f8a0c1",
+    "alembic_drift": "No new upgrade operations detected",
+    "migration_lifecycle": "upgrade head -> downgrade base -> upgrade head passed",
+    "chunk_identity_determinism": "passed",
+    "postgres_ingestion_chunk_integration": "passed",
+    "local_gate": "MERGE_READY"
+  },
+  "limitations": [
+    "Ten fixtures validate the evaluation framework and establish an engineering baseline; they do not prove production optimality.",
+    "Claim entailment and citation sufficiency were explicitly labeled only for Q10 and must not be inferred for Q1-Q9.",
+    "Retriever metrics such as Recall@K, MRR, nDCG, top-k diversity, and retrieval redundancy are deferred to R2b/R3.",
+    "The evaluation dataset must expand from 10 to 50 to 100+ examples across additional document types and languages."
+  ]
+}
