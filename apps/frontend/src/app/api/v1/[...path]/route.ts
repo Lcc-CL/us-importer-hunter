@@ -14,7 +14,6 @@ const ALLOWED_PREFIXES = [
   "discovery-tasks",
   "mvp",
   "companies",
-  "research",
 ] as const;
 
 const FORWARDED_RESPONSE_HEADERS = [

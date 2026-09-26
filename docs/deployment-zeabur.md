@@ -18,7 +18,10 @@
 - 浏览器只请求同源 `/api/...`；`BACKEND_INTERNAL_URL` 是**服务端**变量，
   绝不能带 `NEXT_PUBLIC_` 前缀。
 - 白名单路径见 `apps/frontend/src/app/api/v1/[...path]/route.ts`，无任意 URL
-  代理。
+  代理。`research` 不在白名单内：Research API 不经前端代理对外暴露。
+- 整个前端（含 `/api/v1` 代理）由访问口令保护（`apps/frontend/src/proxy.ts`，
+  HTTP Basic，用户名任意，密码为 `FRONTEND_ACCESS_PASSWORD`）。生产环境未设置
+  该变量时所有请求返回 503（fail closed）。
 
 ## Zeabur 控制台步骤
 
@@ -42,16 +45,18 @@
    PostgreSQL Job/Lease，不把 Redis 当任务队列。
 4. 添加 **Frontend** 服务：Root Directory `apps/frontend`，Dockerfile
    target `prod`，绑定公网域名。
-   构建变量：`NEXT_PUBLIC_ENABLE_RESEARCH=true`。
-   运行变量：`BACKEND_INTERNAL_URL=http://<backend 服务名>.zeabur.internal:8000`。
+   构建变量：`NEXT_PUBLIC_ENABLE_RESEARCH=false`。
+   运行变量：`BACKEND_INTERNAL_URL=http://<backend 服务名>.zeabur.internal:8000`、
+   `FRONTEND_ACCESS_PASSWORD=`（Secret，访问口令；**不要**加 `NEXT_PUBLIC_` 前缀）。
 5. Backend 首次启动后在其终端执行一次迁移：
    `uv run --no-dev alembic upgrade head`。
-6. 线上 smoke：打开前端域名 → Provider 徽章显示 deepseek →
-   对一家公司跑通 研究 → 确认 → 分析 → 草稿 → 刷新恢复。
+6. 线上 smoke：打开前端域名 → 浏览器弹出口令框，输入 `FRONTEND_ACCESS_PASSWORD`
+   → Provider 徽章显示 deepseek → 对一家公司跑通 分析 → 草稿 → 刷新恢复。
    另验证创建批次后 API 返回 202，Worker 服务领取 Job，停止并重启 Worker
    后过期 lease 能恢复，且 Backend 的查询接口在 Worker 停止时仍可读取。
-   浏览器直接访问 `https://<前端域名>/api/v1/health/runtime` 应返回 JSON
-   且**不含**任何密钥；backend 无公网地址可访问。
+   未带口令访问 `https://<前端域名>/api/v1/health/runtime` 应返回 401；
+   带口令访问应返回 JSON 且**不含**任何密钥；`/api/v1/research/...` 应返回
+   404；backend 无公网地址可访问。
 
 本地演练：`docker compose -f docker-compose.prod.yml --env-file .env.production up --build`。
 

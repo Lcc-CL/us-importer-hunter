@@ -75,16 +75,26 @@ services:
       context: ./apps/frontend
       target: prod
       args:
-        NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-true}
+        NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-false}
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
+      FRONTEND_ACCESS_PASSWORD: ${FRONTEND_ACCESS_PASSWORD:?set FRONTEND_ACCESS_PASSWORD in the env file}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      # The whole frontend sits behind the access passcode, so the probe
+      # authenticates with it (read from the container env, never inlined).
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch("http://127.0.0.1:3000/", {headers: {authorization: "Basic " +
+          Buffer.from(":" + process.env.FRONTEND_ACCESS_PASSWORD).toString("base64")}})
+          .then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))
       interval: 15s
       timeout: 5s
       retries: 5
