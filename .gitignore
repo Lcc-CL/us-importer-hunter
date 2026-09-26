@@ -3,6 +3,7 @@
 .env.save
 .env.backup*
 .env.local
+.env.production
 .env.*.local
 
 # Python
