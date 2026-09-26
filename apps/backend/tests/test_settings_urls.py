@@ -1,4 +1,4 @@
-"""Platform URL overrides (Zeabur): DATABASE_URL / REDIS_URL win when set."""
+"""Platform URL overrides: DATABASE_URL / REDIS_URL win when set."""
 
 from app.core.config import Settings
 

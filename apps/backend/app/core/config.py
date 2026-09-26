@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     backend_cors_origins: list[str] = ["http://localhost:3000"]
 
-    # PostgreSQL. Managed platforms (Zeabur) hand out one DATABASE_URL; when
+    # PostgreSQL. Managed databases hand out one DATABASE_URL; when
     # set it wins over the individual POSTGRES_* fields below.
     database_url_env: str = Field(
         "", validation_alias=AliasChoices("DATABASE_URL", "database_url_env")

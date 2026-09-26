@@ -61,7 +61,8 @@ human confirmation before the existing qualification and draft workflow runs.
 **v0.3.1 待办（联系人发现，2026-07-25 记录）：** 联系人提取应复用研究阶段的
 cleaned text（当前 discover 端点对 run 的页面重新抓取，多一次公网访问）；
 sender_email 与 signature 进入 Sender Profile 与分析契约；外部联系人 Provider；
-联系人邮箱验证（当前一律 unverified）；Zeabur 部署配置。
+联系人邮箱验证（当前一律 unverified）；服务器部署配置（已改为平台无关的
+Docker Compose 部署，见 `docs/deployment.md`）。
 
 ## Later
 

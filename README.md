@@ -61,3 +61,5 @@ Validation and known limitations:
 - [docs/](docs/) — detailed references: PRD, business domain, architecture,
   coding standards, agents, workflows, API, database, decision log (ADRs),
   roadmap.
+- [docs/deployment.md](docs/deployment.md) — production deployment on any
+  server (Docker Compose) or container platform.
