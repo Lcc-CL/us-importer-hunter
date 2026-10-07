@@ -36,6 +36,16 @@ class SqlAlchemyProspectJobRepository:
         )
         return ProspectJobMapper.to_domain(model) if model else None
 
+    async def list_for_batch(self, batch_id: UUID) -> list[ProspectJob]:
+        models = list(
+            await self._session.scalars(
+                select(ProspectBatchJobModel)
+                .where(ProspectBatchJobModel.batch_id == batch_id)
+                .order_by(ProspectBatchJobModel.created_at)
+            )
+        )
+        return [ProspectJobMapper.to_domain(model) for model in models]
+
     async def find_by_request_key_hash(self, request_key_hash: str) -> ProspectJob | None:
         model = await self._session.scalar(
             select(ProspectBatchJobModel).where(

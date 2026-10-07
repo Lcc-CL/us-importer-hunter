@@ -37,6 +37,18 @@ async def test_maps_real_csv_rows_and_preserves_manual_source_label() -> None:
     assert mapped.import_evidence == "Shipment record 42"
 
 
+async def test_accepts_source_external_id_alias_used_by_calibration_template() -> None:
+    provider = ManualCsvCompanyDiscoveryProvider(
+        b"company_name,source_external_id,website\n"
+        b"Atlas Tools,customer-sample-1,https://atlas.example\n"
+    )
+
+    result = await provider.search(query())
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0].external_id == "customer-sample-1"
+
+
 async def test_invalid_row_is_reported_without_aborting_valid_rows() -> None:
     provider = ManualCsvCompanyDiscoveryProvider(
         b"company_name,source_url,external_id\n"

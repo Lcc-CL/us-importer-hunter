@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database.repositories import (
     SqlAlchemyBulkImportRepository,
+    SqlAlchemyCalibrationRunRepository,
     SqlAlchemyCompanyRepository,
     SqlAlchemyContactRepository,
     SqlAlchemyDiscoveryTaskRepository,
@@ -43,6 +44,7 @@ from app.database.repositories import (
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
     BulkImportRepository,
+    CalibrationRunRepository,
     CompanyRepository,
     ContactRepository,
     DiscoveryTaskRepository,
@@ -66,6 +68,7 @@ from app.domain.repositories import (
 
 
 class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
+    calibrations: CalibrationRunRepository
     bulk_import: BulkImportRepository
     companies: CompanyRepository
     contacts: ContactRepository
@@ -96,6 +99,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self._committed = False
         self.bulk_import = SqlAlchemyBulkImportRepository(self._session)
         self.companies = SqlAlchemyCompanyRepository(self._session)
+        self.calibrations = SqlAlchemyCalibrationRunRepository(self._session)
         self.contacts = SqlAlchemyContactRepository(self._session)
         self.discovery_tasks = SqlAlchemyDiscoveryTaskRepository(self._session)
         self.prospect_batches = SqlAlchemyProspectBatchRepository(self._session)

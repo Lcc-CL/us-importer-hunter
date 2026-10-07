@@ -8,6 +8,7 @@ Rules (ADR-0017):
 """
 
 from app.database.repositories.bulk_import import SqlAlchemyBulkImportRepository
+from app.database.repositories.calibration import SqlAlchemyCalibrationRunRepository
 from app.database.repositories.company import SqlAlchemyCompanyRepository
 from app.database.repositories.contact import SqlAlchemyContactRepository
 from app.database.repositories.discovery_task import SqlAlchemyDiscoveryTaskRepository
@@ -39,6 +40,7 @@ from app.database.repositories.umail_feedback import SqlAlchemyUmailFeedbackRepo
 __all__ = [
     "SqlAlchemyBulkImportRepository",
     "SqlAlchemyCompanyRepository",
+    "SqlAlchemyCalibrationRunRepository",
     "SqlAlchemyImportEvidenceRepository",
     "SqlAlchemyImportEvidencePromotionRepository",
     "SqlAlchemyImportEvidenceProjectionReader",

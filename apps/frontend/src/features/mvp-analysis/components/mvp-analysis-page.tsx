@@ -64,6 +64,7 @@ interface MvpAnalysisPageProps {
   initialRoutingRunId?: string;
   initialTaskId?: string;
   initialBatchId?: string;
+  initialCalibrationId?: string;
   initialResearchId?: string;
   initialUmailExportBatchId?: string;
   initialUmailResultImportId?: string;
@@ -84,6 +85,7 @@ export function MvpAnalysisPage({
   initialRoutingRunId,
   initialTaskId,
   initialBatchId,
+  initialCalibrationId,
   initialResearchId,
   initialUmailExportBatchId,
   initialUmailResultImportId,
@@ -148,6 +150,7 @@ export function MvpAnalysisPage({
           : {}),
         ...(initialRoutingRunId ? { routing_run_id: initialRoutingRunId } : {}),
         batch_id: initialBatchId,
+        ...(initialCalibrationId ? { calibration_id: initialCalibrationId } : {}),
       }).toString()}#${initialRoutingRunId ? "prospect-routing-batch" : "prospect-batch-panel"}`
     : undefined;
   const showAWorkspace = Boolean(initialCompanyId && initialRoutingRunId);
@@ -470,6 +473,7 @@ export function MvpAnalysisPage({
           <div className="border-t border-slate-200 p-4">
             <DiscoveryTaskPanel
               initialBatchId={initialBatchId}
+              initialCalibrationId={initialCalibrationId}
               initialTaskId={initialTaskId}
             />
           </div>

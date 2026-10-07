@@ -6,6 +6,10 @@ module is imported here so Alembic autogenerate sees the full metadata.
 """
 
 from app.database.models.bulk_import import ImportSessionModel, RawImportRowModel
+from app.database.models.calibration import (
+    CalibrationEvaluationModel,
+    CalibrationRunModel,
+)
 from app.database.models.company import (
     CompanyAliasModel,
     CompanyModel,
@@ -71,6 +75,8 @@ from app.database.models.umail_feedback import (
 
 __all__ = [
     "CompanyAliasModel",
+    "CalibrationEvaluationModel",
+    "CalibrationRunModel",
     "CompanyModel",
     "CompanySignalModel",
     "CompanySourceModel",

@@ -23,6 +23,7 @@ from app.domain.prospect_batch import (
     ProspectBatchSourceContext,
     ProspectBatchSourceKind,
     ProspectBatchStage,
+    ProspectContactType,
     RoutingBatchCompanySourceContext,
     RoutingProspectBatchSourceContext,
 )
@@ -886,6 +887,11 @@ class ProspectBatchWorkflow:
                 return
             contact = primary.contact
             name = contact.name or department_display_name(contact.email)
+            contact_type = {
+                DiscoverySourceType.NAMED: ProspectContactType.PERSONAL,
+                DiscoverySourceType.DEPARTMENT: ProspectContactType.DEPARTMENT,
+                DiscoverySourceType.GENERIC: ProspectContactType.GENERIC,
+            }[contact.source_type]
             try:
                 ingested = await self._contact_ingestion.handle(
                     ContactCandidateDiscovered(
@@ -943,6 +949,7 @@ class ProspectBatchWorkflow:
                     name=name,
                     email=contact.email or None,
                     source_url=contact.source_url,
+                    contact_type=contact_type,
                 ),
             )
             await _notify(heartbeat)

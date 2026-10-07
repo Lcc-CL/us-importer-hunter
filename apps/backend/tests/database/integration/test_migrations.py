@@ -136,6 +136,8 @@ EXPECTED_TABLES = {
     "import_evidence_promotion_quality_assessments",
     "importer_evidence_aggregates",
     "importer_evidence_aggregate_shipments",
+    "calibration_runs",
+    "calibration_evaluations",
 }
 
 
@@ -146,6 +148,8 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     draft_columns = asyncio.run(_column_names(migration_db_url, "email_drafts"))
     assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns
     assert "status" not in draft_columns
+    prospect_columns = asyncio.run(_column_names(migration_db_url, "prospect_batch_companies"))
+    assert {"contact_type", "stage_timings_json"} <= prospect_columns
     export_row_columns = asyncio.run(_column_names(migration_db_url, "umail_export_rows"))
     assert {
         "first_name",
@@ -179,6 +183,10 @@ def test_upgrade_downgrade_upgrade(migration_db_url: str) -> None:
     assert EXPECTED_TABLES <= tables_again
     draft_columns_again = asyncio.run(_column_names(migration_db_url, "email_drafts"))
     assert {"approval_status", "approved_at", "approved_by_name"} <= draft_columns_again
+    prospect_columns_again = asyncio.run(
+        _column_names(migration_db_url, "prospect_batch_companies")
+    )
+    assert {"contact_type", "stage_timings_json"} <= prospect_columns_again
     export_row_columns_again = asyncio.run(
         _column_names(migration_db_url, "umail_export_rows")
     )

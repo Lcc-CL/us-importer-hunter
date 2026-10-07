@@ -7,7 +7,14 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { CheckCircle2, ExternalLink, Play, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  FlaskConical,
+  Play,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 
 import {
   senderProfileServerSnapshot,
@@ -16,6 +23,7 @@ import {
 } from "@/features/mvp-analysis/sender-profile";
 import type { ProspectSender } from "@/features/mvp-analysis/prospect-state";
 import {
+  createCalibrationRun,
   createProspectBatch,
   getClientErrorDetails,
   getProspectBatch,
@@ -34,11 +42,13 @@ import {
   type ProspectCompanyBlockersResponse,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { CalibrationReportPanel } from "./calibration-report-panel";
 
 interface ProspectBatchPanelProps {
   task: DiscoveryTaskResponse;
   companies: DiscoveryCompanyResponse[];
   initialBatchId?: string;
+  initialCalibrationId?: string;
 }
 
 type BatchFilter = "all" | "completed" | "needs_review" | "failed";
@@ -110,6 +120,7 @@ export function ProspectBatchPanel({
   task,
   companies,
   initialBatchId,
+  initialCalibrationId,
 }: ProspectBatchPanelProps) {
   const { t } = useI18n();
   const eligible = useMemo(
@@ -127,6 +138,9 @@ export function ProspectBatchPanel({
   const [busy, setBusy] = useState(Boolean(initialBatchId));
   const [error, setError] = useState<string | null>(null);
   const [creationMessage, setCreationMessage] = useState<string | null>(null);
+  const [calibrationId, setCalibrationId] = useState<string | null>(
+    initialCalibrationId ?? null,
+  );
   const storedSender = useSyncExternalStore(
     subscribeSenderProfile,
     senderProfileSnapshot,
@@ -163,6 +177,13 @@ export function ProspectBatchPanel({
   function persistBatchId(batchId: string) {
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("batch_id", batchId);
+    window.history.replaceState(null, "", currentUrl);
+  }
+
+  function persistCalibration(calibration: string, batchId: string) {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("batch_id", batchId);
+    currentUrl.searchParams.set("calibration_id", calibration);
     window.history.replaceState(null, "", currentUrl);
   }
 
@@ -220,6 +241,31 @@ export function ProspectBatchPanel({
       persistBatchId(created.batch_id);
       setCreationMessage(
         created.reused ? t("batch.reused") : t("batch.createdBackground"),
+      );
+      await loadResults(created.batch_id);
+    } catch (caught: unknown) {
+      setError(getClientErrorDetails(caught).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startCalibration() {
+    if (busy || selected.length < 3 || selected.length > 5) return;
+    setBusy(true);
+    setError(null);
+    setCreationMessage(null);
+    try {
+      const created = await createCalibrationRun(
+        task.task_id,
+        selected,
+        toBatchSender(storedSender),
+        crypto.randomUUID(),
+      );
+      setCalibrationId(created.calibration_id);
+      persistCalibration(created.calibration_id, created.batch_id);
+      setCreationMessage(
+        created.reused ? t("batch.reused") : t("calibration.created"),
       );
       await loadResults(created.batch_id);
     } catch (caught: unknown) {
@@ -318,16 +364,29 @@ export function ProspectBatchPanel({
             {t("batch.intro")}
           </p>
         </div>
-        <button
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          data-testid="start-prospect-batch"
-          disabled={busy || executionActive || selected.length === 0}
-          onClick={startBatch}
-          type="button"
-        >
-          <Play className="size-4" />
-          {busy || executionActive ? t("batch.running") : t("batch.start")}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-indigo-300 bg-white px-4 text-sm font-semibold text-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="start-prospect-batch"
+            disabled={busy || executionActive || selected.length === 0}
+            onClick={startBatch}
+            type="button"
+          >
+            <Play className="size-4" />
+            {busy || executionActive ? t("batch.running") : t("batch.start")}
+          </button>
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="start-calibration-run"
+            disabled={
+              busy || executionActive || selected.length < 3 || selected.length > 5
+            }
+            onClick={startCalibration}
+            type="button"
+          >
+            <FlaskConical className="size-4" /> {t("calibration.start")}
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
@@ -350,6 +409,9 @@ export function ProspectBatchPanel({
           {t("batch.selected", { count: selected.length })}
         </span>
         <span className="font-medium text-amber-700">{t("batch.limit")}</span>
+        <span className="font-medium text-violet-700">
+          {t("calibration.selectionHint")}
+        </span>
       </div>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -607,6 +669,12 @@ export function ProspectBatchPanel({
             ))}
           </div>
         </div>
+      ) : null}
+      {calibrationId ? (
+        <CalibrationReportPanel
+          calibrationId={calibrationId}
+          refreshToken={execution?.updated_at ?? batch?.completed_at}
+        />
       ) : null}
     </div>
   );

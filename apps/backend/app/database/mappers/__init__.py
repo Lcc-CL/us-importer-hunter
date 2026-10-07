@@ -8,6 +8,7 @@ replay history as new events.
 """
 
 from app.database.mappers.bulk_import import BulkImportMapper
+from app.database.mappers.calibration import CalibrationRunMapper
 from app.database.mappers.company import CompanyMapper
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
 from app.database.mappers.discovery_task import DiscoveryTaskMapper
@@ -34,6 +35,7 @@ from app.database.mappers.umail_feedback import UmailFeedbackMapper
 __all__ = [
     "BulkImportMapper",
     "CompanyMapper",
+    "CalibrationRunMapper",
     "ImportEvidenceQualityMapper",
     "ImportEvidencePromotionMapper",
     "ImporterEvidenceAggregateMapper",

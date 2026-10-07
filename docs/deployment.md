@@ -144,3 +144,9 @@ PostgreSQL 16 与 Redis 7）：
 3. 未带口令访问 `https://<前端地址>/api/v1/health/runtime` 应返回 401；
    带口令访问应返回 JSON 且**不含**任何密钥；`/api/v1/research/...` 应返回
    404；backend 没有可从公网访问的地址。
+
+D4a 校准页面、评价保存与 CSV/JSON 导出依赖 `calibrations/*` 白名单。
+如果 Research 或 Draft 配置为真实 Provider，普通 3–5 家校准入口会主动拒绝，
+避免未经凭据轮换确认和双样本限流就产生付费请求；校准 smoke 应使用
+`RESEARCH_EXTRACTOR_PROVIDER=fake` 与 `EMAIL_GENERATOR_PROVIDER=fake`。
+这只是配置检查说明，不代表已完成部署或线上验证。

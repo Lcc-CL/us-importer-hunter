@@ -8,6 +8,7 @@ const ALLOWED_PREFIXES = [
   "prospect-routing-runs",
   "prospect-routes",
   "prospect-batches",
+  "calibrations",
   "suppressions",
   "umail-export-batches",
   "umail-result-imports",
@@ -63,6 +64,8 @@ async function proxy(
   if (contentType) headers.set("content-type", contentType);
   const requestId = request.headers.get("x-request-id");
   if (requestId) headers.set("x-request-id", requestId);
+  const idempotencyKey = request.headers.get("idempotency-key");
+  if (idempotencyKey) headers.set("idempotency-key", idempotencyKey);
 
   try {
     const upstream = await fetch(target, {
