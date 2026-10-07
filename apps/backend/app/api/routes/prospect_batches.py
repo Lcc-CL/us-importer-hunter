@@ -20,6 +20,8 @@ from app.schemas.prospect_batch import (
     ProspectBatchResponse,
     ProspectBatchResumeRequest,
     ProspectBatchRetryRequest,
+    ProspectBatchStartRequest,
+    ProspectBatchStartResponse,
     ProspectCompanyBlockersResponse,
 )
 from app.shared.exceptions import ResourceNotFoundError
@@ -27,6 +29,7 @@ from app.workflows.prospect_batch import (
     CreateProspectBatchCommand,
     ResumeProspectCompanyCommand,
     RetryProspectCompanyCommand,
+    StartRoutingProspectBatchCommand,
 )
 
 router = APIRouter(tags=["prospect-batches"])
@@ -34,6 +37,7 @@ ERRORS: dict[int | str, dict[str, Any]] = {
     404: {"model": ApiErrorResponse},
     409: {"model": ApiErrorResponse},
     422: {"model": ApiErrorResponse},
+    503: {"model": ApiErrorResponse},
     500: {"model": ApiErrorResponse},
 }
 
@@ -64,6 +68,35 @@ async def create_prospect_batch(
         job_id=submission.job.id,
         status=submission.job.status.value,
         reused=submission.reused,
+    )
+
+
+@router.post(
+    "/prospect-batches/{batch_id}/start",
+    response_model=ProspectBatchStartResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=ERRORS,
+)
+async def start_routing_prospect_batch(
+    batch_id: UUID,
+    payload: ProspectBatchStartRequest,
+    workflow: ProspectBatchSubmissionDep,
+) -> ProspectBatchStartResponse:
+    submission = await workflow.start_routing_batch(
+        batch_id,
+        StartRoutingProspectBatchCommand(
+            confirmation=payload.confirmation,
+            provider_mode=payload.provider_mode,
+            note=payload.note,
+            sender=payload.sender.to_domain() if payload.sender else None,
+        ),
+    )
+    return ProspectBatchStartResponse(
+        batch_id=submission.batch.id,
+        job_id=submission.job.id,
+        status=submission.job.status.value,
+        reused=submission.reused,
+        processing_started=True,
     )
 
 

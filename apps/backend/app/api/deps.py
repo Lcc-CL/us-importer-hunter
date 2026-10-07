@@ -21,9 +21,14 @@ from app.domain.calibration import (
 )
 from app.domain.discovery import CompanyDiscoveryProvider
 from app.domain.repositories import (
+    BulkImportUnitOfWork,
     CalibrationUnitOfWork,
     DiscoveryTaskUnitOfWork,
+    ImportResolutionUnitOfWork,
     ProspectBatchUnitOfWork,
+    ResearchUnitOfWork,
+    UmailExportUnitOfWork,
+    UmailFeedbackUnitOfWork,
     UnitOfWork,
 )
 from app.domain.services import (
@@ -32,6 +37,7 @@ from app.domain.services import (
     ImportEvidenceProjectionReader,
     OpportunityScoringService,
 )
+from app.services.acceptance import RealDataPreflightService
 from app.services.contact import DeterministicDecisionMakerSelectionService
 from app.services.contact_discovery_runner import WebsiteContactDiscoveryService
 from app.services.email import FakeEmailDraftGenerator, OpenAIEmailDraftGenerator
@@ -44,6 +50,7 @@ from app.services.scoring import DeterministicOpportunityScoringService
 from app.shared.exceptions import ProviderUnavailableError
 from app.tools.importyeti import ImportYetiCompanyDiscoveryProvider
 from app.tools.website import FetchLimits, SafeFetcher, SiteScope
+from app.workflows.bulk_import import BulkImportQueryWorkflow, BulkImportWorkflow
 from app.workflows.calibration import (
     CalibrationReportWorkflow,
     CreateCalibrationRunWorkflow,
@@ -55,6 +62,11 @@ from app.workflows.decision_maker import DecisionMakerSelectionWorkflow
 from app.workflows.discovery_task import DiscoveryTaskQueryWorkflow, DiscoveryTaskWorkflow
 from app.workflows.email import EmailDraftGenerationWorkflow
 from app.workflows.import_evidence import EvidenceFlowUnitOfWork, EvidenceToDraftWorkflow
+from app.workflows.import_resolution import (
+    ImportEntityReviewWorkflow,
+    ImportResolutionQueryWorkflow,
+    ImportResolutionSubmissionWorkflow,
+)
 from app.workflows.mvp_prospect_analysis import (
     ApproveEmailDraftWorkflow,
     MvpProspectAnalysisWorkflow,
@@ -67,12 +79,21 @@ from app.workflows.prospect_batch import (
     ProspectBatchSubmissionWorkflow,
     ProspectBatchWorkflow,
     ProspectJobQueryWorkflow,
+    ProspectPipelineProviderConfiguration,
+)
+from app.workflows.prospect_routing import (
+    ProspectRouteReviewWorkflow,
+    ProspectRoutingBatchWorkflow,
+    ProspectRoutingQueryWorkflow,
+    ProspectRoutingSubmissionWorkflow,
 )
 from app.workflows.research import (
     ClaimPromotionWorkflow,
     ResearchLimits,
     ResearchWorkflow,
 )
+from app.workflows.umail_export import SuppressionWorkflow, UmailExportWorkflow
+from app.workflows.umail_feedback import UmailResultImportWorkflow
 
 
 def get_request_settings(request: Request) -> Settings:
@@ -81,6 +102,16 @@ def get_request_settings(request: Request) -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(get_request_settings)]
+
+
+def get_acceptance_preflight_service() -> RealDataPreflightService:
+    return RealDataPreflightService()
+
+
+AcceptancePreflightDep = Annotated[
+    RealDataPreflightService,
+    Depends(get_acceptance_preflight_service),
+]
 
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -111,6 +142,159 @@ def get_uow_factory(request: Request) -> UowFactory:
 UowFactoryDep = Annotated[UowFactory, Depends(get_uow_factory)]
 
 
+def get_bulk_import_workflow(uow_factory: UowFactoryDep) -> BulkImportWorkflow:
+    return BulkImportWorkflow(cast(Callable[[], BulkImportUnitOfWork], uow_factory))
+
+
+BulkImportWorkflowDep = Annotated[BulkImportWorkflow, Depends(get_bulk_import_workflow)]
+
+
+def get_bulk_import_query_workflow(uow_factory: UowFactoryDep) -> BulkImportQueryWorkflow:
+    return BulkImportQueryWorkflow(cast(Callable[[], BulkImportUnitOfWork], uow_factory))
+
+
+BulkImportQueryDep = Annotated[
+    BulkImportQueryWorkflow, Depends(get_bulk_import_query_workflow)
+]
+
+
+def get_import_resolution_submission_workflow(
+    uow_factory: UowFactoryDep,
+    settings: SettingsDep,
+) -> ImportResolutionSubmissionWorkflow:
+    return ImportResolutionSubmissionWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory),
+        max_attempts=settings.import_job_max_attempts,
+    )
+
+
+ImportResolutionSubmissionDep = Annotated[
+    ImportResolutionSubmissionWorkflow,
+    Depends(get_import_resolution_submission_workflow),
+]
+
+
+def get_import_resolution_query_workflow(
+    uow_factory: UowFactoryDep,
+) -> ImportResolutionQueryWorkflow:
+    return ImportResolutionQueryWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ImportResolutionQueryDep = Annotated[
+    ImportResolutionQueryWorkflow,
+    Depends(get_import_resolution_query_workflow),
+]
+
+
+def get_import_entity_review_workflow(
+    uow_factory: UowFactoryDep,
+) -> ImportEntityReviewWorkflow:
+    return ImportEntityReviewWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ImportEntityReviewDep = Annotated[
+    ImportEntityReviewWorkflow,
+    Depends(get_import_entity_review_workflow),
+]
+
+
+def get_prospect_routing_submission_workflow(
+    uow_factory: UowFactoryDep,
+    settings: SettingsDep,
+) -> ProspectRoutingSubmissionWorkflow:
+    return ProspectRoutingSubmissionWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory),
+        max_attempts=settings.import_job_max_attempts,
+    )
+
+
+ProspectRoutingSubmissionDep = Annotated[
+    ProspectRoutingSubmissionWorkflow,
+    Depends(get_prospect_routing_submission_workflow),
+]
+
+
+def get_prospect_routing_query_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectRoutingQueryWorkflow:
+    return ProspectRoutingQueryWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ProspectRoutingQueryDep = Annotated[
+    ProspectRoutingQueryWorkflow,
+    Depends(get_prospect_routing_query_workflow),
+]
+
+
+def get_prospect_route_review_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectRouteReviewWorkflow:
+    return ProspectRouteReviewWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ProspectRouteReviewDep = Annotated[
+    ProspectRouteReviewWorkflow,
+    Depends(get_prospect_route_review_workflow),
+]
+
+
+def get_prospect_routing_batch_workflow(
+    uow_factory: UowFactoryDep,
+) -> ProspectRoutingBatchWorkflow:
+    return ProspectRoutingBatchWorkflow(
+        cast(Callable[[], ImportResolutionUnitOfWork], uow_factory)
+    )
+
+
+ProspectRoutingBatchDep = Annotated[
+    ProspectRoutingBatchWorkflow,
+    Depends(get_prospect_routing_batch_workflow),
+]
+
+
+def get_suppression_workflow(uow_factory: UowFactoryDep) -> SuppressionWorkflow:
+    return SuppressionWorkflow(
+        cast(Callable[[], UmailExportUnitOfWork], uow_factory)
+    )
+
+
+SuppressionWorkflowDep = Annotated[
+    SuppressionWorkflow, Depends(get_suppression_workflow)
+]
+
+
+def get_umail_export_workflow(uow_factory: UowFactoryDep) -> UmailExportWorkflow:
+    return UmailExportWorkflow(
+        cast(Callable[[], UmailExportUnitOfWork], uow_factory)
+    )
+
+
+UmailExportWorkflowDep = Annotated[
+    UmailExportWorkflow, Depends(get_umail_export_workflow)
+]
+
+
+def get_umail_result_import_workflow(
+    uow_factory: UowFactoryDep,
+) -> UmailResultImportWorkflow:
+    return UmailResultImportWorkflow(
+        cast(Callable[[], UmailFeedbackUnitOfWork], uow_factory)
+    )
+
+
+UmailResultImportWorkflowDep = Annotated[
+    UmailResultImportWorkflow, Depends(get_umail_result_import_workflow)
+]
+
+
 def get_opportunity_scoring_service() -> OpportunityScoringService:
     return DeterministicOpportunityScoringService()
 
@@ -136,6 +320,21 @@ def get_email_draft_generator(settings: SettingsDep) -> EmailDraftGenerator:
         return OpenAIEmailDraftGenerator(
             api_key=settings.openai_api_key or None,
             model=settings.openai_model,
+        )
+    if settings.email_generator_provider == "deepseek":
+        if not settings.deepseek_api_key.strip():
+            raise ProviderUnavailableError(
+                "email generator is set to deepseek but DEEPSEEK_API_KEY is not configured"
+            )
+        if not settings.deepseek_model.strip():
+            raise ProviderUnavailableError(
+                "email generator is set to deepseek but no model is configured"
+            )
+        return OpenAIEmailDraftGenerator(
+            api_key=settings.deepseek_api_key,
+            model=settings.deepseek_model,
+            base_url=settings.deepseek_base_url or None,
+            provider="deepseek",
         )
     raise ProviderUnavailableError("configured email generator is unavailable")
 
@@ -380,7 +579,7 @@ def get_research_workflow(
         )
 
     return ResearchWorkflow(
-        uow_factory=uow_factory,
+        uow_factory=cast(Callable[[], ResearchUnitOfWork], uow_factory),
         extractor=extractor,
         fetcher_factory=fetcher_factory,
         limits=limits,
@@ -425,6 +624,7 @@ def get_prospect_batch_workflow(
         contact_ingestion=contact_ingestion,
         decision_maker=decision_maker,
         email_draft=email,
+        provider_configuration=_prospect_provider_configuration(settings),
     )
 
 
@@ -438,6 +638,7 @@ def get_prospect_batch_submission_workflow(
     return ProspectBatchSubmissionWorkflow(
         cast(Callable[[], ProspectBatchUnitOfWork], uow_factory),
         max_attempts=settings.prospect_job_max_attempts,
+        provider_configuration=_prospect_provider_configuration(settings),
     )
 
 
@@ -521,3 +722,38 @@ CalibrationEvaluationDep = Annotated[
     HumanEvaluationWorkflow,
     Depends(get_calibration_evaluation_workflow),
 ]
+
+
+def _prospect_provider_configuration(
+    settings: Settings,
+) -> ProspectPipelineProviderConfiguration:
+    research_configured = {
+        "fake": True,
+        "openai": bool(
+            settings.openai_api_key.strip()
+            and settings.resolved_research_model.strip()
+        ),
+        "deepseek": bool(
+            settings.deepseek_api_key.strip()
+            and settings.deepseek_model.strip()
+            and settings.deepseek_base_url.strip()
+        ),
+    }[settings.research_extractor_provider]
+    email_configured = {
+        "fake": True,
+        "openai": bool(
+            settings.openai_api_key.strip() and settings.openai_model.strip()
+        ),
+        "deepseek": bool(
+            settings.deepseek_api_key.strip()
+            and settings.deepseek_model.strip()
+            and settings.deepseek_base_url.strip()
+        ),
+    }[settings.email_generator_provider]
+    return ProspectPipelineProviderConfiguration(
+        app_env=settings.app_env,
+        research_provider=settings.research_extractor_provider,
+        email_provider=settings.email_generator_provider,
+        research_configured=research_configured,
+        email_configured=email_configured,
+    )

@@ -5,6 +5,7 @@ repositories accept and return domain aggregates (ADR-0017). Every model
 module is imported here so Alembic autogenerate sees the full metadata.
 """
 
+from app.database.models.bulk_import import ImportSessionModel, RawImportRowModel
 from app.database.models.calibration import (
     CalibrationEvaluationModel,
     CalibrationRunModel,
@@ -32,6 +33,14 @@ from app.database.models.import_evidence import (
     ImportEvidenceSnapshotModel,
     NormalizedShipmentModel,
 )
+from app.database.models.import_resolution import (
+    CompanyContactModel,
+    CompanyExternalIdentityModel,
+    CompanyResolutionProfileModel,
+    ImportEntityDecisionModel,
+    ImportProcessingJobModel,
+    ImportResolutionModel,
+)
 from app.database.models.opportunity import (
     OpportunityAssessmentModel,
     OpportunityEvidenceModel,
@@ -43,13 +52,26 @@ from app.database.models.prospect_batch import (
     ProspectBatchJobModel,
     ProspectBatchModel,
 )
+from app.database.models.prospect_routing import ProspectRouteModel, ProspectRoutingRunModel
 from app.database.models.research import (
     ResearchClaimModel,
+    ResearchDocumentChunkModel,
+    ResearchDocumentModel,
     ResearchPageModel,
     ResearchPromotionModel,
     ResearchRunModel,
 )
 from app.database.models.task import TaskAttemptModel, TaskModel
+from app.database.models.umail_export import (
+    SuppressionEntryModel,
+    UmailExportBatchModel,
+    UmailExportRowModel,
+)
+from app.database.models.umail_feedback import (
+    ContactEngagementEventModel,
+    UmailResultImportModel,
+    UmailResultRowModel,
+)
 
 __all__ = [
     "CompanyAliasModel",
@@ -58,6 +80,11 @@ __all__ = [
     "CompanyModel",
     "CompanySignalModel",
     "CompanySourceModel",
+    "CompanyContactModel",
+    "CompanyExternalIdentityModel",
+    "CompanyResolutionProfileModel",
+    "ImportSessionModel",
+    "RawImportRowModel",
     "ContactModel",
     "DiscoveryCandidateModel",
     "DiscoveryTaskModel",
@@ -70,6 +97,9 @@ __all__ = [
     "ImportEvidenceSignalModel",
     "ImportEvidenceSnapshotModel",
     "ImportEvidenceSignalPromotionModel",
+    "ImportEntityDecisionModel",
+    "ImportProcessingJobModel",
+    "ImportResolutionModel",
     "ImporterEntityMatchModel",
     "ImporterEvidenceAggregateModel",
     "ImporterEvidenceAggregateShipmentModel",
@@ -83,10 +113,20 @@ __all__ = [
     "ProspectBatchCompanyModel",
     "ProspectBatchJobModel",
     "ProspectBatchModel",
+    "ProspectRouteModel",
+    "ProspectRoutingRunModel",
     "ResearchClaimModel",
+    "ResearchDocumentChunkModel",
+    "ResearchDocumentModel",
     "ResearchPageModel",
     "ResearchPromotionModel",
     "ResearchRunModel",
     "TaskAttemptModel",
     "TaskModel",
+    "SuppressionEntryModel",
+    "UmailExportBatchModel",
+    "UmailExportRowModel",
+    "ContactEngagementEventModel",
+    "UmailResultImportModel",
+    "UmailResultRowModel",
 ]

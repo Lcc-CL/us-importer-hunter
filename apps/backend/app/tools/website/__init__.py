@@ -4,7 +4,7 @@ No LLM and no persistence here — these are the deterministic primitives the
 research workflow will compose in phase 2. Network policy lives in ADR-0026.
 """
 
-from app.tools.website.cleaner import CleanedPage, clean_html
+from app.tools.website.cleaner import CLEANER_VERSION, CleanedPage, clean_html
 from app.tools.website.fetcher import (
     FetchedPage,
     FetchFailure,
@@ -46,6 +46,7 @@ __all__ = [
     "ROBOTS_CONTENT_TYPES",
     "ROBOTS_TOKEN",
     "CleanedPage",
+    "CLEANER_VERSION",
     "FetchFailure",
     "FetchLimits",
     "FetchOutcome",

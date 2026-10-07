@@ -1,6 +1,6 @@
-.PHONY: up up-tools down logs backend frontend infra test lint fmt migrate revision \
+.PHONY: up up-tools down logs backend frontend worker infra test lint fmt migrate revision \
         e2e e2e-real e2e-up e2e-down e2e-install e2e-report e2e-flag-off \
-        research-smoke-real
+        research-smoke-real deploy prod-ps prod-logs prod-down
 
 # --- Docker ---
 up:            ## start the full stack
@@ -21,6 +21,9 @@ infra:         ## start only postgres + redis (host-run apps)
 # --- Host development ---
 backend:       ## run backend with hot reload on the host
 	cd apps/backend && uv run uvicorn app.main:app --reload
+
+worker:        ## run the background worker on the host (needed for queued jobs)
+	cd apps/backend && uv run python -m app.worker
 
 frontend:      ## run frontend dev server on the host
 	cd apps/frontend && npm run dev
@@ -76,3 +79,18 @@ migrate:       ## apply migrations
 
 revision:      ## create a migration: make revision m="add companies table"
 	cd apps/backend && uv run alembic revision --autogenerate -m "$(m)"
+
+# --- Production (any Docker host; see docs/deployment.md) ---
+PROD_COMPOSE = docker compose -f docker-compose.prod.yml --env-file .env.production
+
+deploy:        ## pull, build, migrate and (re)start the production stack
+	./scripts/deploy.sh
+
+prod-ps:       ## production stack status
+	$(PROD_COMPOSE) ps
+
+prod-logs:     ## follow production logs
+	$(PROD_COMPOSE) logs -f --tail=200
+
+prod-down:     ## stop the production stack (volumes preserved)
+	$(PROD_COMPOSE) down

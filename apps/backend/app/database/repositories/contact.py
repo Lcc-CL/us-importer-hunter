@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
@@ -11,6 +11,7 @@ from app.database.models.contact import (
     ContactFitAssessmentModel,
     ContactModel,
 )
+from app.database.models.import_resolution import CompanyContactModel
 from app.domain.contact import Contact, DecisionMakerFitAssessment
 
 
@@ -31,7 +32,17 @@ class SqlAlchemyContactRepository:
     async def list_for_company(self, company_id: UUID) -> list[Contact]:
         result = await self._session.execute(
             select(ContactModel)
-            .where(ContactModel.company_id == company_id)
+            .outerjoin(
+                CompanyContactModel,
+                CompanyContactModel.contact_id == ContactModel.id,
+            )
+            .where(
+                or_(
+                    ContactModel.company_id == company_id,
+                    CompanyContactModel.company_id == company_id,
+                )
+            )
+            .distinct()
             .order_by(ContactModel.created_at)
         )
         return [ContactMapper.to_domain(model) for model in result.scalars()]
@@ -63,12 +74,20 @@ class SqlAlchemyContactRepository:
         result = await self._session.execute(
             select(ContactModel)
             .join(ContactChannelModel, ContactChannelModel.contact_id == ContactModel.id)
+            .outerjoin(
+                CompanyContactModel,
+                CompanyContactModel.contact_id == ContactModel.id,
+            )
             .where(
-                ContactModel.company_id == company_id,
+                or_(
+                    ContactModel.company_id == company_id,
+                    CompanyContactModel.company_id == company_id,
+                ),
                 ContactChannelModel.channel_type == channel_type,
                 ContactChannelModel.normalized_value == normalized_value,
                 ContactChannelModel.verification_status != "invalid",
             )
+            .distinct()
             .limit(1)
         )
         model = result.scalar_one_or_none()

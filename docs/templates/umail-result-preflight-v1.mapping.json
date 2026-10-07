@@ -1,0 +1,10 @@
+{
+  "export_batch_id": "export_batch_id",
+  "export_row_id": "export_row_id",
+  "email": "email",
+  "campaign": "campaign",
+  "event_type": "event_type",
+  "occurred_at": "occurred_at",
+  "bounce_type": "bounce_type",
+  "message_id": "message_id"
+}

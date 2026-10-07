@@ -115,6 +115,38 @@ class TestOpenAIAdapter:
         assert len(CONTEXT.fingerprint()) == 64
 
 
+class TestDeepSeekAdapter:
+    async def test_deepseek_reuses_openai_compatible_transport(self) -> None:
+        completions = _FakeCompletions(
+            content=json.dumps(
+                {"subject": "DeepSeek draft", "body": "Hi — freight partnership note."}
+            )
+        )
+        generator = OpenAIEmailDraftGenerator(
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            base_url="https://api.deepseek.com",
+            client=_FakeClient(completions),
+        )
+        email = await generator.generate(CONTEXT)
+        assert email.subject == "DeepSeek draft"
+        assert generator.provider_name == "deepseek"
+        assert generator.model_name == "deepseek-v4-pro"
+        sent = completions.calls[0]
+        assert sent["model"] == "deepseek-v4-pro"
+
+    async def test_deepseek_missing_key_fails_lazily(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        generator = OpenAIEmailDraftGenerator(
+            provider="deepseek",
+            base_url="https://api.deepseek.com",
+        )
+        with pytest.raises(EmailGenerationError, match="DEEPSEEK_API_KEY"):
+            await generator.generate(CONTEXT)
+
+
 class TestDepartmentContactDraft:
     async def test_department_salutation_is_used_verbatim(self) -> None:
         """DEPARTMENT_CONTACT mode: the draft greets the team, never an

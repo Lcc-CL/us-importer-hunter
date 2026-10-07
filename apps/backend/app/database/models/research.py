@@ -1,18 +1,11 @@
-"""ResearchRun persistence: the run plus its owned child tables.
-
-Four tables, all new — no existing table is touched (ADR-0025). Child rows use
-deterministic composite keys so saves diff instead of duplicating, matching the
-Company aggregate's pattern.
-
-Page content is deliberately absent: only URLs, fetch metadata and the short
-snippets cited as evidence are stored (ADR-0026 §5).
-"""
+"""Research run audit records and durable cleaned source documents."""
 
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -23,11 +16,164 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
+
+
+class ResearchDocumentModel(Base):
+    __tablename__ = "research_documents"
+    __table_args__ = (
+        UniqueConstraint("id", "company_id", name="uq_research_documents_id_company"),
+        ForeignKeyConstraint(
+            ["supersedes_document_id", "company_id"],
+            ["research_documents.id", "research_documents.company_id"],
+            ondelete="RESTRICT",
+            name="fk_research_documents_supersedes_same_company",
+        ),
+        ForeignKeyConstraint(
+            ["duplicate_of_document_id", "company_id"],
+            ["research_documents.id", "research_documents.company_id"],
+            ondelete="RESTRICT",
+            name="fk_research_documents_duplicate_same_company",
+        ),
+        CheckConstraint(
+            "source_type IN ('homepage','about','products','capabilities','contact','news',"
+            "'pdf','trade_evidence_snapshot','website_other')",
+            name="ck_research_documents_source_type",
+        ),
+        CheckConstraint(
+            "status IN ('ready','quarantined','superseded')",
+            name="ck_research_documents_status",
+        ),
+        CheckConstraint(
+            "trust_level IN ('first_party','authoritative','derived_trusted','unverified')",
+            name="ck_research_documents_trust_level",
+        ),
+        CheckConstraint(
+            "length(trim(source_url)) > 0 AND length(trim(canonical_url)) > 0 "
+            "AND length(trim(final_url)) > 0",
+            name="ck_research_documents_urls_not_empty",
+        ),
+        CheckConstraint(
+            "length(content) > 0 AND length(content) <= 40000",
+            name="ck_research_documents_content_size",
+        ),
+        CheckConstraint(
+            "length(content_hash) = 64", name="ck_research_documents_hash_length"
+        ),
+        CheckConstraint(
+            "(status = 'superseded' AND is_current = false AND superseded_at IS NOT NULL) OR "
+            "(status IN ('ready','quarantined') AND is_current = true "
+            "AND superseded_at IS NULL)",
+            name="ck_research_documents_lifecycle",
+        ),
+        CheckConstraint(
+            "supersedes_document_id IS NULL OR supersedes_document_id <> id",
+            name="ck_research_documents_not_self_superseding",
+        ),
+        CheckConstraint(
+            "duplicate_of_document_id IS NULL OR duplicate_of_document_id <> id",
+            name="ck_research_documents_not_self_duplicate",
+        ),
+        Index(
+            "uq_research_documents_one_current_url",
+            "company_id",
+            "canonical_url",
+            unique=True,
+            postgresql_where=text("is_current"),
+        ),
+        Index(
+            "ix_research_documents_company_hash",
+            "company_id",
+            "content_hash",
+        ),
+        Index("ix_research_documents_research_run", "research_run_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    company_id: Mapped[UUID] = mapped_column()
+    research_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "research_runs.id",
+            ondelete="RESTRICT",
+            name="fk_research_documents_research_run",
+        )
+    )
+    source_url: Mapped[str] = mapped_column(Text)
+    canonical_url: Mapped[str] = mapped_column(Text)
+    final_url: Mapped[str] = mapped_column(Text)
+    source_type: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20))
+    trust_level: Mapped[str] = mapped_column(String(30))
+    cleaner_version: Mapped[str] = mapped_column(String(80))
+    supersedes_document_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    duplicate_of_document_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+
+class ResearchDocumentChunkModel(Base):
+    __tablename__ = "research_document_chunks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["document_id", "company_id"],
+            ["research_documents.id", "research_documents.company_id"],
+            ondelete="RESTRICT",
+            name="fk_research_document_chunks_document_company",
+        ),
+        UniqueConstraint(
+            "document_id",
+            "chunker_version",
+            "chunk_index",
+            name="uq_research_document_chunks_sequence",
+        ),
+        UniqueConstraint(
+            "document_id",
+            "chunker_version",
+            "start_offset",
+            "end_offset",
+            name="uq_research_document_chunks_offsets",
+        ),
+        CheckConstraint("status = 'ready'", name="ck_research_document_chunks_status"),
+        CheckConstraint(
+            "chunk_index >= 0 AND token_count > 0",
+            name="ck_research_document_chunks_counts",
+        ),
+        CheckConstraint(
+            "start_offset >= 0 AND end_offset > start_offset",
+            name="ck_research_document_chunks_offsets",
+        ),
+        CheckConstraint(
+            "length(content) > 0 AND length(content_hash) = 64",
+            name="ck_research_document_chunks_content",
+        ),
+        Index("ix_research_document_chunks_company", "company_id"),
+        Index("ix_research_document_chunks_document", "document_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    document_id: Mapped[UUID] = mapped_column()
+    company_id: Mapped[UUID] = mapped_column()
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    token_count: Mapped[int] = mapped_column(Integer)
+    start_offset: Mapped[int] = mapped_column(Integer)
+    end_offset: Mapped[int] = mapped_column(Integer)
+    heading_path: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    chunker_version: Mapped[str] = mapped_column(String(100))
+    tokenizer_profile: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20))
 
 
 class ResearchRunModel(Base):
@@ -134,6 +280,13 @@ class ResearchPageModel(Base):
     bytes_read: Mapped[int] = mapped_column(Integer, default=0)
     truncated: Mapped[bool] = mapped_column(default=False)
     discovery_reason: Mapped[str] = mapped_column(String(50))
+    document_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "research_documents.id",
+            ondelete="RESTRICT",
+            name="fk_research_pages_document",
+        )
+    )
 
 
 class ResearchClaimModel(Base):

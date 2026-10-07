@@ -19,8 +19,48 @@ import { openAdvancedForm } from "../utils/form";
 import { PROVIDER_MODE } from "../utils/env";
 
 const API = "**/api/v1/research/**";
+const COMPANY_ID = "96000000-0000-4000-8000-000000000006";
+const ROUTING_RUN_ID = "97000000-0000-4000-8000-000000000007";
+const A_ROUTE_URL = `/?step=6&company_id=${COMPANY_ID}&routing_run_id=${ROUTING_RUN_ID}`;
+
+async function stubAWorkspace(page: Page): Promise<void> {
+  await page.route(`**/api/v1/mvp/prospects/${COMPANY_ID}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        company: {
+          company_id: COMPANY_ID,
+          name: "A Route Test Importer",
+          website: "https://acme.example",
+          verified: true,
+          sources: [],
+          signals: [],
+        },
+        latest_assessment: null,
+        qualification_decision: null,
+        contacts: [],
+        decision_maker: {
+          selected_contact_id: null,
+          rankings: [],
+          selection: null,
+        },
+        latest_email_draft: null,
+        draft_history: [],
+      }),
+    }),
+  );
+  await page.route(`**/api/v1/companies/${COMPANY_ID}/import-evidence`, (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "not_found", message: "No evidence snapshot" }),
+    }),
+  );
+}
 
 async function stubResearch(page: Page): Promise<{ analyzeBodies: unknown[] }> {
+  await stubAWorkspace(page);
   const state = { analyzeBodies: [] as unknown[] };
   const confirm = confirmResponse(
     [{ kind: "import_activity", detail: "进口五金，来自亚洲" }],
@@ -85,7 +125,7 @@ test.describe("unified contact and sender state", () => {
     page,
   }) => {
     await stubResearch(page);
-    await page.goto("/");
+    await page.goto(A_ROUTE_URL);
     await researchAndConfirm(page);
 
     await page.getByTestId("guided-contact-name").fill("Maria Chen");
@@ -102,7 +142,7 @@ test.describe("unified contact and sender state", () => {
     page,
   }) => {
     await stubResearch(page);
-    await page.goto("/");
+    await page.goto(A_ROUTE_URL);
 
     await openAdvancedForm(page);
     await page.getByLabel("Contact name").fill("Maria Chen");
@@ -123,7 +163,7 @@ test.describe("unified contact and sender state", () => {
 
   test("the sender syncs in both directions", async ({ page }) => {
     await stubResearch(page);
-    await page.goto("/");
+    await page.goto(A_ROUTE_URL);
 
     await openAdvancedForm(page);
     await page.getByLabel("Sender company").fill("Harbor Bridge Logistics");
@@ -140,7 +180,7 @@ test.describe("unified contact and sender state", () => {
 
   test("a partly filled contact only needs the rest", async ({ page }) => {
     await stubResearch(page);
-    await page.goto("/");
+    await page.goto(A_ROUTE_URL);
 
     await openAdvancedForm(page);
     await page.getByLabel("Contact name").fill("Maria Chen");
@@ -161,7 +201,7 @@ test.describe("unified contact and sender state", () => {
 
   test("there is only one contact, not a copy per view", async ({ page }) => {
     await stubResearch(page);
-    await page.goto("/");
+    await page.goto(A_ROUTE_URL);
     await researchAndConfirm(page);
 
     await page.getByTestId("guided-contact-name").fill("Maria Chen");
@@ -175,7 +215,7 @@ test.describe("unified contact and sender state", () => {
 
   test("the analysis carries whichever values were entered last", async ({ page }) => {
     const state = await stubResearch(page);
-    await page.goto("/");
+    await page.goto(A_ROUTE_URL);
     await researchAndConfirm(page);
 
     await page.getByTestId("guided-contact-name").fill("Maria Chen");
@@ -204,7 +244,7 @@ test.describe("unified contact and sender state", () => {
     page,
   }) => {
     await stubResearch(page);
-    await page.goto("/");
+    await page.goto(A_ROUTE_URL);
 
     await openAdvancedForm(page);
     await page.getByLabel("Contact name").fill("Maria Chen");
@@ -219,25 +259,27 @@ test.describe("research provider notice", () => {
   test("demo mode is spelled out, not just coloured", async ({ page }) => {
     test.skip(PROVIDER_MODE !== "fake", "only meaningful on the fake stack");
     const guard = attachConsoleGuard(page);
-    await page.goto("/");
+    await stubAWorkspace(page);
+    await page.goto(A_ROUTE_URL);
 
-    const notice = page.getByTestId("research-provider-fake");
+    const notice = page.getByTestId("provider-badge");
     await expect(notice).toBeVisible();
     await expect(notice).toContainText("演示模式");
-    await expect(notice).toContainText("不能作为真实 AI 研究质量样本");
-    await expect(page.getByTestId("research-provider-real")).toHaveCount(0);
+    await expect(notice).toContainText("fake · fake-static-v1");
+    await expect(notice).not.toContainText("真实 AI");
 
     expect(guard.problems()).toEqual([]);
   });
 
   test("the notice is localized", async ({ page }) => {
     test.skip(PROVIDER_MODE !== "fake", "only meaningful on the fake stack");
-    await page.goto("/");
+    await stubAWorkspace(page);
+    await page.goto(A_ROUTE_URL);
     await page.getByRole("button", { name: "English" }).click();
 
-    const notice = page.getByTestId("research-provider-fake");
+    const notice = page.getByTestId("provider-badge");
     await expect(notice).toContainText("Demo mode");
-    await expect(notice).toContainText("not a sample of real AI research quality");
+    await expect(notice).toContainText("fake · fake-static-v1");
   });
 
   test("real mode names the provider and model instead", async ({ page }) => {
@@ -250,30 +292,34 @@ test.describe("research provider notice", () => {
           model: "gpt-5.6-terra",
           research_provider: "openai",
           research_model: "gpt-5.6-terra",
+          real_data_gate: "blocked",
           environment: "development",
         }),
       });
     });
-    await page.goto("/");
+    await stubAWorkspace(page);
+    await page.goto(A_ROUTE_URL);
 
-    const real = page.getByTestId("research-provider-real");
+    const real = page.getByTestId("provider-badge");
     await expect(real).toBeVisible();
     await expect(real).toContainText("真实 AI");
     await expect(real).toContainText("gpt-5.6-terra");
-    await expect(page.getByTestId("research-provider-fake")).toHaveCount(0);
+    await expect(real).not.toContainText("演示模式");
   });
 
   test("the notice survives a reload", async ({ page }) => {
     test.skip(PROVIDER_MODE !== "fake", "only meaningful on the fake stack");
-    await page.goto("/");
-    await expect(page.getByTestId("research-provider-fake")).toBeVisible();
+    await stubAWorkspace(page);
+    await page.goto(A_ROUTE_URL);
+    await expect(page.getByTestId("provider-badge")).toContainText("fake · fake-static-v1");
 
     await page.reload({ waitUntil: "networkidle" });
-    await expect(page.getByTestId("research-provider-fake")).toBeVisible();
+    await expect(page.getByTestId("provider-badge")).toContainText("fake · fake-static-v1");
   });
 
   test("no credential or endpoint reaches the page", async ({ page }) => {
-    await page.goto("/");
+    await stubAWorkspace(page);
+    await page.goto(A_ROUTE_URL);
     await expect(page.getByTestId("research-panel")).toBeVisible();
 
     const html = (await page.content()).toLowerCase();

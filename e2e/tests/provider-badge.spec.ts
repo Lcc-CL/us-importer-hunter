@@ -40,6 +40,7 @@ test.describe("provider status", () => {
       "environment",
       "model",
       "provider",
+      "real_data_gate",
       "research_model",
       "research_provider",
     ]);

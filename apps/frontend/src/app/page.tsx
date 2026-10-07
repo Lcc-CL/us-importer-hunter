@@ -8,7 +8,13 @@ export default async function Home({
     task_id?: string | string[];
     batch_id?: string | string[];
     calibration_id?: string | string[];
+    import_session_id?: string | string[];
+    routing_run_id?: string | string[];
     research_id?: string | string[];
+    umail_export_batch_id?: string | string[];
+    umail_result_import_id?: string | string[];
+    real_data?: string | string[];
+    step?: string | string[];
   }>;
 }) {
   const params = await searchParams;
@@ -16,16 +22,36 @@ export default async function Home({
   const taskId = params.task_id;
   const batchId = params.batch_id;
   const calibrationId = params.calibration_id;
+  const importSessionId = params.import_session_id;
+  const routingRunId = params.routing_run_id;
   const researchId = params.research_id;
+  const umailExportBatchId = params.umail_export_batch_id;
+  const umailResultImportId = params.umail_result_import_id;
+  const realData = params.real_data;
+  const step = params.step;
   return (
     <MvpAnalysisPage
       initialCompanyId={typeof companyId === "string" ? companyId : undefined}
+      initialImportSessionId={
+        typeof importSessionId === "string" ? importSessionId : undefined
+      }
+      initialRoutingRunId={
+        typeof routingRunId === "string" ? routingRunId : undefined
+      }
       initialBatchId={typeof batchId === "string" ? batchId : undefined}
       initialCalibrationId={
         typeof calibrationId === "string" ? calibrationId : undefined
       }
       initialResearchId={typeof researchId === "string" ? researchId : undefined}
       initialTaskId={typeof taskId === "string" ? taskId : undefined}
+      initialUmailExportBatchId={
+        typeof umailExportBatchId === "string" ? umailExportBatchId : undefined
+      }
+      initialUmailResultImportId={
+        typeof umailResultImportId === "string" ? umailResultImportId : undefined
+      }
+      initialRealDataMode={realData === "1"}
+      initialStep={typeof step === "string" ? Number(step) : undefined}
     />
   );
 }

@@ -1,21 +1,97 @@
-"""Health endpoints: liveness (no dependencies) and readiness (DB + Redis)."""
+"""Health endpoints: liveness, readiness, and safe runtime metadata."""
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter
+from redis.asyncio import Redis
 from sqlalchemy import text
 
 from app.api.deps import DbSessionDep, RedisDep, SettingsDep
+from app.core.worker_health import (
+    WORKER_HEARTBEAT_KEY,
+    WORKER_HEARTBEAT_TTL_SECONDS,
+    parse_worker_heartbeat,
+)
+from app.domain.clock import utcnow
 from app.schemas.health import (
     DependencyStatus,
     HealthResponse,
     ReadinessResponse,
     RuntimeStatusResponse,
+    WorkerDependencyStatus,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
+
+
+async def _worker_dependency(redis: Redis) -> WorkerDependencyStatus:
+    """Report the worker from its Redis heartbeat without leaking internals."""
+    try:
+        await redis.ping()
+    except Exception as exc:  # noqa: BLE001 — report, don't crash the probe
+        logger.warning("Redis readiness check failed: %s", exc)
+        return WorkerDependencyStatus(
+            name="worker",
+            healthy=False,
+            detail="worker status unknown because Redis is unavailable",
+            status="unknown",
+            reason_code="REDIS_UNAVAILABLE",
+        )
+
+    try:
+        if not bool(await redis.exists(WORKER_HEARTBEAT_KEY)):
+            return WorkerDependencyStatus(
+                name="worker",
+                healthy=False,
+                detail="worker heartbeat missing",
+                status="unavailable",
+                reason_code="WORKER_HEARTBEAT_MISSING",
+            )
+        raw = await redis.get(WORKER_HEARTBEAT_KEY)
+        payload = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        parsed = parse_worker_heartbeat(payload)
+        if parsed is None:
+            return WorkerDependencyStatus(
+                name="worker",
+                healthy=False,
+                detail="worker heartbeat payload invalid",
+                status="unavailable",
+                reason_code="WORKER_HEARTBEAT_INVALID",
+            )
+        heartbeat_at = datetime.fromisoformat(parsed["heartbeat_at"])
+        age_seconds = max(0.0, (utcnow() - heartbeat_at).total_seconds())
+        last_seen_at = heartbeat_at.isoformat()
+        if age_seconds > WORKER_HEARTBEAT_TTL_SECONDS:
+            return WorkerDependencyStatus(
+                name="worker",
+                healthy=False,
+                detail="worker heartbeat expired",
+                status="unavailable",
+                reason_code="WORKER_HEARTBEAT_EXPIRED",
+                last_seen_at=last_seen_at,
+                age_seconds=round(age_seconds, 1),
+            )
+        return WorkerDependencyStatus(
+            name="worker",
+            healthy=True,
+            detail=None,
+            status="healthy",
+            reason_code="WORKER_HEARTBEAT_OK",
+            last_seen_at=last_seen_at,
+            age_seconds=round(age_seconds, 1),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Worker readiness check failed: %s", exc)
+        return WorkerDependencyStatus(
+            name="worker",
+            healthy=False,
+            detail="worker status unavailable",
+            status="unknown",
+            reason_code="WORKER_HEARTBEAT_INVALID",
+        )
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -32,9 +108,33 @@ async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
     """
     provider = settings.email_generator_provider
     research = settings.research_extractor_provider
+    draft_configured = {
+        "fake": False,
+        "openai": bool(
+            settings.openai_api_key.strip() and settings.openai_model.strip()
+        ),
+        "deepseek": bool(
+            settings.deepseek_api_key.strip()
+            and settings.deepseek_model.strip()
+            and settings.deepseek_base_url.strip()
+        ),
+    }[provider]
+    draft_model = (
+        settings.openai_model
+        if provider == "openai"
+        else settings.deepseek_model
+        if provider == "deepseek"
+        else "fake-static-v1"
+    )
     return RuntimeStatusResponse(
         provider=provider,
-        model=settings.openai_model if provider == "openai" else "fake-static-v1",
+        model=(
+            settings.deepseek_model
+            if provider == "deepseek"
+            else settings.openai_model
+            if provider == "openai"
+            else "fake-static-v1"
+        ),
         research_provider=research,
         research_model=(
             settings.resolved_research_model
@@ -43,13 +143,17 @@ async def runtime_status(settings: SettingsDep) -> RuntimeStatusResponse:
             if research == "deepseek"
             else "fake-research-v1"
         ),
+        draft_provider=provider,
+        draft_model=draft_model,
+        draft_available=provider != "fake" and draft_configured,
         environment=settings.app_env,
+        real_data_gate="enabled" if settings.real_data_acknowledged else "blocked",
     )
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)
 async def readiness(session: DbSessionDep, redis: RedisDep) -> ReadinessResponse:
-    """Readiness probe — verifies PostgreSQL and Redis connectivity."""
+    """Readiness probe — verifies PostgreSQL, Redis, and worker heartbeat."""
     dependencies: list[DependencyStatus] = []
 
     try:
@@ -58,7 +162,11 @@ async def readiness(session: DbSessionDep, redis: RedisDep) -> ReadinessResponse
     except Exception as exc:  # noqa: BLE001 — report, don't crash the probe
         logger.warning("Postgres readiness check failed: %s", exc)
         dependencies.append(
-            DependencyStatus(name="postgres", healthy=False, detail=str(exc))
+            DependencyStatus(
+                name="postgres",
+                healthy=False,
+                detail="database connection check failed",
+            )
         )
 
     try:
@@ -67,8 +175,14 @@ async def readiness(session: DbSessionDep, redis: RedisDep) -> ReadinessResponse
     except Exception as exc:  # noqa: BLE001
         logger.warning("Redis readiness check failed: %s", exc)
         dependencies.append(
-            DependencyStatus(name="redis", healthy=False, detail=str(exc))
+            DependencyStatus(
+                name="redis",
+                healthy=False,
+                detail="cache connection check failed",
+            )
         )
+
+    dependencies.append(await _worker_dependency(redis))
 
     all_healthy = all(dep.healthy for dep in dependencies)
     return ReadinessResponse(

@@ -12,9 +12,10 @@ npm ci
 npm run dev
 ```
 
-Open <http://localhost:3000>. The backend defaults to
-`http://localhost:8000` through `NEXT_PUBLIC_API_BASE_URL`; the value is
-centralized in `src/lib/api.ts`. Never put an OpenAI key in frontend variables.
+Open <http://localhost:3000>. Browser requests always use same-origin
+`/api/v1/*`. The Next.js route handler reads the server-only
+`BACKEND_INTERNAL_URL`; host development falls back to `http://localhost:8000`.
+Never put an OpenAI key in frontend variables.
 
 Start the backend and PostgreSQL first when running outside Compose. The backend
 can use `EMAIL_GENERATOR_PROVIDER=fake`, which requires no OpenAI key or network

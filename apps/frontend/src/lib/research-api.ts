@@ -8,9 +8,9 @@
  * Nothing here reads or forwards credentials — the API never returns them.
  */
 
-import { API_BASE_URL, ApiError, ApiNetworkError, type ApiErrorPayload } from "./api";
+import { ApiError, ApiNetworkError, type ApiErrorPayload } from "./api";
 
-const V1 = `${API_BASE_URL}/api/v1`;
+const V1 = "/api/v1";
 
 export type ResearchStatus = "completed" | "partial" | "failed";
 

@@ -6,11 +6,12 @@ import type { ProspectPayload } from "../fixtures/prospects";
 const V1 = `${API_BASE_URL}/api/v1`;
 
 export interface RuntimeStatus {
-  research_provider: "fake" | "openai";
+  research_provider: "fake" | "openai" | "deepseek";
   research_model: string;
   provider: "fake" | "openai";
   model: string;
   environment: string;
+  real_data_gate: "enabled" | "blocked";
 }
 
 export interface AnalysisResponse {

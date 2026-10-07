@@ -7,6 +7,7 @@ leaves the pending-event buffer empty: loading an aggregate must never
 replay history as new events.
 """
 
+from app.database.mappers.bulk_import import BulkImportMapper
 from app.database.mappers.calibration import CalibrationRunMapper
 from app.database.mappers.company import CompanyMapper
 from app.database.mappers.contact import ContactMapper, FitAssessmentMapper
@@ -16,26 +17,41 @@ from app.database.mappers.import_evidence import (
     ImportEvidencePromotionMapper,
     ImportEvidenceQualityMapper,
 )
+from app.database.mappers.import_resolution import ImportResolutionMapper
 from app.database.mappers.opportunity import OpportunityMapper
 from app.database.mappers.outreach import OutreachMapper
 from app.database.mappers.prospect_batch import ProspectBatchMapper
 from app.database.mappers.prospect_job import ProspectJobMapper
-from app.database.mappers.research import ResearchRunMapper
+from app.database.mappers.prospect_routing import ProspectRoutingMapper
+from app.database.mappers.research import (
+    ResearchDocumentChunkMapper,
+    ResearchDocumentMapper,
+    ResearchRunMapper,
+)
 from app.database.mappers.task import TaskMapper
+from app.database.mappers.umail_export import UmailExportMapper
+from app.database.mappers.umail_feedback import UmailFeedbackMapper
 
 __all__ = [
+    "BulkImportMapper",
     "CompanyMapper",
     "CalibrationRunMapper",
     "ImportEvidenceQualityMapper",
     "ImportEvidencePromotionMapper",
     "ImporterEvidenceAggregateMapper",
+    "ImportResolutionMapper",
     "ContactMapper",
     "FitAssessmentMapper",
     "DiscoveryTaskMapper",
     "OpportunityMapper",
     "OutreachMapper",
     "ProspectBatchMapper",
+    "ProspectRoutingMapper",
     "ProspectJobMapper",
     "ResearchRunMapper",
+    "ResearchDocumentChunkMapper",
+    "ResearchDocumentMapper",
     "TaskMapper",
+    "UmailExportMapper",
+    "UmailFeedbackMapper",
 ]

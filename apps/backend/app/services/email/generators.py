@@ -1,4 +1,5 @@
-"""Email draft generators: the fake (tests/dev) and the OpenAI adapter.
+"""Email draft generators: the fake (tests/dev) and the OpenAI-compatible
+adapter (OpenAI or DeepSeek over the same transport).
 
 Both implement the domain protocol EmailDraftGenerator and return plain
 GeneratedEmail — OpenAI SDK types never cross this module's boundary.
@@ -49,24 +50,33 @@ class FakeEmailDraftGenerator:
 
 
 class OpenAIEmailDraftGenerator:
-    """OpenAI adapter. The API key is read lazily at generation time —
-    a missing key never blocks application startup (L11)."""
+    """OpenAI-compatible adapter (OpenAI or DeepSeek).
+
+    DeepSeek reuses this same transport: the official DeepSeek API is an
+    OpenAI-compatible endpoint, so no second HTTP client is introduced.
+    The API key is read lazily at generation time — a missing key never
+    blocks application startup (L11).
+    """
 
     def __init__(
         self,
         api_key: str | None = None,
         model: str = "gpt-4o-mini",
         timeout_seconds: float = 30.0,
+        base_url: str | None = None,
+        provider: str = "openai",
         client: object | None = None,  # test seam: anything with .chat.completions.create
     ) -> None:
         self._api_key = api_key
         self._model = model
         self._timeout = timeout_seconds
+        self._base_url = (base_url or "").strip() or None
+        self._provider = provider
         self._client = client
 
     @property
     def provider_name(self) -> str:
-        return "openai"
+        return self._provider
 
     @property
     def model_name(self) -> str:
@@ -87,21 +97,31 @@ class OpenAIEmailDraftGenerator:
         except EmailGenerationError:
             raise
         except Exception as exc:  # SDK errors never leak past this boundary
-            raise EmailGenerationError(f"openai request failed: {exc}") from exc
+            raise EmailGenerationError(
+                f"{self._provider} request failed: {exc}"
+            ) from exc
         return self._parse(response)
 
     def _build_client(self) -> Any:
-        api_key = self._api_key or os.environ.get("OPENAI_API_KEY", "").strip()
+        if self._provider == "deepseek":
+            api_key = self._api_key or os.environ.get("DEEPSEEK_API_KEY", "").strip()
+            env_name = "DEEPSEEK_API_KEY"
+        else:
+            api_key = self._api_key or os.environ.get("OPENAI_API_KEY", "").strip()
+            env_name = "OPENAI_API_KEY"
         if not api_key:
             raise EmailGenerationError(
-                "OPENAI_API_KEY is not configured — set it before generating drafts"
+                f"{env_name} is not configured — set it before generating drafts"
             )
         from openai import AsyncOpenAI  # imported here: startup never needs it
 
+        if self._base_url:
+            return AsyncOpenAI(
+                api_key=api_key, base_url=self._base_url, timeout=self._timeout
+            )
         return AsyncOpenAI(api_key=api_key, timeout=self._timeout)
 
-    @staticmethod
-    def _parse(response: Any) -> GeneratedEmail:
+    def _parse(self, response: Any) -> GeneratedEmail:
         try:
             content = response.choices[0].message.content
             payload = json.loads(content)
@@ -109,4 +129,6 @@ class OpenAIEmailDraftGenerator:
         except EmailGenerationError:
             raise
         except Exception as exc:
-            raise EmailGenerationError(f"openai returned an unusable response: {exc}") from exc
+            raise EmailGenerationError(
+                f"{self._provider} returned an unusable response: {exc}"
+            ) from exc

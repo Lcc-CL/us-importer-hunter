@@ -1,10 +1,9 @@
-/** Typed client for the three browser-facing MVP endpoints (ADR-0024). */
+/** Typed client for the browser-facing MVP endpoints (ADR-0024). */
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
-
-const API_V1_URL = `${API_BASE_URL}/api/v1`;
+// Browser requests are always same-origin. The Next.js route handler resolves
+// the private backend address at runtime, so container-only hostnames and stale
+// NEXT_PUBLIC build values can never leak into the browser bundle.
+const API_V1_URL = "/api/v1";
 
 export type OverallStatus = "COMPLETED" | "PARTIAL" | "REJECTED" | "FAILED";
 
@@ -28,6 +27,498 @@ export type DiscoveryTaskStatus =
   | "completed"
   | "partial_failed"
   | "failed";
+
+export type ImportSessionStatus =
+  | "receiving"
+  | "processing"
+  | "completed"
+  | "partial_failed"
+  | "failed";
+
+export type RawImportRowStatus = "accepted" | "invalid" | "duplicate";
+
+export type ImportResolutionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "partial_failed"
+  | "failed";
+
+export type ImportProcessingJobStatus =
+  | "pending"
+  | "leased"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type ImportEntityType = "company" | "contact";
+export type ImportEntityReviewStatus = "not_required" | "pending" | "reviewed";
+export type ImportEntityDecisionKind =
+  | "auto_create"
+  | "auto_merge"
+  | "review_required"
+  | "manual_merge"
+  | "keep_separate"
+  | "rejected";
+export type ImportReviewAction = "merge" | "keep_separate" | "reject";
+
+export type ProspectRoutingRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "partial_completed"
+  | "failed";
+export type ProspectTier = "A" | "B" | "C" | "D";
+export type ProspectRouteReviewStatus =
+  | "suggested"
+  | "confirmed"
+  | "overridden"
+  | "blocked";
+export type ProspectRouteReviewAction = "confirm" | "override" | "exclude";
+
+export interface ProspectRoutingCriteriaInput {
+  target_product_keywords: string[];
+  target_hs_codes: string[];
+  preferred_origin_countries: string[];
+  preferred_pol: string[];
+  preferred_pod: string[];
+}
+
+export interface ProspectRoutingCreateResponse {
+  routing_run_id: string;
+  processing_job_id: string;
+  status: ImportProcessingJobStatus;
+  reused: boolean;
+  recalculated: boolean;
+}
+
+export interface ProspectRoutingRunResponse {
+  routing_run_id: string;
+  import_session_id: string;
+  processing_job_id: string | null;
+  processing_status: ImportProcessingJobStatus | null;
+  status: ProspectRoutingRunStatus;
+  rules_version: string;
+  execution_generation: number;
+  current_execution_generation: number;
+  available_generations: number[];
+  criteria: Record<string, unknown>;
+  weights_snapshot: Record<string, unknown>;
+  total_companies: number;
+  routed_companies: number;
+  blocked_companies: number;
+  tier_a_count: number;
+  tier_b_count: number;
+  tier_c_count: number;
+  tier_d_count: number;
+  attempt_count: number;
+  max_attempts: number;
+  heartbeat_at: string | null;
+  last_error_code: string | null;
+  last_error_summary: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectRouteResponse {
+  route_id: string;
+  routing_run_id: string;
+  execution_generation: number;
+  company_id: string;
+  company_name: string;
+  pre_score: number;
+  recommended_tier: ProspectTier | null;
+  effective_tier: ProspectTier | null;
+  feature_snapshot: Record<string, unknown>;
+  reason_codes: string[];
+  warning_codes: string[];
+  review_status: ProspectRouteReviewStatus;
+  override_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  contact_count: number;
+  has_usable_contact: boolean;
+  has_usable_email: boolean;
+  preferred_role_category: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectRouteListResponse {
+  routing_run_id: string;
+  execution_generation: number;
+  page: number;
+  limit: number;
+  total: number;
+  routes: ProspectRouteResponse[];
+}
+
+export interface ProspectRoutingBatchCreateResponse {
+  batch_id: string;
+  status: ProspectBatchStatus;
+  reused: boolean;
+  processing_started: false;
+}
+
+export type UmailExportRowStatus = "ready" | "suppressed" | "invalid" | "duplicate";
+export type UmailExportBatchStatus = "prepared" | "downloaded";
+
+export interface SuppressionEntryResponse {
+  suppression_id: string;
+  email: string | null;
+  domain: string | null;
+  company: string | null;
+  active: boolean;
+  reason: string;
+  source: string;
+  created_by: string;
+  deactivated_by: string | null;
+  deactivated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SuppressionEntryListResponse {
+  page: number;
+  limit: number;
+  total: number;
+  entries: SuppressionEntryResponse[];
+}
+
+export interface UmailExportRowResponse {
+  row_id: string;
+  position: number;
+  company_id: string;
+  contact_id: string | null;
+  company_name: string;
+  company_website: string | null;
+  contact_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  contact_title: string | null;
+  contact_role: string | null;
+  contact_seniority: string | null;
+  is_department_contact: boolean;
+  email: string | null;
+  phone: string | null;
+  country: string | null;
+  route: "B";
+  route_review_status: "confirmed" | "overridden";
+  pre_score: number;
+  route_reasons: string[];
+  status: UmailExportRowStatus;
+  exclusion_reason: string | null;
+  row_fingerprint: string;
+}
+
+export interface UmailExportBatchResponse {
+  batch_id: string;
+  routing_run_id: string;
+  execution_generation: number;
+  campaign: string;
+  mapping_version: string;
+  selection_hash: string;
+  status: UmailExportBatchStatus;
+  total_rows: number;
+  ready_count: number;
+  suppressed_count: number;
+  invalid_count: number;
+  duplicate_count: number;
+  content_sha256: string;
+  downloaded_at: string | null;
+  created_at: string;
+  updated_at: string;
+  reused: boolean;
+  sent: false;
+  rows: UmailExportRowResponse[];
+}
+
+export type UmailResultImportStatus =
+  | "uploaded"
+  | "parsed"
+  | "ready_for_review"
+  | "applied"
+  | "partial_applied"
+  | "failed";
+export type UmailResultMatchStatus =
+  | "matched"
+  | "unmatched"
+  | "ambiguous"
+  | "invalid"
+  | "duplicate";
+export type ContactEngagementEventType =
+  | "sent"
+  | "delivered"
+  | "hard_bounced"
+  | "soft_bounced"
+  | "bounce_unknown"
+  | "unsubscribed"
+  | "complained"
+  | "replied"
+  | "opened"
+  | "clicked";
+
+export interface UmailResultImportResponse {
+  result_import_id: string;
+  source_filename: string;
+  file_sha256: string;
+  mapping_version: string;
+  mapping_snapshot: Record<string, string>;
+  status: UmailResultImportStatus;
+  input_row_count: number;
+  matched_count: number;
+  unmatched_count: number;
+  ambiguous_count: number;
+  invalid_count: number;
+  duplicate_count: number;
+  projected_event_count: number;
+  projected_suppression_count: number;
+  applied_event_count: number;
+  suppression_created_count: number;
+  created_by: string;
+  created_at: string;
+  applied_at: string | null;
+  error_summary: string | null;
+  reused: boolean;
+  system_sent_email: false;
+}
+
+export interface UmailResultRowResponse {
+  result_row_id: string;
+  row_number: number;
+  export_batch_id: string | null;
+  export_row_id: string | null;
+  normalized_email: string | null;
+  campaign: string | null;
+  canonical_event_type: ContactEngagementEventType | null;
+  occurred_at: string | null;
+  bounce_type: string | null;
+  message_id: string | null;
+  match_status: UmailResultMatchStatus;
+  matched_export_row_id: string | null;
+  match_method: string | null;
+  error_codes: string[];
+  row_fingerprint: string;
+  suppression_impact: boolean;
+}
+
+export interface UmailResultRowListResponse {
+  result_import_id: string;
+  page: number;
+  limit: number;
+  total: number;
+  rows: UmailResultRowResponse[];
+}
+
+export interface EngagementRateStatisticsResponse {
+  total_events: number;
+  event_counts: Record<ContactEngagementEventType, number>;
+  delivered_rate: number;
+  reply_rate: number;
+  hard_bounce_rate: number;
+  unsubscribe_rate: number;
+  complaint_rate: number;
+}
+
+export interface CompanyEngagementStatisticsResponse {
+  company_id: string;
+  company_name: string;
+  event_counts: Record<ContactEngagementEventType, number>;
+}
+
+export interface UmailFeedbackStatisticsResponse {
+  result_import_id: string;
+  total_result_rows: number;
+  matched_rate: number;
+  rates: EngagementRateStatisticsResponse;
+  campaign_statistics: Record<string, Record<ContactEngagementEventType, number>>;
+  route_statistics: Record<string, Record<ContactEngagementEventType, number>>;
+  company_statistics: CompanyEngagementStatisticsResponse[];
+}
+
+export interface ImportSessionResponse {
+  session_id: string;
+  source: string;
+  original_filename: string;
+  file_type: string;
+  file_size_bytes: number;
+  file_sha256: string;
+  mapping_json: Record<string, unknown>;
+  encoding: string;
+  status: ImportSessionStatus;
+  total_rows: number;
+  accepted_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error_summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportSessionCreateResponse extends ImportSessionResponse {
+  reused_existing: boolean;
+}
+
+export interface NetEasePreflightResponse {
+  file_type: "csv" | "xlsx";
+  file_size_bytes: number;
+  file_sha256: string;
+  encoding: string;
+  sheets: string[];
+  selected_sheet: string;
+  total_rows: number;
+  analyzed_rows: number;
+  inferred_data_type: "company" | "contact" | "shipment" | "mixed" | "unknown";
+  mapping_profile: "netease-foreign-trade-v1";
+  suggested_mapping: Record<string, string>;
+  mapping_confidence: Record<string, string>;
+  mapping_source: Record<string, string>;
+  source_columns: string[];
+  sample_values: Record<string, string>;
+  manual_mapping_applied: boolean;
+  unknown_fields: string[];
+  missing_required_fields: string[];
+  duplicate_columns: string[];
+  empty_rows: number;
+  invalid_rows: number;
+  company_anchor_rows: number;
+  contact_continuation_rows: number;
+  orphan_contact_rows: number;
+  company_import_summary_rows: number;
+  true_shipment_rows: number;
+  expected_company_count: number;
+  expected_contact_count: number;
+  company_merge_count: number;
+  company_review_count: number;
+  contact_merge_count: number;
+  contact_review_count: number;
+  companycontact_relation_count: number;
+  estimated_company_count: number;
+  estimated_contact_count: number;
+  estimated_trade_record_count: number;
+  coverage: Record<string, number>;
+  estimated_high_confidence_reviews: number;
+  estimated_medium_confidence_reviews: number;
+  no_business_side_effects: true;
+  real_data_gate: "enabled" | "blocked";
+}
+
+export interface UmailPreflightResponse {
+  file_type: "csv";
+  file_size_bytes: number;
+  file_sha256: string;
+  encoding: string;
+  total_rows: number;
+  mapping_profile: "umail-result-preflight-v1";
+  suggested_mapping: Record<string, string>;
+  mapping_confidence: Record<string, string>;
+  source_columns: string[];
+  sample_values: Record<string, string>;
+  manual_mapping_applied: boolean;
+  unknown_fields: string[];
+  missing_required_fields: string[];
+  duplicate_columns: string[];
+  event_type_distribution: Record<string, number>;
+  time_format_distribution: Record<string, number>;
+  bounce_type_distribution: Record<string, number>;
+  coverage: Record<string, number>;
+  estimated_strong_id_matches: number;
+  estimated_email_fallback_matches: number;
+  estimated_ambiguous_rows: number;
+  unsupported_event_count: number;
+  missing_occurred_at_count: number;
+  invalid_rows: number;
+  match_estimate_basis: "file_identifiers_only" | "database_snapshot";
+  no_business_side_effects: true;
+  real_data_gate: "enabled" | "blocked";
+}
+
+export interface RawImportRowResponse {
+  id: string;
+  row_number: number;
+  raw_payload: Record<string, unknown>;
+  row_hash: string;
+  status: RawImportRowStatus;
+  error_codes: string[];
+  created_at: string;
+}
+
+export interface RawImportRowListResponse {
+  session_id: string;
+  page: number;
+  limit: number;
+  total: number;
+  rows: RawImportRowResponse[];
+}
+
+export interface ImportResolutionStartResponse {
+  session_id: string;
+  processing_job_id: string;
+  status: ImportProcessingJobStatus;
+  reused: boolean;
+}
+
+export interface ImportResolutionResponse {
+  session_id: string;
+  processing_job_id: string | null;
+  processing_status: ImportProcessingJobStatus | null;
+  resolution_status: ImportResolutionStatus;
+  total_rows: number;
+  processed_rows: number;
+  companies_created: number;
+  companies_reused: number;
+  company_reviews_required: number;
+  contacts_created: number;
+  contacts_reused: number;
+  company_contacts_created: number;
+  canonical_company_count: number;
+  canonical_contact_count: number;
+  invalid_rows: number;
+  failed_rows: number;
+  attempt_count: number;
+  max_attempts: number;
+  heartbeat_at: string | null;
+  last_error_code: string | null;
+  last_error_summary: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+}
+
+export interface ImportEntityDecisionResponse {
+  decision_id: string;
+  session_id: string;
+  raw_import_row_id: string;
+  row_number: number | null;
+  source_label: string | null;
+  entity_type: ImportEntityType;
+  candidate_entity_id: string | null;
+  candidate_label: string | null;
+  decision: ImportEntityDecisionKind;
+  confidence: number;
+  reason_codes: string[];
+  review_status: ImportEntityReviewStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  source_facts?: Record<string, string>;
+  is_department_contact?: boolean;
+}
+
+export interface ImportEntityDecisionListResponse {
+  session_id: string;
+  page: number;
+  limit: number;
+  total: number;
+  decisions: ImportEntityDecisionResponse[];
+}
 
 export interface DiscoveryTaskResponse {
   task_id: string;
@@ -91,7 +582,10 @@ export type ProspectBatchCompanyStatus =
 
 export interface ProspectBatchResponse {
   batch_id: string;
-  discovery_task_id: string;
+  source_kind: "discovery" | "prospect_routing";
+  discovery_task_id: string | null;
+  routing_run_id: string | null;
+  routing_execution_generation: number | null;
   requested_count: number;
   effective_count: number;
   status: ProspectBatchStatus;
@@ -119,6 +613,10 @@ export interface ProspectBatchCreateResponse {
   job_id: string;
   status: ProspectJobStatus;
   reused: boolean;
+}
+
+export interface ProspectBatchStartResponse extends ProspectBatchCreateResponse {
+  processing_started: true;
 }
 
 export interface ProspectBatchExecutionResponse {
@@ -617,12 +1115,45 @@ export interface ProspectDetailResponse {
 }
 
 export interface RuntimeStatusResponse {
-  provider: "fake" | "openai";
+  provider: "fake" | "openai" | "deepseek";
   model: string;
   /** The research extractor, configured independently of the draft provider. */
   research_provider: "fake" | "openai" | "deepseek";
   research_model: string;
+  /** Draft generation capability, reported independently of email sending. */
+  draft_provider: "fake" | "openai" | "deepseek";
+  draft_model: string;
+  draft_available: boolean;
+  email_send_enabled: boolean;
   environment: string;
+  real_data_gate: "enabled" | "blocked";
+}
+
+export interface HealthResponse {
+  status: "ok";
+  app: string;
+  environment: string;
+}
+
+export interface DependencyStatusResponse {
+  name: "postgres" | "redis" | "worker" | string;
+  healthy: boolean;
+  detail: string | null;
+  /** Structured worker health (D5e1.2); absent on older backends. */
+  status?: "healthy" | "unavailable" | "unknown";
+  reason_code?:
+    | "WORKER_HEARTBEAT_OK"
+    | "WORKER_HEARTBEAT_MISSING"
+    | "WORKER_HEARTBEAT_EXPIRED"
+    | "WORKER_HEARTBEAT_INVALID"
+    | "REDIS_UNAVAILABLE";
+  last_seen_at?: string | null;
+  age_seconds?: number | null;
+}
+
+export interface ReadinessResponse {
+  status: "ready" | "degraded";
+  dependencies: DependencyStatusResponse[];
 }
 
 export type EvidenceFlowStatus = "completed" | "partial" | "needs_review";
@@ -699,6 +1230,26 @@ export class ApiNetworkError extends Error {
   }
 }
 
+const KNOWN_ERROR_MESSAGES: Record<string, string> = {
+  resource_not_found: "请求的资源不存在（例如实体归并尚未开始或已被移除）。",
+  import_session_not_found: "未找到该导入会话（ImportSession）。",
+  invalid_state: "当前工作流状态不允许该操作，请刷新后重试。",
+  internal_error: "服务内部错误，请稍后重试。",
+  application_conflict: "操作与当前业务状态冲突。",
+  ENTITY_REVIEW_PENDING: "仍有实体需要人工确认。",
+  ROUTING_PREVIEW_INVALID: "Routing 预览未通过安全校验，请检查证据和规则。",
+  ENTITY_RESOLUTION_PREVIEW_FAILED: "实体归并预览失败。",
+  WORKFLOW_STATE_CONFLICT: "工作流状态冲突，请刷新后重试。",
+  ROUTING_TARGET_REQUIRED: "请至少填写一个目标产品关键词或 HS Code。",
+  unexpected_client_error: "发生意外错误，请稍后重试。",
+  provider_unavailable:
+    "Draft Provider 尚未配置，因此深度分析暂不能启动。",
+  ROUTING_BATCH_COMPANIES_REQUIRED: "请选择至少 1 家优先客户。",
+  ROUTING_BATCH_COMPANIES_DUPLICATED: "所选客户重复，请重新选择。",
+  ROUTING_BATCH_LIMIT_EXCEEDED: "深度分析每批最多 5 家。",
+  ROUTING_BATCH_COMPANY_OUTSIDE_RUN: "所选公司不属于当前路由结果。",
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -714,14 +1265,21 @@ function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
 
 export function getClientErrorDetails(error: unknown): ClientErrorDetails {
   if (error instanceof ApiError) {
-    return error.payload;
+    const known = KNOWN_ERROR_MESSAGES[error.payload.code];
+    return {
+      code: error.payload.code,
+      message: known ?? error.payload.message,
+      request_id: error.payload.request_id,
+    };
   }
   if (error instanceof ApiNetworkError) {
     return { code: error.code, message: error.message, request_id: null };
   }
   return {
     code: "unexpected_client_error",
-    message: "Something unexpected happened while processing the request.",
+    message:
+      KNOWN_ERROR_MESSAGES.unexpected_client_error ??
+      "Something unexpected happened while processing the request.",
     request_id: null,
   };
 }
@@ -732,6 +1290,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${API_V1_URL}${path}`, {
       ...init,
       cache: "no-store",
+      signal: init?.signal ?? AbortSignal.timeout(8_000),
       headers: {
         "Content-Type": "application/json",
         ...init?.headers,
@@ -776,6 +1335,7 @@ async function requestForm<T>(
       method: "POST",
       body: form,
       cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
     });
   } catch {
     throw new ApiNetworkError(
@@ -800,6 +1360,447 @@ async function requestForm<T>(
 
 export function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return requestJson<RuntimeStatusResponse>("/health/runtime");
+}
+
+export function getHealthStatus(): Promise<HealthResponse> {
+  return requestJson<HealthResponse>("/health");
+}
+
+export function getReadinessStatus(): Promise<ReadinessResponse> {
+  return requestJson<ReadinessResponse>("/health/ready");
+}
+
+export function getSafeApiRequestTarget(): string {
+  return "/api/v1 (same origin)";
+}
+
+export function createBulkImportSession(
+  file: File,
+  source: string,
+  mapping?: Record<string, string>,
+  options: {
+    realData?: boolean;
+    mappingConfirmed?: boolean;
+    expectedFileSha256?: string;
+  } = {},
+): Promise<ImportSessionCreateResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("source", source);
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  form.append("real_data", String(options.realData ?? false));
+  form.append("mapping_confirmed", String(options.mappingConfirmed ?? false));
+  if (options.expectedFileSha256) {
+    form.append("expected_file_sha256", options.expectedFileSha256);
+  }
+  return requestForm<ImportSessionCreateResponse>(
+    "/import-sessions",
+    form,
+    "bulk_import_upload_failed",
+  );
+}
+
+export function preflightNetEaseImport(
+  file: File,
+  mapping?: Record<string, string>,
+): Promise<NetEasePreflightResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  return requestForm<NetEasePreflightResponse>(
+    "/acceptance/netease-preflight",
+    form,
+    "acceptance_netease_preflight_failed",
+  );
+}
+
+export function getBulkImportSession(
+  sessionId: string,
+): Promise<ImportSessionResponse> {
+  return requestJson<ImportSessionResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}`,
+  );
+}
+
+export function getBulkImportRows(
+  sessionId: string,
+  options: { page: number; limit: number; status?: RawImportRowStatus },
+): Promise<RawImportRowListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page),
+    limit: String(options.limit),
+  });
+  if (options.status) params.set("status", options.status);
+  return requestJson<RawImportRowListResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/rows?${params.toString()}`,
+  );
+}
+
+export function startImportResolution(
+  sessionId: string,
+): Promise<ImportResolutionStartResponse> {
+  return requestJson<ImportResolutionStartResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/resolve`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function getImportResolution(
+  sessionId: string,
+): Promise<ImportResolutionResponse> {
+  return requestJson<ImportResolutionResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/resolution`,
+  );
+}
+
+export function getImportEntityDecisions(
+  sessionId: string,
+  options: {
+    page?: number;
+    limit?: number;
+    entityType?: ImportEntityType;
+    reviewStatus?: ImportEntityReviewStatus;
+    minConfidence?: number;
+    maxConfidence?: number;
+  } = {},
+): Promise<ImportEntityDecisionListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    limit: String(options.limit ?? 50),
+  });
+  if (options.entityType) params.set("entity_type", options.entityType);
+  if (options.reviewStatus) params.set("review_status", options.reviewStatus);
+  if (options.minConfidence !== undefined) {
+    params.set("min_confidence", String(options.minConfidence));
+  }
+  if (options.maxConfidence !== undefined) {
+    params.set("max_confidence", String(options.maxConfidence));
+  }
+  return requestJson<ImportEntityDecisionListResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/entity-decisions?${params.toString()}`,
+  );
+}
+
+export function reviewImportEntityDecision(
+  decisionId: string,
+  action: ImportReviewAction,
+): Promise<ImportEntityDecisionResponse> {
+  return requestJson<ImportEntityDecisionResponse>(
+    `/import-entity-decisions/${encodeURIComponent(decisionId)}/review`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action, reviewed_by: "local_reviewer" }),
+    },
+  );
+}
+
+export function createProspectRoutingRun(
+  sessionId: string,
+  criteria: ProspectRoutingCriteriaInput,
+  campaignName?: string,
+  notes?: string,
+): Promise<ProspectRoutingCreateResponse> {
+  return requestJson<ProspectRoutingCreateResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/routing-runs`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        criteria,
+        campaign_name: campaignName?.trim() || null,
+        notes: notes?.trim() || null,
+      }),
+    },
+  );
+}
+
+export interface RoutingPreviewCompany {
+  company_id: string;
+  company_name: string;
+  tier: string;
+  pre_score: number;
+  reason_codes: string[];
+  positive_reasons: string[];
+  unknown_evidence: string[];
+  explicit_negative: string[];
+  product_signal: boolean;
+  hs_signal: boolean;
+  import_signal: boolean;
+  contact_quality: number;
+  data_completeness: number;
+  person_contact_count: number;
+  department_contact_count: number;
+  rules_version: string;
+}
+
+export interface RoutingPreviewResponse {
+  import_session_id: string;
+  rules_version: string;
+  taxonomy_version: string;
+  preview_valid: boolean;
+  entity_pending_count: number;
+  totals: Record<string, number>;
+  companies: RoutingPreviewCompany[];
+}
+
+export function getRoutingPreview(
+  sessionId: string,
+  criteria: ProspectRoutingCriteriaInput,
+): Promise<RoutingPreviewResponse> {
+  return requestJson<RoutingPreviewResponse>(
+    `/import-sessions/${encodeURIComponent(sessionId)}/routing-preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({ criteria }),
+    },
+  );
+}
+
+export function getProspectRoutingRun(
+  routingRunId: string,
+): Promise<ProspectRoutingRunResponse> {
+  return requestJson<ProspectRoutingRunResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}`,
+  );
+}
+
+export async function getProspectRoutes(
+  routingRunId: string,
+): Promise<ProspectRouteListResponse> {
+  const first = await requestJson<ProspectRouteListResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/routes?page=1&limit=200`,
+  );
+  const routes = [...first.routes];
+  const pageCount = Math.ceil(first.total / first.limit);
+  for (let page = 2; page <= pageCount; page += 1) {
+    const next = await requestJson<ProspectRouteListResponse>(
+      `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/routes?page=${page}&limit=200`,
+    );
+    routes.push(...next.routes);
+  }
+  return { ...first, routes };
+}
+
+export function reviewProspectRoute(
+  routeId: string,
+  action: ProspectRouteReviewAction,
+  options: {
+    effectiveTier?: ProspectTier;
+    overrideReason?: string;
+    reviewedBy?: string;
+  } = {},
+): Promise<ProspectRouteResponse> {
+  return requestJson<ProspectRouteResponse>(
+    `/prospect-routes/${encodeURIComponent(routeId)}/review`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action,
+        effective_tier: options.effectiveTier ?? null,
+        override_reason: options.overrideReason?.trim() || null,
+        reviewed_by: options.reviewedBy ?? "local_reviewer",
+      }),
+    },
+  );
+}
+
+export function createRoutedProspectBatch(
+  routingRunId: string,
+  companyIds: string[],
+): Promise<ProspectRoutingBatchCreateResponse> {
+  return requestJson<ProspectRoutingBatchCreateResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/prospect-batches`,
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds }),
+    },
+  );
+}
+
+export function createSuppression(options: {
+  email?: string;
+  domain?: string;
+  company?: string;
+  reason: string;
+}): Promise<SuppressionEntryResponse> {
+  return requestJson<SuppressionEntryResponse>("/suppressions", {
+    method: "POST",
+    body: JSON.stringify({
+      email: options.email?.trim() || null,
+      domain: options.domain?.trim() || null,
+      company: options.company?.trim() || null,
+      reason: options.reason.trim(),
+      source: "manual",
+      created_by: "local_reviewer",
+    }),
+  });
+}
+
+export function getSuppressions(active?: boolean): Promise<SuppressionEntryListResponse> {
+  const params = new URLSearchParams({ page: "1", limit: "200" });
+  if (active !== undefined) params.set("active", String(active));
+  return requestJson<SuppressionEntryListResponse>(`/suppressions?${params.toString()}`);
+}
+
+export function deactivateSuppression(
+  suppressionId: string,
+): Promise<SuppressionEntryResponse> {
+  return requestJson<SuppressionEntryResponse>(
+    `/suppressions/${encodeURIComponent(suppressionId)}/deactivate`,
+    {
+      method: "POST",
+      body: JSON.stringify({ deactivated_by: "local_reviewer" }),
+    },
+  );
+}
+
+export function createUmailExportBatch(
+  routingRunId: string,
+  companyIds: string[],
+  campaign: string,
+): Promise<UmailExportBatchResponse> {
+  return requestJson<UmailExportBatchResponse>(
+    `/prospect-routing-runs/${encodeURIComponent(routingRunId)}/umail-export-batches`,
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds, campaign: campaign.trim() }),
+    },
+  );
+}
+
+export function getUmailExportBatch(batchId: string): Promise<UmailExportBatchResponse> {
+  return requestJson<UmailExportBatchResponse>(
+    `/umail-export-batches/${encodeURIComponent(batchId)}`,
+  );
+}
+
+export async function downloadUmailExportCsv(
+  batchId: string,
+): Promise<{ blob: Blob; filename: string }> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_V1_URL}/umail-export-batches/${encodeURIComponent(batchId)}/download`,
+      { cache: "no-store" },
+    );
+  } catch {
+    throw new ApiNetworkError(
+      "Unable to reach the API. Confirm the backend is running on the configured URL.",
+    );
+  }
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    const fallback: ApiErrorPayload = {
+      code: "umail_export_download_failed",
+      message: `The API returned HTTP ${response.status}.`,
+      request_id: response.headers.get("X-Request-ID") ?? "not_available",
+    };
+    throw new ApiError(
+      response.status,
+      isApiErrorPayload(payload) ? payload : fallback,
+    );
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? `umail-export-${batchId}.csv`;
+  return { blob: await response.blob(), filename };
+}
+
+export function uploadUmailResultImport(
+  file: File,
+  mapping?: Record<string, string>,
+  options: {
+    realData?: boolean;
+    mappingConfirmed?: boolean;
+    expectedFileSha256?: string;
+  } = {},
+): Promise<UmailResultImportResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("created_by", "local_reviewer");
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  form.append("real_data", String(options.realData ?? false));
+  form.append("mapping_confirmed", String(options.mappingConfirmed ?? false));
+  if (options.expectedFileSha256) {
+    form.append("expected_file_sha256", options.expectedFileSha256);
+  }
+  return requestForm<UmailResultImportResponse>(
+    "/umail-result-imports",
+    form,
+    "umail_result_upload_failed",
+  );
+}
+
+export function preflightUmailResult(
+  file: File,
+  mapping?: Record<string, string>,
+): Promise<UmailPreflightResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (mapping && Object.keys(mapping).length > 0) {
+    form.append("mapping", JSON.stringify(mapping));
+  }
+  return requestForm<UmailPreflightResponse>(
+    "/acceptance/umail-result-preflight",
+    form,
+    "acceptance_umail_preflight_failed",
+  );
+}
+
+export function getUmailResultImport(
+  resultImportId: string,
+): Promise<UmailResultImportResponse> {
+  return requestJson<UmailResultImportResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}`,
+  );
+}
+
+export function getUmailResultRows(
+  resultImportId: string,
+  options: {
+    page?: number;
+    limit?: number;
+    matchStatus?: UmailResultMatchStatus;
+    eventType?: ContactEngagementEventType;
+    campaign?: string;
+    suppressionImpact?: boolean;
+  } = {},
+): Promise<UmailResultRowListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    limit: String(options.limit ?? 50),
+  });
+  if (options.matchStatus) params.set("match_status", options.matchStatus);
+  if (options.eventType) params.set("event_type", options.eventType);
+  if (options.campaign?.trim()) params.set("campaign", options.campaign.trim());
+  if (options.suppressionImpact !== undefined) {
+    params.set("suppression_impact", String(options.suppressionImpact));
+  }
+  return requestJson<UmailResultRowListResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}/rows?${params.toString()}`,
+  );
+}
+
+export function applyUmailResultImport(
+  resultImportId: string,
+  realData = false,
+): Promise<UmailResultImportResponse> {
+  return requestJson<UmailResultImportResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}/apply`,
+    { method: "POST", body: JSON.stringify({ confirmed: true, real_data: realData }) },
+  );
+}
+
+export function getUmailFeedbackStatistics(
+  resultImportId: string,
+): Promise<UmailFeedbackStatisticsResponse> {
+  return requestJson<UmailFeedbackStatisticsResponse>(
+    `/umail-result-imports/${encodeURIComponent(resultImportId)}/statistics`,
+  );
 }
 
 export function createDiscoveryTask(prompt: string): Promise<DiscoveryTaskResponse> {
@@ -865,6 +1866,28 @@ export function createCalibrationRun(
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify({ company_ids: companyIds, sender }),
+    },
+  );
+}
+
+export function startRoutedProspectBatch(
+  batchId: string,
+  options: {
+    confirmation: boolean;
+    sender?: ProspectBatchSender;
+    note?: string;
+  },
+): Promise<ProspectBatchStartResponse> {
+  return requestJson<ProspectBatchStartResponse>(
+    `/prospect-batches/${encodeURIComponent(batchId)}/start`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        confirmation: options.confirmation,
+        provider_mode: "configured",
+        note: options.note?.trim() || null,
+        sender: options.sender,
+      }),
     },
   );
 }

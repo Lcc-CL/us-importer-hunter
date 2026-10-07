@@ -1,12 +1,13 @@
 """Contact aggregate (Outreach context): an independent aggregate root.
 
-A contact belongs to one company (by id), is used by many outreaches
-(by id), and its role/channels/verification evolve independently
-(ADR-0022). It holds facts about a person — never opportunity scores,
-never email sending.
+A contact is a person identity used by many outreaches (by id), and its
+role/channels/verification evolve independently (ADR-0022). D5b1 keeps the
+original company id as a nullable compatibility reference while new import
+employment is represented by CompanyContact. It holds facts about a person —
+never opportunity scores, never email sending.
 
 Invariants:
-- belongs to a company; name is valid (PersonName).
+- may be unassigned; name is valid (PersonName).
 - no duplicate channel per (type, normalized_value); INVALID channels
   are never usable.
 - ACTIVE requires a title or at least one usable channel.
@@ -52,7 +53,7 @@ class Contact:
         self,
         *,
         id: UUID,
-        company_id: UUID,
+        company_id: UUID | None,
         name: PersonName,
         title: JobTitle | None,
         created_at: datetime,
@@ -82,6 +83,12 @@ class Contact:
         )
         contact._events.append(ContactCreated(contact_id=contact._id, company_id=company_id))
         return contact
+
+    @classmethod
+    def create_unassigned(
+        cls, name: PersonName, title: JobTitle | None = None
+    ) -> "Contact":
+        return cls(id=uuid4(), company_id=None, name=name, title=title, created_at=utcnow())
 
     # -- behaviors ----------------------------------------------------
 
@@ -155,13 +162,7 @@ class Contact:
                 verification_status=status.value,
             )
         )
-        self._events.append(
-            ContactabilityChanged(
-                company_id=self._company_id,
-                contact_id=self._id,
-                reason=f"{channel_type.value} channel verified",
-            )
-        )
+        self._record_contactability(f"{channel_type.value} channel verified")
 
     def invalidate_channel(
         self, channel_type: ContactChannelType, normalized_value: str, reason: str
@@ -180,12 +181,8 @@ class Contact:
         self._events.append(
             ContactUpdated(contact_id=self._id, changed_fields=("channels",))
         )
-        self._events.append(
-            ContactabilityChanged(
-                company_id=self._company_id,
-                contact_id=self._id,
-                reason=f"{channel_type.value} channel invalidated: {reason.strip()}",
-            )
+        self._record_contactability(
+            f"{channel_type.value} channel invalidated: {reason.strip()}"
         )
 
     def activate(self) -> None:
@@ -204,11 +201,7 @@ class Contact:
             return  # idempotent — but only after re-validation
         self._status = ContactStatus.ACTIVE
         self._touch()
-        self._events.append(
-            ContactabilityChanged(
-                company_id=self._company_id, contact_id=self._id, reason="contact activated"
-            )
-        )
+        self._record_contactability("contact activated")
 
     def mark_invalid(self, reason: str) -> None:
         if not reason.strip():
@@ -219,24 +212,14 @@ class Contact:
         self._invalid_reason = reason.strip()
         self._touch()
         self._events.append(ContactInvalidated(contact_id=self._id, reason=reason.strip()))
-        self._events.append(
-            ContactabilityChanged(
-                company_id=self._company_id,
-                contact_id=self._id,
-                reason=f"contact invalidated: {reason.strip()}",
-            )
-        )
+        self._record_contactability(f"contact invalidated: {reason.strip()}")
 
     def deactivate(self) -> None:
         if self._status is not ContactStatus.ACTIVE:
             raise InvalidStateTransition(f"cannot deactivate a {self._status.value} contact")
         self._status = ContactStatus.INACTIVE
         self._touch()
-        self._events.append(
-            ContactabilityChanged(
-                company_id=self._company_id, contact_id=self._id, reason="contact deactivated"
-            )
-        )
+        self._record_contactability("contact deactivated")
 
     def reactivate(self) -> None:
         if self._status is not ContactStatus.INACTIVE:
@@ -287,6 +270,16 @@ class Contact:
     def _touch(self) -> None:
         self._updated_at = utcnow()
 
+    def _record_contactability(self, reason: str) -> None:
+        if self._company_id is not None:
+            self._events.append(
+                ContactabilityChanged(
+                    company_id=self._company_id,
+                    contact_id=self._id,
+                    reason=reason,
+                )
+            )
+
     # -- read-only state ----------------------------------------------
 
     @property
@@ -294,7 +287,7 @@ class Contact:
         return self._id
 
     @property
-    def company_id(self) -> UUID:
+    def company_id(self) -> UUID | None:
         return self._company_id
 
     @property

@@ -16,7 +16,7 @@ from app.database.base import Base
 class CompanyModel(Base):
     __tablename__ = "companies"
     __table_args__ = (
-        Index("uq_companies_normalized_name", "normalized_name", unique=True),
+        Index("ix_companies_normalized_name", "normalized_name"),
         Index("ix_companies_website_host", "website_host"),
     )
 

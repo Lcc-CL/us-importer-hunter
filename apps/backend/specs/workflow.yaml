@@ -4,6 +4,132 @@
 # EventBus (ADR-0004/0015); Execution context wraps every run in a Task.
 
 workflows:
+  bulk_import:
+    package: app.workflows.bulk_import
+    description: >
+      D5a1 synchronous traceable raw CSV intake. Preflights a spooled upload
+      without retaining the full file in memory, accepts utf-8-sig, utf-8 or
+      gb18030, rejects files above 20 MB or 20,000 data rows before creating a
+      session, and persists every accepted, invalid and duplicate row in batches
+      of 500. The same source plus file SHA-256 returns the existing session.
+      It never creates Company, Contact, Import Evidence, Opportunity, Research,
+      ProspectBatch, Outreach or Draft records and invokes no provider or LLM.
+    steps:
+      - { id: preflight, service: streaming_csv_intake }
+      - { id: create_session, aggregate: import_session }
+      - { id: persist_raw_rows, aggregate: raw_import_row, batch_size: 500 }
+      - { id: persist_terminal_statistics, aggregate: import_session }
+    statuses: [receiving, processing, completed, partial_failed, failed]
+    execution: sync_http
+    limits: { max_bytes: 20971520, max_rows: 20000 }
+    status: implemented
+
+  import_entity_resolution:
+    package: app.workflows.import_resolution
+    description: >
+      D5b1 background deterministic resolution from accepted RawImportRow data
+      into canonical Company and Contact identities plus CompanyContact employment
+      projections. Source plus external company ID is stable across files; domain,
+      normalized name/address and contact channels are evaluated without LLM or
+      external providers. Ambiguous company or contact candidates remain behind an
+      auditable human-review gate and do not create CompanyContact links early.
+      Processing uses an import-specific PostgreSQL job with lease, retry, heartbeat
+      and stale recovery, and never creates Opportunity, Research, ProspectBatch,
+      Outreach, Draft or Umail data.
+    steps:
+      - { id: project_raw_fields, service: raw_import_projector }
+      - { id: resolve_company, service: deterministic_entity_matcher }
+      - { id: resolve_contact, service: deterministic_entity_matcher }
+      - { id: persist_decisions, aggregate: import_entity_decision }
+      - { id: persist_employment, aggregate: company_contact, conditional: identity_confirmed }
+      - { id: review_ambiguous_matches, workflow: import_entity_review, human_review: required }
+    statuses: [pending, running, completed, partial_failed, failed]
+    execution: postgresql_worker
+    job_statuses: [pending, leased, running, completed, failed, cancelled]
+    batch_size: 250
+    status: implemented
+
+  prospect_routing:
+    package: app.workflows.prospect_routing
+    description: >
+      D5c background deterministic pre-score and sales-routing workflow for a
+      completed or partial-failed ImportSession after entity resolution. It
+      projects persisted RawImportRow, canonical Company, resolution-profile and
+      CompanyContact facts into an auditable feature snapshot, applies the fixed
+      d5c-deterministic-routing-v1 weights, and recommends A/B/C/D. Companies with
+      unresolved identity review are blocked without stopping other companies.
+      Human confirm, override or exclude is required before an effective-tier A
+      company can enter a routing-sourced ProspectBatch of at most five companies.
+      Creating that batch does not create a ProspectJob and never starts Research,
+      Opportunity scoring, draft generation, Umail export or email delivery. No
+      provider or LLM is invoked.
+    steps:
+      - { id: aggregate_features, service: routing_feature_projector }
+      - { id: deterministic_pre_score, service: deterministic_prospect_routing_scorer }
+      - { id: persist_routes, aggregate: prospect_route }
+      - { id: review_routes, workflow: prospect_route_review, human_review: required }
+      - { id: create_a_tier_batch, aggregate: prospect_batch, conditional: confirmed_effective_tier_a }
+    statuses: [pending, running, completed, partial_completed, failed]
+    route_review_statuses: [suggested, confirmed, overridden, blocked]
+    tiers: [A, B, C, D]
+    execution: postgresql_worker
+    job_statuses: [pending, leased, running, completed, failed, cancelled]
+    rules_version: d5c-deterministic-routing-v1
+    limits: { companies_per_prospect_batch: 5, worker_concurrency: 1 }
+    status: implemented
+
+  umail_export:
+    package: app.workflows.umail_export
+    description: >
+      D5d2a synchronous, deterministic CSV-export workflow for the current
+      ProspectRoutingRun generation. Only effective-tier B routes with confirmed
+      or overridden human review are eligible. It selects at most two contacts per
+      company with named contacts before department fallbacks, snapshots Company,
+      Contact, email, route and pre-score facts into immutable rows, then applies
+      active email/domain/company suppression, invalid-email checks and batch-local
+      email deduplication. CSV contract v1 uses a fixed column order, UTF-8 BOM,
+      RFC-compatible quoting and formula-injection protection. Repeated downloads
+      are regenerated from persisted rows and verified against the stored SHA-256.
+      It never calls Umail or any external provider, creates no Outreach or Outcome,
+      and never marks a prospect sent or contacted.
+    steps:
+      - { id: validate_b_routes, policy: confirmed_or_overridden_effective_b }
+      - { id: select_contacts, service: deterministic_umail_contact_selector, max_per_company: 2 }
+      - { id: apply_suppression, aggregate: suppression_entry }
+      - { id: persist_preview, aggregates: [umail_export_batch, umail_export_row] }
+      - { id: render_csv, contract: umail-export-contract-v1 }
+    row_statuses: [ready, suppressed, invalid, duplicate]
+    execution: sync_http
+    limits: { companies: 500, ready_contacts: 1000 }
+    status: implemented
+
+  umail_feedback:
+    package: app.workflows.umail_feedback
+    description: >
+      D5d2b synchronous two-phase intake for offline Umail result CSV files.
+      Upload parses a versioned field mapping, persists every source row, and
+      deterministically matches immutable UmailExportRow snapshots by exact row
+      ID, batch plus email, campaign plus email, or a unique 180-day email
+      window. It stops ambiguous, unmatched, invalid and duplicate rows at the
+      review boundary. Explicit apply appends immutable ContactEngagementEvent
+      records and creates email Suppression entries only for hard bounce,
+      unsubscribe and complaint events. It never mutates export snapshots,
+      Outreach, Draft, Outcome, Opportunity, Pre-Score or A/B/C/D routing, and
+      invokes no Umail API, provider, LLM or email delivery path.
+    steps:
+      - { id: parse_csv, contract: umail-result-import-contract-v1 }
+      - { id: match_export_snapshot, service: deterministic_umail_result_matcher }
+      - { id: persist_preview, aggregates: [umail_result_import, umail_result_row] }
+      - { id: review_import, human_review: required }
+      - { id: append_engagement, aggregate: contact_engagement_event }
+      - { id: apply_suppression, aggregate: suppression_entry, conditional: hard_bounce_unsubscribe_or_complaint }
+    import_statuses: [uploaded, parsed, ready_for_review, applied, partial_applied, failed]
+    match_statuses: [matched, unmatched, ambiguous, invalid, duplicate]
+    event_types: [sent, delivered, hard_bounced, soft_bounced, bounce_unknown, unsubscribed, complained, replied, opened, clicked]
+    execution: sync_http
+    limits: { max_bytes: 20971520, max_rows: 20000, matching_window_days: 180 }
+    status: implemented
+
   discovery_task:
     package: app.workflows.discovery_task
     description: >
@@ -28,18 +154,25 @@ workflows:
   prospect_batch:
     package: app.workflows.prospect_batch
     description: >
-      D3a background supervisor for at most five companies saved by a completed
-      or partial_failed manual_csv Discovery Task. HTTP submission atomically
-      persists a batch plus PostgreSQL execution job and returns 202. A separate
-      single-job worker leases the job, updates heartbeats, and sequentially reuses
-      website Research, deterministic Opportunity scoring, public website contact
-      discovery, Contact ingestion, decision-maker selection and review-only draft
-      generation. New Research claims always stop at awaiting_evidence_review;
-      no claim is auto-confirmed. Once every claim is accepted or rejected, an
-      explicit Resume submits another background execution without re-running
-      completed stages. Expired leases are recovered without restarting human
-      evidence review. No email is sent.
+      D3a/D5d1 background supervisor for at most five companies from either a
+      completed or partial_failed manual_csv Discovery Task or an immutable,
+      confirmed effective-tier A prospect-routing generation. Discovery submission
+      atomically creates the batch and PostgreSQL execution job; a routing-sourced
+      batch is created without a job and requires a second explicit, provider-safe
+      start confirmation. Both sources are translated into a typed source context;
+      routing provenance retains the RoutingRun generation, Route feature/reason
+      snapshot, RawImportRow and ImportEntityDecision references without fabricating
+      a DiscoveryTask. A separate single-job worker leases the job, updates
+      heartbeats, and sequentially reuses website Research, deterministic
+      Opportunity scoring, public website contact discovery, Contact ingestion,
+      decision-maker selection and review-only draft generation. New Research
+      claims always stop at awaiting_evidence_review; no claim is auto-confirmed.
+      Once every claim is accepted or rejected, an explicit Resume submits another
+      background execution without re-running completed stages. Expired leases are
+      recovered without restarting human evidence review. No email is sent.
     steps:
+      - { id: resolve_typed_source, service: prospect_batch_source_context }
+      - { id: confirm_routing_start, policy: explicit_confirmation_and_provider_preflight, conditional: prospect_routing_source }
       - { id: validate_companies, service: prospect_batch_preflight, for_each: company }
       - { id: research, workflow: research, for_each: company }
       - { id: evidence_gate, policy: human_review_required_for_new_claims }
@@ -185,9 +318,21 @@ workflows:
 
   research:
     package: app.workflows.research
-    description: On-demand deep-dive analysis of a single company.
-    emits: [CompanyFactsChanged, ImportRecordsUpdated]
-    status: planned
+    description: >
+      Fetch and clean a deterministic, guarded website page set; persist or
+      reuse immutable company-scoped ResearchDocuments; run the existing
+      ResearchExtractor and ClaimValidator; then wait for human evidence
+      review. R1 adds no chunking, embedding or retrieval and does not change
+      Claim, Opportunity, Routing or Draft behavior.
+    steps:
+      - { id: resolve_company, service: company_repository_read }
+      - { id: discover_and_fetch_pages, tool: website_safe_fetcher }
+      - { id: clean_pages, tool: website_cleaner }
+      - { id: persist_cleaned_documents, service: research_document_ingestion }
+      - { id: extract_claims, service: research_extractor }
+      - { id: validate_claims, service: claim_validator }
+      - { id: persist_run, aggregate: research_run }
+    status: implemented
 
   email:
     package: app.workflows.email

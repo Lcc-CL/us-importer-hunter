@@ -33,3 +33,7 @@ copy the format of an existing ADR, take the next number, link it here.
 | [0025](ADR/0025-website-research-boundary.md) | Website research produces auditable claims, not company facts | 2026-07-19 |
 | [0026](ADR/0026-safe-outbound-fetching.md) | Safe outbound fetching (SSRF, robots, budgets) | 2026-07-19 |
 | [0027](ADR/0027-real-research-extractor-boundary.md) | Real research extractor provider boundary | 2026-07-19 |
+| [0028](ADR/0028-research-document-ownership.md) | Evidence-Grounded Research Document ownership | 2026-08-09 |
+| [0029](ADR/0029-cleaned-content-retention-versioning.md) | Cleaned content retention and immutable versioning | 2026-08-09 |
+| [0030](ADR/0030-pgvector-first-direction.md) | PostgreSQL + pgvector first direction | 2026-08-09 |
+| [0031](ADR/0031-deterministic-research-document-chunking.md) | Deterministic ResearchDocument chunking contract | 2026-08-09 |

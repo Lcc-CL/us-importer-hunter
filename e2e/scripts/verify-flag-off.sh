@@ -23,7 +23,7 @@ trap cleanup EXIT
 echo "==> starting a frontend with NEXT_PUBLIC_ENABLE_RESEARCH unset (:$PORT)"
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" \
-  -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
+  -e BACKEND_INTERNAL_URL=http://host.docker.internal:8001 \
   -p "$PORT:3000" \
   -v "$REPO_ROOT/apps/frontend/src:/app/src" \
   us-importer-hunter-frontend-e2e >/dev/null

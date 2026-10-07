@@ -6,7 +6,7 @@
 contact:
   identity:
     name: { type: str, required: true, note: PersonName — non-empty, not symbols-only }
-    company_id: { type: uuid, required: true, note: FK — a contact belongs to one company }
+    company_id: { type: uuid, required: false, note: Deprecated nullable compatibility FK for pre-D5b1 single-company contacts; new imports use CompanyContact }
 
   role:
     title: { type: str, note: raw + normalized (JobTitle); no weights in the value object }
@@ -39,16 +39,35 @@ fit_assessment:              # append-only judgment (mvp-decision-maker-policy-v
   assessment_fingerprint: { type: str, required: true, note: SHA-256; UNIQUE per contact }
 
 invariants:
-  - A contact belongs to exactly one company (FK CASCADE).
+  - Contact represents person identity and may exist without a resolved company.
+  - New import flows express employment through CompanyContact; one Contact may link to multiple companies.
+  - Deleting one Company must not delete a Contact that may be shared by another CompanyContact.
   - Channels never duplicate per (type, normalized value) — composite PK.
   - Invalid channels are excluded from dedup lookups and reachability.
   - Name alone is never a global identity; conflicting channels → POSSIBLE_MATCH.
   - Contacts hold no opportunity score and never send email.
 
 relations:
-  company: many-to-one          # Discovery facts side
+  companies: many-to-many       # via CompanyContact employment records
+  legacy_company: optional-many-to-one  # deprecated compatibility field, ON DELETE SET NULL
   outreaches: one-to-many       # conversations reference contact_id only
   fit_assessments: one-to-many  # append-only judgments
+
+company_contact:
+  identity: { company_id: uuid, contact_id: uuid }
+  role:
+    raw_title: { type: str }
+    role_category: { type: str, note: deterministic D5b1 taxonomy }
+    seniority: { type: str }
+    is_department_contact: { type: bool }
+    status: { type: str, note: "active | inactive | unknown" }
+  traceability:
+    first_seen_at: { type: datetime }
+    last_seen_at: { type: datetime }
+    source_import_row_id: { type: uuid }
+  invariants:
+    - One active employment projection per company_id + contact_id.
+    - The same Contact may have employment records at different companies.
 
 events:
   produces: [ContactCreated, ContactUpdated, ContactChannelAdded, ContactChannelVerified,

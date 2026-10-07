@@ -12,6 +12,7 @@ from app.services.email import (
     FakeEmailDraftGenerator,
     OpenAIEmailDraftGenerator,
 )
+from app.shared.exceptions import ProviderUnavailableError
 
 
 def context() -> EmailGenerationContext:
@@ -46,6 +47,31 @@ async def test_openai_missing_key_fails_only_when_generation_is_called() -> None
     assert isinstance(generator, OpenAIEmailDraftGenerator)
     with pytest.raises(EmailGenerationError, match="OPENAI_API_KEY is not configured"):
         await generator.generate(context())
+
+
+async def test_deepseek_draft_generator_is_wired_without_second_sdk() -> None:
+    settings = Settings(
+        _env_file=None,
+        email_generator_provider="deepseek",
+        deepseek_api_key="sk-test-not-real",
+        deepseek_model="deepseek-v4-pro",
+        deepseek_base_url="https://api.deepseek.com",
+    )
+    generator = get_email_draft_generator(settings)
+    assert isinstance(generator, OpenAIEmailDraftGenerator)
+    assert generator.provider_name == "deepseek"
+    assert generator.model_name == "deepseek-v4-pro"
+
+    with pytest.raises(ProviderUnavailableError, match="DEEPSEEK_API_KEY"):
+        get_email_draft_generator(
+            Settings(
+                _env_file=None,
+                email_generator_provider="deepseek",
+                deepseek_api_key="",
+                deepseek_model="deepseek-v4-pro",
+                deepseek_base_url="https://api.deepseek.com",
+            )
+        )
 
 
 async def test_cors_allows_local_frontend_only() -> None:

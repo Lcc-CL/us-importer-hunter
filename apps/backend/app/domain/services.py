@@ -213,6 +213,11 @@ class DecisionMakerSelectionService(Protocol):
     ) -> "tuple[DecisionMakerFitAssessment, ...]":
         """Assessments sorted best-first; ties broken deterministically."""
 
-    def score_all(self, contacts: "Sequence[Contact]") -> "tuple[Any, ...]":
+    def score_all(
+        self,
+        contacts: "Sequence[Contact]",
+        *,
+        company_id: UUID | None = None,
+    ) -> "tuple[Any, ...]":
         """Score every contact without ranking. Returns CandidateScore-equivalent objects."""
         ...

@@ -9,6 +9,7 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.domain.clock import ensure_utc, utcnow
@@ -77,6 +78,63 @@ class ProspectStageTiming:
         if self.completed_at is None:
             return None
         return max(0, round((self.completed_at - self.started_at).total_seconds() * 1000))
+
+
+class ProspectBatchSourceKind(StrEnum):
+    DISCOVERY = "discovery"
+    PROSPECT_ROUTING = "prospect_routing"
+
+
+@dataclass(frozen=True)
+class DiscoveryBatchCompanySourceContext:
+    company_id: UUID
+    candidate_id: UUID
+    source: str
+    source_reference: str
+    candidate_website: str | None
+
+
+@dataclass(frozen=True)
+class DiscoveryProspectBatchSourceContext:
+    discovery_task_id: UUID
+    provider: str
+    task_status: str
+    companies: tuple[DiscoveryBatchCompanySourceContext, ...]
+
+    @property
+    def kind(self) -> ProspectBatchSourceKind:
+        return ProspectBatchSourceKind.DISCOVERY
+
+
+@dataclass(frozen=True)
+class RoutingBatchCompanySourceContext:
+    company_id: UUID
+    route_id: UUID
+    source_website: str | None
+    effective_tier: str | None
+    review_status: str
+    feature_snapshot: dict[str, Any]
+    reason_codes: tuple[str, ...]
+    warning_codes: tuple[str, ...]
+    raw_import_row_ids: tuple[UUID, ...]
+    import_entity_decision_ids: tuple[UUID, ...]
+
+
+@dataclass(frozen=True)
+class RoutingProspectBatchSourceContext:
+    routing_run_id: UUID
+    execution_generation: int
+    import_session_id: UUID
+    companies: tuple[RoutingBatchCompanySourceContext, ...]
+
+    @property
+    def kind(self) -> ProspectBatchSourceKind:
+        return ProspectBatchSourceKind.PROSPECT_ROUTING
+
+
+ProspectBatchSourceContext = (
+    DiscoveryProspectBatchSourceContext | RoutingProspectBatchSourceContext
+)
 
 
 TERMINAL_COMPANY_STATUSES = frozenset(
@@ -374,14 +432,33 @@ class ProspectBatch:
         self,
         *,
         id: UUID,
-        discovery_task_id: UUID,
+        discovery_task_id: UUID | None,
         requested_count: int,
         effective_count: int,
         created_at: datetime,
         companies: list[ProspectBatchCompany],
+        routing_run_id: UUID | None = None,
+        routing_execution_generation: int | None = None,
+        routing_selection_hash: str | None = None,
     ) -> None:
+        if (discovery_task_id is None) == (routing_run_id is None):
+            raise DomainError("prospect batch requires exactly one source")
+        if routing_run_id is None and (
+            routing_execution_generation is not None or routing_selection_hash is not None
+        ):
+            raise DomainError("discovery prospect batches cannot have routing provenance")
+        if routing_run_id is not None and (
+            routing_execution_generation is None
+            or routing_execution_generation < 1
+            or routing_selection_hash is None
+            or len(routing_selection_hash) != 64
+        ):
+            raise DomainError("routing prospect batches require generation and selection hash")
         self._id = id
         self._discovery_task_id = discovery_task_id
+        self._routing_run_id = routing_run_id
+        self._routing_execution_generation = routing_execution_generation
+        self._routing_selection_hash = routing_selection_hash
         self._requested_count = requested_count
         self._effective_count = effective_count
         self._created_at = created_at
@@ -416,6 +493,43 @@ class ProspectBatch:
             companies=[
                 ProspectBatchCompany.queued(
                     company_id=company_id, company_name=name, position=position
+                )
+                for position, (company_id, name) in enumerate(companies)
+            ],
+        )
+
+    @classmethod
+    def create_from_routing(
+        cls,
+        *,
+        routing_run_id: UUID,
+        routing_execution_generation: int,
+        routing_selection_hash: str,
+        requested_count: int,
+        companies: tuple[tuple[UUID, str], ...],
+    ) -> "ProspectBatch":
+        if requested_count < 1:
+            raise DomainError("batch requested_count must be positive")
+        if not companies:
+            raise DomainError("batch requires at least one company")
+        if len(companies) > 5:
+            raise DomainError("batch effective_count cannot exceed five")
+        if len({company_id for company_id, _ in companies}) != len(companies):
+            raise DomainError("batch companies must be deduplicated")
+        return cls(
+            id=uuid4(),
+            discovery_task_id=None,
+            routing_run_id=routing_run_id,
+            routing_execution_generation=routing_execution_generation,
+            routing_selection_hash=routing_selection_hash,
+            requested_count=requested_count,
+            effective_count=len(companies),
+            created_at=utcnow(),
+            companies=[
+                ProspectBatchCompany.queued(
+                    company_id=company_id,
+                    company_name=name,
+                    position=position,
                 )
                 for position, (company_id, name) in enumerate(companies)
             ],
@@ -499,8 +613,28 @@ class ProspectBatch:
         return self._id
 
     @property
-    def discovery_task_id(self) -> UUID:
+    def discovery_task_id(self) -> UUID | None:
         return self._discovery_task_id
+
+    @property
+    def routing_run_id(self) -> UUID | None:
+        return self._routing_run_id
+
+    @property
+    def routing_execution_generation(self) -> int | None:
+        return self._routing_execution_generation
+
+    @property
+    def routing_selection_hash(self) -> str | None:
+        return self._routing_selection_hash
+
+    @property
+    def source_kind(self) -> ProspectBatchSourceKind:
+        return (
+            ProspectBatchSourceKind.DISCOVERY
+            if self._discovery_task_id is not None
+            else ProspectBatchSourceKind.PROSPECT_ROUTING
+        )
 
     @property
     def requested_count(self) -> int:

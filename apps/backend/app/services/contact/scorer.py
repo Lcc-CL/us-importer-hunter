@@ -172,7 +172,9 @@ class SixFactorScorer:
     def __init__(self, size_provider: ContactSizeProvider | None = None) -> None:
         self._size = size_provider
 
-    def score(self, contact: Contact) -> CandidateScore:
+    def score(
+        self, contact: Contact, *, company_id: UUID | None = None
+    ) -> CandidateScore:
         classification = classify_title(contact.title.raw if contact.title else None)
         roles = classification.roles
         if classification.historical_role:
@@ -182,7 +184,13 @@ class SixFactorScorer:
 
         rr = _role_relevance(roles)
         sn = _seniority_score_value(classification, seniority)
-        cs = _company_size_fit(contact, roles, seniority, self._size)
+        cs = _company_size_fit(
+            contact,
+            company_id or contact.company_id,
+            roles,
+            seniority,
+            self._size,
+        )
         il = _import_logistics_fit(roles)
         reach, rec_channel = _reachability(contact)
         sc = _source_confidence_score(contact)
@@ -257,11 +265,16 @@ def _seniority_score_value(
 
 def _company_size_fit(
     contact: Contact,
+    company_id: UUID | None,
     roles: tuple[DecisionRole, ...],
     seniority: SeniorityLevel,
     size_provider: ContactSizeProvider | None,
 ) -> float:
-    hint = size_provider.company_size_hint(contact.company_id) if size_provider else "unknown"
+    hint = (
+        size_provider.company_size_hint(company_id)
+        if size_provider is not None and company_id is not None
+        else "unknown"
+    )
     if hint == "unknown":
         return 5.0
 

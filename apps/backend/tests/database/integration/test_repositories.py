@@ -80,13 +80,21 @@ class TestCompanyRepository:
         assert found is not None and found.id == company.id
         assert missing is None
 
-    async def test_unique_normalized_name_enforced_by_db(self, uow_factory: UowFactory) -> None:
-        await persist_company(uow_factory)
+    async def test_reviewed_duplicate_normalized_name_can_remain_separate(
+        self, uow_factory: UowFactory
+    ) -> None:
+        original = await persist_company(uow_factory)
         duplicate = Company.create(CompanyName("PACIFIC HOME GOODS INC."))
         async with uow_factory() as uow:
             await uow.companies.add(duplicate)
-            with pytest.raises(DuplicateOperation):
-                await uow.commit()
+            await uow.commit()
+        async with uow_factory() as uow:
+            loaded = await uow.companies.get_by_id(duplicate.id)
+            deterministic_first = await uow.companies.find_by_normalized_name(
+                CompanyName("Pacific Home Goods Inc.")
+            )
+        assert loaded is not None
+        assert deterministic_first is not None and deterministic_first.id == original.id
 
     async def test_rollback_discards_changes(self, uow_factory: UowFactory) -> None:
         company = Company.create(CompanyName("Ghost Corp"))

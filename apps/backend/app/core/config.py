@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     backend_cors_origins: list[str] = ["http://localhost:3000"]
 
-    # PostgreSQL. Managed platforms (Zeabur) hand out one DATABASE_URL; when
+    # PostgreSQL. Managed databases hand out one DATABASE_URL; when
     # set it wins over the individual POSTGRES_* fields below.
     database_url_env: str = Field(
         "", validation_alias=AliasChoices("DATABASE_URL", "database_url_env")
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     redis_db: int = 0
 
     # AI
-    email_generator_provider: Literal["fake", "openai"] = "fake"
+    email_generator_provider: Literal["fake", "openai", "deepseek"] = "fake"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     #: Optional OpenAI-compatible endpoint. Empty means the SDK default.
@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     #: with no loss of validated claims, while 13k cost 13% of them. See
     #: docs/validation/v0.2-real-company-evaluation.md §token.
     research_extractor_max_input_chars: int = 18_000
+    # R1 persists durable cleaned documents only. Vector retrieval and grounded
+    # generation remain disabled until later release gates are complete.
+    rag_research_enabled: bool = False
 
     # Website research (v0.2, ADR-0026). Limits are configuration, never
     # literals in the fetch loop.
@@ -106,6 +109,15 @@ class Settings(BaseSettings):
     prospect_job_lease_ttl_seconds: int = 120
     prospect_job_retry_delay_seconds: int = 5
     prospect_job_max_attempts: int = 3
+
+    # D5b1 uses the same durable lease/retry semantics in an import-specific queue.
+    import_job_lease_ttl_seconds: int = 120
+    import_job_retry_delay_seconds: int = 5
+    import_job_max_attempts: int = 3
+
+    # Local-only acknowledgement before a user may persist real uploaded data.
+    # Preflight remains available while this is false because it has no side effects.
+    real_data_acknowledged: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property

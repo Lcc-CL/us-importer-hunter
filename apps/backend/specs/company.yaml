@@ -6,7 +6,7 @@
 company:
   identity:
     name: { type: str, required: true }
-    normalized_name: { type: str, note: dedup key }
+    normalized_name: { type: str, note: indexed candidate signal; not globally unique because reviewed companies may be kept separate }
     aliases: { type: "list[str]", note: names absorbed by merges }
     website: { type: url }
     country: { type: str, default: US }
@@ -45,5 +45,5 @@ invariants:
 
 relations:
   import_records: one-to-many   # evidence (immutable, Discovery)
-  contacts: one-to-many         # Discovery
+  contacts: many-to-many        # via CompanyContact; legacy Contact.company_id remains readable
   opportunities: one-to-many    # judgments about this company (Intelligence), per user/time

@@ -8,6 +8,7 @@ another.
 """
 
 from collections.abc import Sequence
+from uuid import UUID
 
 from app.domain.contact import (
     Contact,
@@ -46,9 +47,16 @@ class DeterministicDecisionMakerSelectionService:
     def policy_version(self) -> str:
         return POLICY_VERSION_V2
 
-    def score_all(self, contacts: Sequence[Contact]) -> tuple[CandidateScore, ...]:
+    def score_all(
+        self,
+        contacts: Sequence[Contact],
+        *,
+        company_id: UUID | None = None,
+    ) -> tuple[CandidateScore, ...]:
         """Score every contact. Callers own the ranking and selection."""
-        return tuple(self._scorer.score(contact) for contact in contacts)
+        return tuple(
+            self._scorer.score(contact, company_id=company_id) for contact in contacts
+        )
 
     async def rank(
         self,
@@ -60,11 +68,21 @@ class DeterministicDecisionMakerSelectionService:
         Accepts size_provider kwarg for company_size_fit scoring.
         """
         size_provider = kwargs.get("size_provider")
+        company_id = kwargs.get("company_id")
+        if company_id is not None and not isinstance(company_id, UUID):
+            raise TypeError("company_id must be a UUID")
         scorer = SixFactorScorer(size_provider) if size_provider else self._scorer  # type: ignore[arg-type]
         contact_by_id = {contact.id: contact for contact in contacts}
-        candidates = tuple(scorer.score(contact) for contact in contacts)
+        candidates = tuple(
+            scorer.score(contact, company_id=company_id) for contact in contacts
+        )
         assessments = [
-            _to_assessment(candidate, contact_by_id[candidate.contact_id], self.policy_version)
+            _to_assessment(
+                candidate,
+                contact_by_id[candidate.contact_id],
+                self.policy_version,
+                company_id,
+            )
             for candidate in candidates
         ]
         assessments.sort(key=lambda a: (-a.total_score, -a.confidence.value, str(a.contact_id)))
@@ -72,7 +90,10 @@ class DeterministicDecisionMakerSelectionService:
 
 
 def _to_assessment(
-    candidate: CandidateScore, contact: Contact, policy_version: str
+    candidate: CandidateScore,
+    contact: Contact,
+    policy_version: str,
+    company_id: UUID | None,
 ) -> DecisionMakerFitAssessment:
     roles_values = tuple(r.value for r in candidate.roles)
     department = _department_from_roles(candidate.roles)
@@ -100,9 +121,12 @@ def _to_assessment(
     )
     confidence_value = min(confidence_value, 0.9)
 
+    resolved_company_id = company_id or contact.company_id
+    if resolved_company_id is None:
+        raise ValueError("decision-maker assessment requires company context")
     return DecisionMakerFitAssessment(
         contact_id=candidate.contact_id,
-        company_id=contact.company_id,
+        company_id=resolved_company_id,
         role_fit_score=candidate.role_relevance_score,
         reachability_score=candidate.reachability_score,
         total_score=candidate.overall_score,

@@ -1,14 +1,16 @@
-# Production topology — mirrors the Zeabur deployment:
+# Production topology — platform-neutral, runs on any host with Docker:
 #   browser → frontend (public) → backend (private network only) → postgres/redis
 #
 # The backend publishes no host port: it is reachable only on the compose
-# network, exactly like Zeabur's private networking. The frontend proxies the
-# allow-listed /api/v1/* paths to it via BACKEND_INTERNAL_URL (next.config.ts).
+# network. A runtime Next Route Handler proxies allow-listed /api/v1/* paths
+# via BACKEND_INTERNAL_URL. Set DATABASE_URL / REDIS_URL to use managed data
+# stores instead of the bundled containers.
 #
-# Usage (local rehearsal):
+# Usage (see docs/deployment.md):
+#   ./scripts/deploy.sh            # build, migrate, start, wait for health
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up --build
 #
-# No secrets live in this file; they come from the env file / platform settings.
+# No secrets live in this file; they come from the env file.
 
 services:
   backend:
@@ -75,19 +77,26 @@ services:
       context: ./apps/frontend
       target: prod
       args:
-        # Empty on purpose: the browser talks same-origin; the server-side
-        # proxy (BACKEND_INTERNAL_URL) reaches the backend privately.
-        NEXT_PUBLIC_API_BASE_URL: ""
-        NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-true}
+        NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-false}
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
+      FRONTEND_ACCESS_PASSWORD: ${FRONTEND_ACCESS_PASSWORD:?set FRONTEND_ACCESS_PASSWORD in the env file}
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      # The whole frontend sits behind the access passcode, so the probe
+      # authenticates with it (read from the container env, never inlined).
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch("http://127.0.0.1:3000/", {headers: {authorization: "Basic " +
+          Buffer.from(":" + process.env.FRONTEND_ACCESS_PASSWORD).toString("base64")}})
+          .then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))
       interval: 15s
       timeout: 5s
       retries: 5

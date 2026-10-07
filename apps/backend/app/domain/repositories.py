@@ -11,6 +11,7 @@ from types import TracebackType
 from typing import Protocol
 from uuid import UUID
 
+from app.domain.bulk_import import ImportSession, RawImportRow, RawImportRowStatus
 from app.domain.calibration import CalibrationRun
 from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
@@ -28,12 +29,50 @@ from app.domain.import_evidence.values import (
     NormalizedShipment,
     RawImportRecord,
 )
+from app.domain.import_resolution import (
+    CompanyContact,
+    CompanyExternalIdentity,
+    CompanyResolutionCandidate,
+    CompanyResolutionProfile,
+    ContactIdentityCandidate,
+    ImportDecisionView,
+    ImportEntityDecision,
+    ImportEntityReviewStatus,
+    ImportEntityType,
+    ImportProcessingJob,
+    ImportResolution,
+)
 from app.domain.opportunity import Opportunity
 from app.domain.outreach import Outreach
 from app.domain.prospect_batch import ProspectBatch
 from app.domain.prospect_job import ProspectJob
-from app.domain.research import ResearchRun
+from app.domain.prospect_routing import (
+    ProspectRoute,
+    ProspectRouteReviewStatus,
+    ProspectRoutingRun,
+    ProspectTier,
+    RoutingSourceCompany,
+)
+from app.domain.research import (
+    ResearchDocument,
+    ResearchDocumentChunk,
+    ResearchDocumentStatus,
+    ResearchRun,
+)
 from app.domain.task import Task
+from app.domain.umail_export import (
+    SuppressionEntry,
+    UmailExportBatch,
+    UmailExportCompanyCandidate,
+    UmailExportRow,
+)
+from app.domain.umail_feedback import (
+    ContactEngagementEvent,
+    FeedbackExportSnapshot,
+    UmailResultImport,
+    UmailResultMatchStatus,
+    UmailResultRow,
+)
 from app.domain.values import CompanyName, IdempotencyKey
 
 
@@ -64,6 +103,38 @@ class CalibrationRunRepository(Protocol):
 
     async def save(self, run: CalibrationRun) -> None: ...
 
+
+class BulkImportRepository(Protocol):
+    async def get_session(self, session_id: UUID) -> ImportSession | None: ...
+
+    async def find_session(
+        self, *, source: str, file_sha256: str
+    ) -> ImportSession | None: ...
+
+    async def add_session(self, session: ImportSession) -> None: ...
+
+    async def save_session(self, session: ImportSession) -> None: ...
+
+    async def add_rows(self, rows: tuple[RawImportRow, ...]) -> None: ...
+
+    async def get_row(self, row_id: UUID) -> RawImportRow | None: ...
+
+    async def list_accepted_rows_after(
+        self,
+        *,
+        session_id: UUID,
+        after_row_number: int,
+        limit: int,
+    ) -> list[RawImportRow]: ...
+
+    async def list_rows(
+        self,
+        *,
+        session_id: UUID,
+        status: RawImportRowStatus | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[RawImportRow], int]: ...
 
 class OpportunityRepository(Protocol):
     async def get_by_id(self, opportunity_id: UUID) -> Opportunity | None: ...
@@ -146,10 +217,24 @@ class ProspectBatchRepository(Protocol):
 
     async def save(self, batch: ProspectBatch) -> None: ...
 
+    async def find_for_routing_selection(
+        self, *, routing_run_id: UUID, routing_selection_hash: str
+    ) -> ProspectBatch | None: ...
+
     async def has_completed_pipeline(
         self,
         *,
         discovery_task_id: UUID,
+        company_id: UUID,
+        pipeline_version: str,
+        exclude_batch_id: UUID | None = None,
+    ) -> bool: ...
+
+    async def has_completed_routing_pipeline(
+        self,
+        *,
+        routing_run_id: UUID,
+        routing_execution_generation: int,
         company_id: UUID,
         pipeline_version: str,
         exclude_batch_id: UUID | None = None,
@@ -186,6 +271,285 @@ class ProspectJobRepository(Protocol):
     ) -> list[ProspectJob]: ...
 
 
+class ImportResolutionRepository(Protocol):
+    async def get_resolution(self, session_id: UUID) -> ImportResolution | None: ...
+
+    async def get_resolution_for_update(
+        self, session_id: UUID
+    ) -> ImportResolution | None: ...
+
+    async def add_resolution(self, resolution: ImportResolution) -> None: ...
+
+    async def save_resolution(self, resolution: ImportResolution) -> None: ...
+
+    async def list_processed_row_ids(self, session_id: UUID) -> set[UUID]: ...
+
+    async def add_decisions(self, decisions: tuple[ImportEntityDecision, ...]) -> None: ...
+
+    async def get_decision(self, decision_id: UUID) -> ImportEntityDecision | None: ...
+
+    async def get_decision_for_update(
+        self, decision_id: UUID
+    ) -> ImportEntityDecision | None: ...
+
+    async def get_row_decision(
+        self,
+        *,
+        session_id: UUID,
+        raw_import_row_id: UUID,
+        entity_type: ImportEntityType,
+    ) -> ImportEntityDecision | None: ...
+
+    async def save_decision(self, decision: ImportEntityDecision) -> None: ...
+
+    async def list_decisions(
+        self,
+        *,
+        session_id: UUID,
+        entity_type: ImportEntityType | None,
+        review_status: ImportEntityReviewStatus | None,
+        min_confidence: float | None,
+        max_confidence: float | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[ImportDecisionView], int]: ...
+
+    async def count_canonical_entities(
+        self, session_id: UUID
+    ) -> tuple[int, int]:
+        """Distinct canonical company/contact candidates for an import session.
+
+        Counts unique candidate_entity_id values (rejected decisions excluded).
+        This is the business identity count shown in the Step 5 stats; it is
+        NOT the per-row decision count.
+        """
+        ...
+
+    async def list_company_candidates(self) -> list[CompanyResolutionCandidate]: ...
+
+    async def list_external_identities(self) -> list[CompanyExternalIdentity]: ...
+
+    async def add_external_identity(self, identity: CompanyExternalIdentity) -> None: ...
+
+    async def save_external_identity(self, identity: CompanyExternalIdentity) -> None: ...
+
+    async def update_external_identities(
+        self, identities: tuple[CompanyExternalIdentity, ...]
+    ) -> None: ...
+
+    async def get_company_profile(
+        self, company_id: UUID
+    ) -> CompanyResolutionProfile | None: ...
+
+    async def list_company_profiles(self) -> list[CompanyResolutionProfile]: ...
+
+    async def add_company_profile(self, profile: CompanyResolutionProfile) -> None: ...
+
+    async def save_company_profile(self, profile: CompanyResolutionProfile) -> None: ...
+
+    async def update_company_profiles(
+        self, profiles: tuple[CompanyResolutionProfile, ...]
+    ) -> None: ...
+
+    async def list_contact_candidates(self) -> list[ContactIdentityCandidate]: ...
+
+    async def list_company_contacts(self) -> list[CompanyContact]: ...
+
+    async def add_company_contact(self, link: CompanyContact) -> None: ...
+
+    async def save_company_contact(self, link: CompanyContact) -> None: ...
+
+    async def update_company_contacts(self, links: tuple[CompanyContact, ...]) -> None: ...
+
+
+class ImportProcessingJobRepository(Protocol):
+    async def get_by_id_for_update(
+        self, job_id: UUID
+    ) -> ImportProcessingJob | None: ...
+
+    async def get_latest_for_session(
+        self, session_id: UUID
+    ) -> ImportProcessingJob | None: ...
+
+    async def get_latest_for_routing_run(
+        self, routing_run_id: UUID
+    ) -> ImportProcessingJob | None: ...
+
+    async def find_active_by_business_key(
+        self, business_key: str
+    ) -> ImportProcessingJob | None: ...
+
+    async def add(self, job: ImportProcessingJob) -> None: ...
+
+    async def save(self, job: ImportProcessingJob) -> None: ...
+
+    async def claim_next(
+        self,
+        *,
+        owner: str,
+        now: datetime,
+        lease_ttl: timedelta,
+    ) -> ImportProcessingJob | None: ...
+
+    async def get_stale_for_update(
+        self, *, now: datetime, limit: int
+    ) -> list[ImportProcessingJob]: ...
+
+
+class ProspectRoutingRepository(Protocol):
+    async def get_run(self, routing_run_id: UUID) -> ProspectRoutingRun | None: ...
+
+    async def get_run_for_update(
+        self, routing_run_id: UUID
+    ) -> ProspectRoutingRun | None: ...
+
+    async def find_run_by_configuration(
+        self,
+        *,
+        import_session_id: UUID,
+        rules_version: str,
+        configuration_hash: str,
+    ) -> ProspectRoutingRun | None: ...
+
+    async def add_run(self, run: ProspectRoutingRun) -> None: ...
+
+    async def save_run(self, run: ProspectRoutingRun) -> None: ...
+
+    async def add_routes(self, routes: tuple[ProspectRoute, ...]) -> None: ...
+
+    async def list_available_generations(
+        self, routing_run_id: UUID
+    ) -> tuple[int, ...]: ...
+
+    async def get_route(self, route_id: UUID) -> ProspectRoute | None: ...
+
+    async def get_route_for_update(self, route_id: UUID) -> ProspectRoute | None: ...
+
+    async def save_route(self, route: ProspectRoute) -> None: ...
+
+    async def list_routes(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        tier: ProspectTier | None,
+        review_status: ProspectRouteReviewStatus | None,
+        minimum_score: float | None,
+        maximum_score: float | None,
+        has_contact: bool | None,
+        role_category: str | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[ProspectRoute], int]: ...
+
+    async def list_routes_for_companies(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        company_ids: tuple[UUID, ...],
+    ) -> list[ProspectRoute]: ...
+
+    async def list_source_companies(
+        self, import_session_id: UUID
+    ) -> tuple[RoutingSourceCompany, ...]: ...
+
+
+class UmailExportRepository(Protocol):
+    async def get_suppression(self, entry_id: UUID) -> SuppressionEntry | None: ...
+
+    async def get_suppression_for_update(
+        self, entry_id: UUID
+    ) -> SuppressionEntry | None: ...
+
+    async def add_suppression(self, entry: SuppressionEntry) -> None: ...
+
+    async def save_suppression(self, entry: SuppressionEntry) -> None: ...
+
+    async def list_suppressions(
+        self, *, active: bool | None, offset: int, limit: int
+    ) -> tuple[list[SuppressionEntry], int]: ...
+
+    async def list_active_suppressions(self) -> list[SuppressionEntry]: ...
+
+    async def find_batch_by_selection_hash(
+        self, selection_hash: str
+    ) -> UmailExportBatch | None: ...
+
+    async def get_batch(self, batch_id: UUID) -> UmailExportBatch | None: ...
+
+    async def get_batch_for_update(self, batch_id: UUID) -> UmailExportBatch | None: ...
+
+    async def add_batch(
+        self, batch: UmailExportBatch, rows: tuple[UmailExportRow, ...]
+    ) -> None: ...
+
+    async def save_batch(self, batch: UmailExportBatch) -> None: ...
+
+    async def list_rows(self, batch_id: UUID) -> list[UmailExportRow]: ...
+
+    async def load_b_candidates(
+        self,
+        *,
+        routing_run_id: UUID,
+        execution_generation: int,
+        company_ids: tuple[UUID, ...],
+    ) -> tuple[UmailExportCompanyCandidate, ...]: ...
+
+
+class UmailFeedbackRepository(Protocol):
+    async def find_import_by_file_hash(
+        self, file_sha256: str
+    ) -> UmailResultImport | None: ...
+
+    async def get_import(self, result_import_id: UUID) -> UmailResultImport | None: ...
+
+    async def get_import_for_update(
+        self, result_import_id: UUID
+    ) -> UmailResultImport | None: ...
+
+    async def add_import(
+        self,
+        result_import: UmailResultImport,
+        rows: tuple[UmailResultRow, ...],
+    ) -> None: ...
+
+    async def save_import(self, result_import: UmailResultImport) -> None: ...
+
+    async def list_rows(
+        self,
+        *,
+        result_import_id: UUID,
+        match_status: UmailResultMatchStatus | None,
+        event_type: str | None,
+        campaign: str | None,
+        suppression_impact: bool | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[UmailResultRow], int]: ...
+
+    async def list_rows_for_apply(
+        self, result_import_id: UUID
+    ) -> list[UmailResultRow]: ...
+
+    async def load_export_snapshots(
+        self,
+        *,
+        export_row_ids: tuple[UUID, ...],
+        emails: tuple[str, ...],
+    ) -> tuple[FeedbackExportSnapshot, ...]: ...
+
+    async def existing_event_fingerprints(
+        self, fingerprints: tuple[str, ...]
+    ) -> set[str]: ...
+
+    async def add_events(self, events: tuple[ContactEngagementEvent, ...]) -> None: ...
+
+    async def list_events(
+        self, result_import_id: UUID
+    ) -> list[ContactEngagementEvent]: ...
+
+
 class ResearchRunRepository(Protocol):
     """Persistence for research runs (v0.2). A run is an audit record of what
     a website claimed and what a human decided — never company state."""
@@ -196,11 +560,52 @@ class ResearchRunRepository(Protocol):
 
     async def save(self, run: "ResearchRun") -> None: ...
 
+    async def link_page_document(
+        self, research_id: UUID, page_position: int, document_id: UUID
+    ) -> None: ...
+
     async def list_for_company(
         self, company_id: UUID, *, limit: int = 20
     ) -> "list[ResearchRun]": ...
 
     async def list_for_website(self, website: str, *, limit: int = 10) -> "list[ResearchRun]": ...
+
+
+class ResearchDocumentRepository(Protocol):
+    async def lock_ingestion_scope(
+        self, company_id: UUID, canonical_url: str, content_hash: str
+    ) -> None: ...
+
+    async def get_by_id(self, document_id: UUID) -> ResearchDocument | None: ...
+
+    async def get_current_for_url(
+        self, company_id: UUID, canonical_url: str, *, for_update: bool = False
+    ) -> ResearchDocument | None: ...
+
+    async def find_current_content_root(
+        self,
+        company_id: UUID,
+        content_hash: str,
+        status: ResearchDocumentStatus,
+        *,
+        exclude_canonical_url: str,
+    ) -> ResearchDocument | None: ...
+
+    async def add(self, document: ResearchDocument) -> None: ...
+
+    async def save(self, document: ResearchDocument) -> None: ...
+
+    async def list_for_company(self, company_id: UUID) -> list[ResearchDocument]: ...
+
+
+class ResearchDocumentChunkRepository(Protocol):
+    async def lock_chunking_scope(self, document_id: UUID, chunker_version: str) -> None: ...
+
+    async def list_for_document(
+        self, document_id: UUID, chunker_version: str
+    ) -> list[ResearchDocumentChunk]: ...
+
+    async def add_many(self, chunks: tuple[ResearchDocumentChunk, ...]) -> None: ...
 
 
 class ImportEvidenceRepository(Protocol):
@@ -310,6 +715,25 @@ class ImportEvidenceUnitOfWork(Protocol):
     async def rollback(self) -> None: ...
 
 
+class BulkImportUnitOfWork(Protocol):
+    bulk_import: BulkImportRepository
+
+    async def __aenter__(self) -> "BulkImportUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
 class DiscoveryTaskUnitOfWork(Protocol):
     """Persistence ports used by the D1 discovery-task supervisor."""
 
@@ -337,6 +761,7 @@ class ProspectBatchUnitOfWork(Protocol):
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
     prospect_jobs: ProspectJobRepository
+    prospect_routing: ProspectRoutingRepository
     research_runs: ResearchRunRepository
 
     async def __aenter__(self) -> "ProspectBatchUnitOfWork": ...
@@ -367,6 +792,92 @@ class CalibrationUnitOfWork(Protocol):
     research_runs: ResearchRunRepository
 
     async def __aenter__(self) -> "CalibrationUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class ImportResolutionUnitOfWork(Protocol):
+    bulk_import: BulkImportRepository
+    companies: CompanyRepository
+    contacts: ContactRepository
+    import_resolution: ImportResolutionRepository
+    import_processing_jobs: ImportProcessingJobRepository
+    prospect_routing: ProspectRoutingRepository
+    prospect_batches: ProspectBatchRepository
+
+    async def __aenter__(self) -> "ImportResolutionUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class UmailExportUnitOfWork(Protocol):
+    prospect_routing: ProspectRoutingRepository
+    umail_exports: UmailExportRepository
+
+    async def __aenter__(self) -> "UmailExportUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class UmailFeedbackUnitOfWork(Protocol):
+    umail_feedback: UmailFeedbackRepository
+    umail_exports: UmailExportRepository
+
+    async def __aenter__(self) -> "UmailFeedbackUnitOfWork": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+    async def flush(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+
+class ResearchUnitOfWork(Protocol):
+    companies: CompanyRepository
+    research_runs: ResearchRunRepository
+    research_documents: ResearchDocumentRepository
+
+    async def __aenter__(self) -> "ResearchUnitOfWork": ...
 
     async def __aexit__(
         self,

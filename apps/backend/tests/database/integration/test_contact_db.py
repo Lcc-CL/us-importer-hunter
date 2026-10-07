@@ -77,6 +77,7 @@ class TestContactRoundTrip:
 
     async def test_channel_lookups(self, uow_factory: UowFactory) -> None:
         contact = await persist_contact(uow_factory)
+        assert contact.company_id is not None
         async with uow_factory() as uow:
             by_email = await uow.contacts.find_by_email(contact.company_id, "maria@phg.com")
             by_linkedin = await uow.contacts.find_by_linkedin_url(
@@ -91,6 +92,7 @@ class TestContactRoundTrip:
         self, uow_factory: UowFactory
     ) -> None:
         contact = await persist_contact(uow_factory)
+        assert contact.company_id is not None
         async with uow_factory() as uow:
             loaded = await uow.contacts.get_by_id(contact.id)
             assert loaded is not None
@@ -110,6 +112,7 @@ class TestContactRoundTrip:
 
 class TestFitAssessments:
     def make_assessment(self, contact: Contact, total: float = 80.0) -> DecisionMakerFitAssessment:
+        assert contact.company_id is not None
         return DecisionMakerFitAssessment(
             contact_id=contact.id,
             company_id=contact.company_id,

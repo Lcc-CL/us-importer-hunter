@@ -5,6 +5,8 @@ from typing import Any
 
 from app.database.models.research import (
     ResearchClaimModel,
+    ResearchDocumentChunkModel,
+    ResearchDocumentModel,
     ResearchPageModel,
     ResearchPromotionModel,
     ResearchRunModel,
@@ -16,6 +18,12 @@ from app.domain.research import (
     PromotionDecision,
     RejectedClaim,
     ResearchClaim,
+    ResearchDocument,
+    ResearchDocumentChunk,
+    ResearchDocumentChunkStatus,
+    ResearchDocumentSourceType,
+    ResearchDocumentStatus,
+    ResearchDocumentTrustLevel,
     ResearchFailureCode,
     ResearchPage,
     ResearchProfile,
@@ -23,6 +31,96 @@ from app.domain.research import (
     ResearchRun,
     ResearchRunStatus,
 )
+
+
+class ResearchDocumentChunkMapper:
+    @staticmethod
+    def to_model(chunk: ResearchDocumentChunk) -> ResearchDocumentChunkModel:
+        return ResearchDocumentChunkModel(
+            id=chunk.id,
+            document_id=chunk.document_id,
+            company_id=chunk.company_id,
+            chunk_index=chunk.chunk_index,
+            content=chunk.content,
+            content_hash=chunk.content_hash,
+            token_count=chunk.token_count,
+            start_offset=chunk.start_offset,
+            end_offset=chunk.end_offset,
+            heading_path=list(chunk.heading_path),
+            metadata_json=chunk.metadata,
+            chunker_version=chunk.chunker_version,
+            tokenizer_profile=chunk.tokenizer_profile,
+            status=chunk.status.value,
+        )
+
+    @staticmethod
+    def to_domain(model: ResearchDocumentChunkModel) -> ResearchDocumentChunk:
+        return ResearchDocumentChunk(
+            chunk_id=model.id,
+            document_id=model.document_id,
+            company_id=model.company_id,
+            chunk_index=model.chunk_index,
+            content=model.content,
+            content_hash=model.content_hash,
+            token_count=model.token_count,
+            start_offset=model.start_offset,
+            end_offset=model.end_offset,
+            heading_path=tuple(model.heading_path),
+            metadata=model.metadata_json or {},
+            chunker_version=model.chunker_version,
+            tokenizer_profile=model.tokenizer_profile,
+            status=ResearchDocumentChunkStatus(model.status),
+        )
+
+
+class ResearchDocumentMapper:
+    @staticmethod
+    def to_model(document: ResearchDocument) -> ResearchDocumentModel:
+        return ResearchDocumentModel(
+            id=document.id,
+            company_id=document.company_id,
+            research_run_id=document.research_run_id,
+            source_url=document.source_url,
+            canonical_url=document.canonical_url,
+            final_url=document.final_url,
+            source_type=document.source_type.value,
+            title=document.title,
+            content=document.content,
+            content_hash=document.content_hash,
+            fetched_at=document.fetched_at,
+            status=document.status.value,
+            trust_level=document.trust_level.value,
+            cleaner_version=document.cleaner_version,
+            supersedes_document_id=document.supersedes_document_id,
+            duplicate_of_document_id=document.duplicate_of_document_id,
+            is_current=document.is_current,
+            superseded_at=document.superseded_at,
+            metadata_json=document.metadata,
+        )
+
+    @staticmethod
+    def to_domain(model: ResearchDocumentModel) -> ResearchDocument:
+        return ResearchDocument(
+            document_id=model.id,
+            company_id=model.company_id,
+            research_run_id=model.research_run_id,
+            source_url=model.source_url,
+            canonical_url=model.canonical_url,
+            final_url=model.final_url,
+            source_type=ResearchDocumentSourceType(model.source_type),
+            title=model.title,
+            content=model.content,
+            content_hash=model.content_hash,
+            fetched_at=model.fetched_at,
+            status=ResearchDocumentStatus(model.status),
+            trust_level=ResearchDocumentTrustLevel(model.trust_level),
+            cleaner_version=model.cleaner_version,
+            supersedes_document_id=model.supersedes_document_id,
+            duplicate_of_document_id=model.duplicate_of_document_id,
+            is_current=model.is_current,
+            superseded_at=model.superseded_at,
+            metadata=model.metadata_json or {},
+        )
 
 
 class ResearchRunMapper:
@@ -71,6 +169,7 @@ class ResearchRunMapper:
                     bytes_read=page.bytes_read,
                     truncated=page.truncated,
                     discovery_reason=page.discovery_reason,
+                    document_id=page.document_id,
                 )
                 for page in run.pages
             ],
@@ -150,6 +249,7 @@ class ResearchRunMapper:
                 bytes_read=page.bytes_read,
                 truncated=page.truncated,
                 discovery_reason=page.discovery_reason,
+                document_id=page.document_id,
             )
             for page in model.pages
         ]

@@ -20,21 +20,30 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database.repositories import (
+    SqlAlchemyBulkImportRepository,
     SqlAlchemyCalibrationRunRepository,
     SqlAlchemyCompanyRepository,
     SqlAlchemyContactRepository,
     SqlAlchemyDiscoveryTaskRepository,
     SqlAlchemyImportEvidencePromotionRepository,
     SqlAlchemyImportEvidenceRepository,
+    SqlAlchemyImportProcessingJobRepository,
+    SqlAlchemyImportResolutionRepository,
     SqlAlchemyOpportunityRepository,
     SqlAlchemyOutreachRepository,
     SqlAlchemyProspectBatchRepository,
     SqlAlchemyProspectJobRepository,
+    SqlAlchemyProspectRoutingRepository,
+    SqlAlchemyResearchDocumentChunkRepository,
+    SqlAlchemyResearchDocumentRepository,
     SqlAlchemyResearchRunRepository,
     SqlAlchemyTaskRepository,
+    SqlAlchemyUmailExportRepository,
+    SqlAlchemyUmailFeedbackRepository,
 )
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
+    BulkImportRepository,
     CalibrationRunRepository,
     CompanyRepository,
     ContactRepository,
@@ -42,17 +51,25 @@ from app.domain.repositories import (
     ImportEvidencePromotionRepository,
     ImportEvidenceRepository,
     ImportEvidenceUnitOfWork,
+    ImportProcessingJobRepository,
+    ImportResolutionRepository,
     OpportunityRepository,
     OutreachRepository,
     ProspectBatchRepository,
     ProspectJobRepository,
+    ProspectRoutingRepository,
+    ResearchDocumentChunkRepository,
+    ResearchDocumentRepository,
     ResearchRunRepository,
     TaskRepository,
+    UmailExportRepository,
+    UmailFeedbackRepository,
 )
 
 
 class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     calibrations: CalibrationRunRepository
+    bulk_import: BulkImportRepository
     companies: CompanyRepository
     contacts: ContactRepository
     import_evidence: ImportEvidenceRepository
@@ -60,10 +77,17 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     opportunities: OpportunityRepository
     outreaches: OutreachRepository
     research_runs: ResearchRunRepository
+    research_documents: ResearchDocumentRepository
+    research_document_chunks: ResearchDocumentChunkRepository
     tasks: TaskRepository
     discovery_tasks: DiscoveryTaskRepository
     prospect_batches: ProspectBatchRepository
     prospect_jobs: ProspectJobRepository
+    import_resolution: ImportResolutionRepository
+    import_processing_jobs: ImportProcessingJobRepository
+    prospect_routing: ProspectRoutingRepository
+    umail_exports: UmailExportRepository
+    umail_feedback: UmailFeedbackRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -73,17 +97,27 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
         self._session = self._session_factory()
         self._committed = False
+        self.bulk_import = SqlAlchemyBulkImportRepository(self._session)
         self.companies = SqlAlchemyCompanyRepository(self._session)
         self.calibrations = SqlAlchemyCalibrationRunRepository(self._session)
         self.contacts = SqlAlchemyContactRepository(self._session)
         self.discovery_tasks = SqlAlchemyDiscoveryTaskRepository(self._session)
         self.prospect_batches = SqlAlchemyProspectBatchRepository(self._session)
         self.prospect_jobs = SqlAlchemyProspectJobRepository(self._session)
+        self.import_resolution = SqlAlchemyImportResolutionRepository(self._session)
+        self.import_processing_jobs = SqlAlchemyImportProcessingJobRepository(self._session)
+        self.prospect_routing = SqlAlchemyProspectRoutingRepository(self._session)
+        self.umail_exports = SqlAlchemyUmailExportRepository(self._session)
+        self.umail_feedback = SqlAlchemyUmailFeedbackRepository(self._session)
         self.import_evidence = SqlAlchemyImportEvidenceRepository(self._session)
         self.import_evidence_promotions = SqlAlchemyImportEvidencePromotionRepository(self._session)
         self.opportunities = SqlAlchemyOpportunityRepository(self._session)
         self.outreaches = SqlAlchemyOutreachRepository(self._session)
         self.research_runs = SqlAlchemyResearchRunRepository(self._session)
+        self.research_documents = SqlAlchemyResearchDocumentRepository(self._session)
+        self.research_document_chunks = SqlAlchemyResearchDocumentChunkRepository(
+            self._session
+        )
         self.tasks = SqlAlchemyTaskRepository(self._session)
         return self
 
