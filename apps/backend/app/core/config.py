@@ -143,6 +143,7 @@ class Settings(BaseSettings):
     mail_smtp_username: str = ""
     mail_smtp_password: SecretStr = SecretStr("")
     mail_feedback_secret: SecretStr = SecretStr("")
+    mail_feedback_signing_secret: SecretStr = SecretStr("")
     mail_worker_concurrency: int = Field(8, ge=1, le=32)
     mail_rate_per_second: float = Field(2, ge=0.1, le=200)
     mail_max_attempts: int = Field(3, ge=1, le=6)

@@ -120,6 +120,23 @@ class DeliveryReconciliation:
     resolved_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderMailEvidence:
+    provider: str
+    message_id: str
+    occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class MailFeedbackEvent:
+    event_key: str
+    kind: FeedbackKind
+    source: str
+    message_id: str | None
+    occurred_at: datetime | None
+    received_at: datetime
+
+
 class MailCampaignStore(Protocol):
     async def template_sources(self, batch_id: UUID) -> list[MailSource]: ...
 

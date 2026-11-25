@@ -1,6 +1,6 @@
 """Persistence for delivery and its read-only prospect sources."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Literal, cast
 from uuid import UUID, uuid4
 
@@ -32,9 +32,11 @@ from app.domain.mail_delivery import (
     DeliveryReconciliation,
     FeedbackKind,
     MailContent,
+    MailFeedbackEvent,
     MailPreview,
     MailResult,
     MailSource,
+    ProviderMailEvidence,
     ReconciliationDecision,
     ReconciliationEvidence,
     smtp_message_id,
@@ -578,8 +580,15 @@ class MailDeliveryRepository:
                 await self.contact_touches.lock_recipients([email])
                 await self._accept_evidence(row, email, "smtp_late_acceptance")
 
-    async def _accept_evidence(self, row: MailDeliveryModel, email: str, code: str) -> None:
-        await self.contact_touches.confirm_smtp_feedback(row.id, email)
+    async def _accept_evidence(
+        self,
+        row: MailDeliveryModel,
+        email: str,
+        code: str,
+        *,
+        occurred_at: datetime | None = None,
+    ) -> None:
+        await self.contact_touches.confirm_smtp_feedback(row.id, email, occurred_at=occurred_at)
         if row.result_code == "operator_not_submitted":
             await self.session.execute(
                 insert(MailSourceReservationModel)
@@ -610,12 +619,58 @@ class MailDeliveryRepository:
         )
         await self.contact_touches.finish_smtp(list(affected), "unknown")
 
-    async def record_feedback(self, delivery_id: UUID, event_key: str, kind: FeedbackKind) -> None:
+    async def delivery_feedback(
+        self,
+        campaign_id: UUID,
+        delivery_id: UUID,
+        offset: int,
+        limit: int,
+    ) -> list[MailFeedbackEvent]:
+        await self._campaign_delivery(campaign_id, delivery_id)
+        rows = await self.session.scalars(
+            select(MailFeedbackModel)
+            .where(MailFeedbackModel.delivery_id == delivery_id)
+            .order_by(MailFeedbackModel.received_at.desc(), MailFeedbackModel.event_key.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return [
+            MailFeedbackEvent(
+                row.event_key,
+                cast(FeedbackKind, row.kind),
+                row.source,
+                row.message_id,
+                row.occurred_at,
+                row.received_at,
+            )
+            for row in rows
+        ]
+
+    async def record_feedback(
+        self,
+        delivery_id: UUID,
+        event_key: str,
+        kind: FeedbackKind,
+        *,
+        evidence: ProviderMailEvidence | None = None,
+    ) -> None:
         row = await self.session.scalar(
             select(MailDeliveryModel).where(MailDeliveryModel.id == delivery_id).with_for_update()
         )
         if row is None or row.attempt == 0:
             raise ResourceNotFoundError("Delivery not found")
+        message_id = None
+        occurred_at = None
+        source = "one_click" if event_key.startswith("unsubscribe:") else "legacy"
+        if evidence is not None:
+            campaign = await self._campaign(row.campaign_id)
+            if evidence.message_id != smtp_message_id(row.id, campaign.sender_address):
+                raise ResourceNotFoundError("Delivery not found")
+            if evidence.occurred_at < campaign.created_at - timedelta(minutes=5):
+                raise ApplicationConflictError("Feedback predates the campaign")
+            source = f"provider:{evidence.provider}"
+            message_id = evidence.message_id
+            occurred_at = evidence.occurred_at
         now = utcnow()
         created = await self.session.scalar(
             insert(MailFeedbackModel)
@@ -623,6 +678,9 @@ class MailDeliveryRepository:
                 event_key=event_key,
                 delivery_id=delivery_id,
                 kind=kind,
+                source=source,
+                message_id=message_id,
+                occurred_at=occurred_at,
                 received_at=now,
             )
             .on_conflict_do_nothing()
@@ -630,13 +688,18 @@ class MailDeliveryRepository:
         )
         if created is None:
             existing = await self.session.get(MailFeedbackModel, event_key)
-            if existing is None or (existing.delivery_id, existing.kind) != (delivery_id, kind):
+            if existing is None or (
+                existing.delivery_id,
+                existing.kind,
+                existing.message_id,
+                existing.occurred_at,
+            ) != (delivery_id, kind, message_id, occurred_at):
                 raise ApplicationConflictError("Feedback event ID is already in use")
             return
         email = row.recipient.strip().lower()
         await self.contact_touches.lock_recipients([email])
         if kind != "unsubscribed":
-            await self._accept_evidence(row, email, "provider_feedback")
+            await self._accept_evidence(row, email, "provider_feedback", occurred_at=occurred_at)
         if kind != "delivered":
             await self.session.execute(
                 insert(SuppressionEntryModel)

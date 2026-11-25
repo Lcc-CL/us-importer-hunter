@@ -108,8 +108,13 @@ async function proxy(
     if (token) headers.set("authorization", token);
   }
   if (publicMail && prefix === "mail-feedback") {
-    const key = request.headers.get("x-mail-feedback-key");
-    if (key) headers.set("x-mail-feedback-key", key);
+    const allowed = path[1] === "v1"
+      ? ["x-mail-feedback-timestamp", "x-mail-feedback-signature"]
+      : ["x-mail-feedback-key"];
+    for (const name of allowed) {
+      const value = request.headers.get(name);
+      if (value) headers.set(name, value);
+    }
   }
 
   try {

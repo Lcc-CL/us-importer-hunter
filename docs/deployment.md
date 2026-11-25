@@ -184,14 +184,8 @@ PostgreSQL。部署脚本会先迁移，再等待每个服务和投递实例通�
   或 Worker 领取后失联的邮件，进入「待核对」。以 SMTP 日志和邮件的 Message-ID 核对，
   处理规则见下文。
   工作台的「服务商已接受」表示 SMTP 已确认接收，送达确认取决于反馈。
-- 邮件附带一键退订和确认页面。GET 只展示页面，POST 写入现有邮箱抑制表。SMTP 中继的
-  投递事件需由服务商适配器转换，POST 到 `/api/v1/mail-feedback`，通过
-  `X-Mail-Feedback-Key` 提供 `MAIL_FEEDBACK_SECRET`。请求为
-  `{"event_id":"provider-id","delivery_id":"UUID","kind":"delivered"}`，也接受
-  `hard_bounced`、`unsubscribed`、`complained`。以邮件 Message-ID 中的 UUID
-  关联投递，保持稳定的事件 ID 以幂等重试。硬退信、退订、投诉会加入抑制名单。
-  服务商原生回调和签名应在适配器校验后再转发。
-
+- 邮件附带一键退订和确认页面。GET 展示页面，POST 写入邮箱抑制表。SMTP 中继的
+  送达、硬退信、退订和投诉经适配器规范化后，从签名接口进入台账，见下文。
 
 ## 团队身份和投递权限
 
@@ -212,9 +206,9 @@ OAuth2 Proxy 反向代理模式可使用 `--pass-authorization-header=true`。Ne
 | `OPERATOR_ROLE_GROUPS` | IdP 组到应用角色的 JSON 映射，组从签名的 `groups` 数组读取 |
 
 FastAPI 独立校验 ID Token 签名、签发方、受众和有效期，没有映射角色的账号会被拒绝。
-网关仅对 `POST /api/v1/mail-feedback` 和
-`GET/POST /api/v1/mail-unsubscribe/<UUID>` 放行外部调用。这两个入口分别使用反馈密钥
-和退订链接。后端的 `GET /api/v1/health` 供私网探针使用。
+网关仅对 `POST /api/v1/mail-feedback/v1`、兼容模式的 `POST /api/v1/mail-feedback`
+和 `GET/POST /api/v1/mail-unsubscribe/<UUID>` 放行外部调用。回调使用专用鉴权，
+退订使用独立链接。后端的 `GET /api/v1/health` 供私网探针使用。
 
 销售可创建和读取活动；审批人可批准、暂停及查询审计历史；管理员还可恢复和取消，
 并可创建活动。角色可在身份组内叠加。这一版以单团队为权限范围。活动操作记录与状态
@@ -275,3 +269,46 @@ FastAPI 独立校验 ID Token 签名、签发方、受众和有效期，没有�
   策略不一致，面板会提示配置不一致，需核对各实例环境变量。
 - 容器健康检查验证配置和数据库结构，工作台显示 Worker 实际活动。服务商接收
   和送达结果仍以投递记录及回流为准。
+
+### 服务商反馈接入
+
+服务商适配器先按所选中继的原生协议校验来源，再把事件转换为
+`POST /api/v1/mail-feedback/v1` 的 JSON 请求。Backend 和适配器共用
+`MAIL_FEEDBACK_SIGNING_SECRET`，每个环境配置各自的随机密钥。前端代理转发原始
+请求体和两个签名头。
+
+```json
+{
+  "provider": "relay-a",
+  "event_id": "event-123",
+  "message_id": "<4d64ad7d-105f-44ec-99c0-0845698f80e9@sender.example>",
+  "occurred_at": "2026-11-25T12:00:00Z",
+  "kind": "delivered"
+}
+```
+
+- `provider` 为小写字母开头、最长 24 位的供应商标识，可含数字、短横线或下划线。
+  `event_id` 为同一服务商内稳定的 ASCII 事件 ID，最长 120 位。
+  `message_id` 使用发出的完整 Message-ID；`occurred_at` 带时区。
+  支持 `delivered`、`hard_bounced`、`unsubscribed` 和 `complained`。
+- `Content-Type` 为 `application/json`，请求体最多 8 KiB。
+  `X-Mail-Feedback-Timestamp` 为本次 HTTP 请求的 Unix 秒时间戳，允许 5 分钟时钟
+  偏差。对以下字节串执行 HMAC-SHA256，再将十六进制小写摘要放在
+  `X-Mail-Feedback-Signature`，格式为 `v1=<摘要>`。
+
+  ```python
+  from hmac import digest
+
+  signed = b"hunter-mail-feedback-v1." + timestamp.encode("ascii") + b"." + raw_json
+  signature = "v1=" + digest(secret.encode(), signed, "sha256").hex()
+  ```
+
+- 成功及相同事件的重试都返回 204。同一服务商与事件 ID 的内容冲突返回 409，
+  投递关联不上返回 404。适配器重试时保留事件内容，使用新的请求时间戳重新签名；
+  关联失败或内容冲突交由运维核对。迟到反馈按原始服务商时间记入触达历史。
+- 经验证的审批人和管理员可在工作台打开单封邮件的「查看投递反馈」，查看事件、
+  来源、服务商时间和接收时间。
+- 配置签名密钥后，旧共享密钥入口停止接收。未配置时，可继续用
+  `X-Mail-Feedback-Key` 和原有 `{event_id, delivery_id, kind}` 合同访问
+  `/api/v1/mail-feedback`。切换时从未处理的事件开始转发，旧版记录没有供应商
+  命名空间。实际使用的服务商适配器在确定中继后单独配置。

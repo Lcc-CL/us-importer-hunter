@@ -133,13 +133,19 @@ class SqlAlchemyContactTouchRepository:
         )
         return released is not None
 
-    async def confirm_smtp_feedback(self, delivery_id: UUID, email: str) -> None:
+    async def confirm_smtp_feedback(
+        self,
+        delivery_id: UUID,
+        email: str,
+        *,
+        occurred_at: datetime | None = None,
+    ) -> None:
         statement = insert(ContactTouchModel).values(
             channel="smtp",
             source_id=delivery_id,
             recipient=email,
             state="confirmed",
-            confirmed_at=utcnow(),
+            confirmed_at=min(occurred_at, utcnow()) if occurred_at is not None else utcnow(),
         )
         await self._session.execute(
             statement.on_conflict_do_update(

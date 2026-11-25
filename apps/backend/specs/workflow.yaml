@@ -331,6 +331,8 @@ workflows:
       - { id: resume_or_cancel, roles: [admin] }
       - { id: claim_and_deliver, execution: postgresql_worker }
       - { id: report_queue_activity, roles: [approver, admin], access: read_only }
+      - { id: ingest_mail_feedback, contract: signed_normalized_provider_event_v1 }
+      - { id: report_delivery_feedback, roles: [approver, admin], access: read_only }
       - { id: reconcile_unknown, roles: [approver, admin], requires: provider_evidence }
       - { id: release_unsubmitted, roles: [admin], requires: fresh_campaign_for_retry }
     status: implemented

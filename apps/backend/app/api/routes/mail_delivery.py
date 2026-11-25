@@ -1,21 +1,26 @@
 """Administrative campaign endpoints, opt-out and authenticated event intake."""
 
+from datetime import timedelta
 from secrets import compare_digest
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
+from pydantic import ValidationError
 
 from app.api.deps import DbSessionDep, SettingsDep
 from app.api.operator_identity import get_operator, require_operator_roles
 from app.database.repositories.mail_delivery import MailDeliveryRepository
 from app.database.repositories.mail_operations import MailOperationsRepository
+from app.domain.clock import utcnow
 from app.domain.mail_delivery import (
     CampaignAuditEvent,
     CampaignSummary,
     DeliveryReconciliation,
+    MailFeedbackEvent,
     MailPreview,
+    ProviderMailEvidence,
     ReconciliationEvidence,
 )
 from app.domain.mail_operations import MailQueueStatus
@@ -26,6 +31,12 @@ from app.schemas.mail_delivery import (
     MailFeedbackInput,
     MailReconciliationInput,
     MailTemplateCampaign,
+    SignedMailFeedbackInput,
+)
+from app.services.email.feedback import (
+    MAIL_FEEDBACK_CLOCK_SKEW_SECONDS,
+    MAIL_FEEDBACK_MAX_BYTES,
+    valid_feedback_signature,
 )
 from app.shared.exceptions import ResourceNotFoundError
 from app.workflows.mail_delivery.operations import read_mail_operations
@@ -149,6 +160,23 @@ async def messages(
     return await MailDeliveryRepository(session).preview(campaign_id, offset, limit, status=status)
 
 
+@router.get("/mail-campaigns/{campaign_id}/messages/{delivery_id}/feedback")
+async def delivery_feedback(
+    campaign_id: UUID,
+    delivery_id: UUID,
+    operator: ReconciliationOperatorDep,
+    session: DbSessionDep,
+    offset: Offset = 0,
+    limit: Limit = 20,
+) -> list[MailFeedbackEvent]:
+    return await MailDeliveryRepository(session).delivery_feedback(
+        campaign_id,
+        delivery_id,
+        offset,
+        limit,
+    )
+
+
 @router.get("/mail-campaigns/{campaign_id}/messages/{delivery_id}/reconciliations")
 async def reconciliation_history(
     campaign_id: UUID,
@@ -214,6 +242,8 @@ async def feedback(
     settings: SettingsDep,
     mail_feedback_key: Annotated[str | None, Header(alias="X-Mail-Feedback-Key")] = None,
 ) -> Response:
+    if settings.mail_feedback_signing_secret.get_secret_value():
+        raise HTTPException(status_code=401, detail="Signed mail feedback is required")
     expected = settings.mail_feedback_secret.get_secret_value()
     if not expected or not compare_digest(expected.encode(), (mail_feedback_key or "").encode()):
         raise HTTPException(status_code=401, detail="Mail feedback authentication required")
@@ -221,6 +251,46 @@ async def feedback(
         payload.delivery_id,
         f"provider:{payload.event_id}",
         payload.kind,
+    )
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/mail-feedback/v1", status_code=204)
+async def signed_feedback(
+    request: Request,
+    session: DbSessionDep,
+    settings: SettingsDep,
+    timestamp: Annotated[str, Header(alias="X-Mail-Feedback-Timestamp")] = "",
+    signature: Annotated[str, Header(alias="X-Mail-Feedback-Signature")] = "",
+) -> Response:
+    secret = settings.mail_feedback_signing_secret.get_secret_value()
+    if not secret or not timestamp or not signature:
+        raise HTTPException(status_code=401, detail="Signed mail feedback is required")
+    media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if media_type != "application/json":
+        raise HTTPException(status_code=415, detail="Mail feedback must be JSON")
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAIL_FEEDBACK_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Mail feedback payload is too large")
+        body.extend(chunk)
+    now = utcnow()
+    if not valid_feedback_signature(secret, timestamp, signature, bytes(body), now=now):
+        raise HTTPException(status_code=401, detail="Mail feedback signature is invalid")
+    try:
+        payload = SignedMailFeedbackInput.model_validate_json(body)
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Invalid mail feedback event") from None
+    if payload.occurred_at > now + timedelta(seconds=MAIL_FEEDBACK_CLOCK_SKEW_SECONDS):
+        raise HTTPException(status_code=422, detail="Mail feedback occurrence is in the future")
+
+    delivery_id = UUID(payload.message_id[1:].partition("@")[0])
+    await MailDeliveryRepository(session).record_feedback(
+        delivery_id,
+        f"signed:{payload.provider}:{payload.event_id}",
+        payload.kind,
+        evidence=ProviderMailEvidence(payload.provider, payload.message_id, payload.occurred_at),
     )
     await session.commit()
     return Response(status_code=204)

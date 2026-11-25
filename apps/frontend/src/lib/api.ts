@@ -1919,6 +1919,22 @@ export function listMailMessages(id: string, offset: number, unknownOnly = false
   return requestJson<MailPreview[]>(`/mail-campaigns/${id}/messages?${params}`);
 }
 
+export interface MailFeedbackEvent {
+  event_key: string;
+  kind: "delivered" | "hard_bounced" | "unsubscribed" | "complained";
+  source: string;
+  message_id: string | null;
+  occurred_at: string | null;
+  received_at: string;
+}
+
+export function listMailDeliveryFeedback(campaignId: string, deliveryId: string, offset: number) {
+  const params = new URLSearchParams({ offset: String(offset) });
+  return requestJson<MailFeedbackEvent[]>(
+    `/mail-campaigns/${campaignId}/messages/${deliveryId}/feedback?${params}`,
+  );
+}
+
 export interface MailReconciliationInput {
   attempt: number;
   decision: "accepted" | "not_submitted";

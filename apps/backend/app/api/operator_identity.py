@@ -18,7 +18,7 @@ _UNSUBSCRIBE_PATH = re.compile(
 def _is_public(path: str, method: str) -> bool:
     if path == "/health":
         return method == "GET"
-    if path == "/mail-feedback":
+    if path in ("/mail-feedback", "/mail-feedback/v1"):
         return method == "POST"
     return method in ("GET", "POST") and _UNSUBSCRIBE_PATH.fullmatch(path) is not None
 

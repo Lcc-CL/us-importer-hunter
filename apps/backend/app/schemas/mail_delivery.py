@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from app.domain.mail_delivery import FeedbackKind, ReconciliationDecision
 from app.workflows.mail_delivery.workflow import MailAction
@@ -54,3 +54,16 @@ class MailReconciliationInput(BaseModel):
     decision: ReconciliationDecision
     provider_reference: str = Field(min_length=1, max_length=256)
     note: str = Field(min_length=1, max_length=1000)
+
+
+class SignedMailFeedbackInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,23}$")
+    event_id: str = Field(min_length=1, max_length=120, pattern=r"^[!-~]+$")
+    message_id: str = Field(
+        max_length=256,
+        pattern=r"^<[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}@[^<>@\s]+>$",
+    )
+    occurred_at: AwareDatetime
+    kind: FeedbackKind

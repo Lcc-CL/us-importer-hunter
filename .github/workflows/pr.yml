@@ -69,6 +69,7 @@ jobs:
           uv run pytest
           tests/api/test_operator_identity.py
           tests/database/integration/test_mail_delivery.py
+          tests/database/integration/test_signed_mail_feedback.py
           tests/database/integration/test_mail_operations.py
           tests/database/integration/test_mail_reconciliation.py
           tests/database/integration/test_contact_touch.py

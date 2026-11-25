@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { MailFeedbackTimeline } from "./mail-feedback-timeline";
 import { MailOperationsPanel } from "./mail-operations-panel";
 import {
   changeMailCampaign, createMailCampaign, getMailCampaign, getMailConfig,
@@ -355,6 +356,9 @@ export function MailCampaignWorkspace({
                     href={`/api/v1/mail-campaigns/${selected.id}/messages/${mail.id}/reconciliations`}>
                     查看核对记录
                   </Link>
+                )}
+                {canReconcile && mail.attempt > 0 && (
+                  <MailFeedbackTimeline campaignId={selected.id} deliveryId={mail.id} />
                 )}
                 {canReconcile && mail.status === "unknown" && (
                   <ReconciliationForm mail={mail} busy={busy} canRelease={Boolean(configured?.can_manage)}
