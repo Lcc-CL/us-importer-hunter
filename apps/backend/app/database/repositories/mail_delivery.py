@@ -1,10 +1,10 @@
 """Persistence for delivery and its read-only prospect sources."""
 
 from datetime import timedelta
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.database.models.mail_delivery import (
     MailCampaignAuditModel,
     MailCampaignModel,
     MailDeliveryModel,
+    MailDeliveryReconciliationModel,
     MailFeedbackModel,
     MailRateGateModel,
     MailSourceReservationModel,
@@ -28,11 +29,15 @@ from app.domain.mail_delivery import (
     CampaignAuditEvent,
     CampaignSummary,
     ClaimedMail,
+    DeliveryReconciliation,
     FeedbackKind,
     MailContent,
     MailPreview,
     MailResult,
     MailSource,
+    ReconciliationDecision,
+    ReconciliationEvidence,
+    smtp_message_id,
 )
 from app.domain.operator import AuditActor
 from app.domain.umail_export.models import normalize_suppression_company
@@ -269,14 +274,20 @@ class MailDeliveryRepository:
             for row in campaigns
         ]
 
-    async def preview(self, campaign_id: UUID, offset: int, limit: int) -> list[MailPreview]:
-        await self._campaign(campaign_id)
+    async def preview(
+        self,
+        campaign_id: UUID,
+        offset: int,
+        limit: int,
+        *,
+        status: Literal["unknown"] | None = None,
+    ) -> list[MailPreview]:
+        campaign = await self._campaign(campaign_id)
+        query = select(MailDeliveryModel).where(MailDeliveryModel.campaign_id == campaign_id)
+        if status is not None:
+            query = query.where(MailDeliveryModel.status == status)
         rows = await self.session.scalars(
-            select(MailDeliveryModel)
-            .where(MailDeliveryModel.campaign_id == campaign_id)
-            .order_by(MailDeliveryModel.recipient)
-            .offset(offset)
-            .limit(limit)
+            query.order_by(MailDeliveryModel.recipient).offset(offset).limit(limit)
         )
         return [
             MailPreview(
@@ -287,9 +298,94 @@ class MailDeliveryRepository:
                 row.status,
                 row.attempt,
                 row.result_code,
+                smtp_message_id(row.id, campaign.sender_address),
             )
             for row in rows
         ]
+
+    async def _campaign_delivery(
+        self,
+        campaign_id: UUID,
+        delivery_id: UUID,
+        *,
+        lock: bool = False,
+    ) -> MailDeliveryModel:
+        query = select(MailDeliveryModel).where(
+            MailDeliveryModel.id == delivery_id,
+            MailDeliveryModel.campaign_id == campaign_id,
+        )
+        row = await self.session.scalar(query.with_for_update() if lock else query)
+        if row is None:
+            raise ResourceNotFoundError("Delivery not found")
+        return row
+
+    async def delivery_reconciliations(
+        self,
+        campaign_id: UUID,
+        delivery_id: UUID,
+    ) -> list[DeliveryReconciliation]:
+        await self._campaign_delivery(campaign_id, delivery_id)
+        rows = await self.session.scalars(
+            select(MailDeliveryReconciliationModel)
+            .where(MailDeliveryReconciliationModel.delivery_id == delivery_id)
+            .order_by(MailDeliveryReconciliationModel.attempt.desc())
+        )
+        return [_reconciliation(row) for row in rows]
+
+    async def reconcile(
+        self,
+        campaign_id: UUID,
+        delivery_id: UUID,
+        evidence: ReconciliationEvidence,
+        actor: AuditActor,
+    ) -> DeliveryReconciliation:
+        if actor.issuer is None or actor.subject is None:
+            raise ApplicationConflictError("A verified staff login is required")
+        row = await self._campaign_delivery(campaign_id, delivery_id, lock=True)
+        existing = await self.session.get(
+            MailDeliveryReconciliationModel, (delivery_id, evidence.attempt)
+        )
+        if existing is not None:
+            recorded = _reconciliation(existing)
+            if recorded.evidence == evidence and (
+                recorded.actor.issuer,
+                recorded.actor.subject,
+            ) == (actor.issuer, actor.subject):
+                return recorded
+            raise ApplicationConflictError("This delivery attempt already has an operator decision")
+        if row.status != "unknown" or row.attempt != evidence.attempt:
+            raise ApplicationConflictError("This attempt no longer requires reconciliation")
+
+        email = row.recipient.strip().lower()
+        await self.contact_touches.lock_recipients([email])
+        if evidence.decision == "accepted":
+            await self._accept_evidence(row, email, "operator_accepted")
+        else:
+            if not await self.contact_touches.release_uncertain_smtp(delivery_id):
+                raise ApplicationConflictError("This delivery no longer has an uncertain hold")
+            await self.session.execute(
+                delete(MailSourceReservationModel).where(
+                    MailSourceReservationModel.source_key == row.source_key,
+                    MailSourceReservationModel.delivery_id == delivery_id,
+                )
+            )
+            row.status = "failed"
+            row.result_code = "operator_not_submitted"
+            row.lease_until = None
+
+        record = MailDeliveryReconciliationModel(
+            delivery_id=delivery_id,
+            attempt=evidence.attempt,
+            decision=evidence.decision,
+            provider_reference=evidence.provider_reference,
+            note=evidence.note,
+            actor_name=actor.name,
+            actor_issuer=actor.issuer,
+            actor_subject=actor.subject,
+            resolved_at=utcnow(),
+        )
+        self.session.add(record)
+        return _reconciliation(record)
 
     async def transition(
         self,
@@ -463,6 +559,37 @@ class MailDeliveryRepository:
                 else ("unknown" if status == "unknown" else "released")
             )
             await self.contact_touches.finish_smtp([updated], touch)
+        elif status == "accepted":
+            # A confirmed SMTP result can arrive after lease expiry or manual review.
+            row = await self.session.scalar(
+                select(MailDeliveryModel)
+                .where(
+                    MailDeliveryModel.id == mail.id,
+                    MailDeliveryModel.attempt == mail.attempt,
+                    or_(
+                        MailDeliveryModel.status == "unknown",
+                        MailDeliveryModel.result_code == "operator_not_submitted",
+                    ),
+                )
+                .with_for_update()
+            )
+            if row is not None:
+                email = row.recipient.strip().lower()
+                await self.contact_touches.lock_recipients([email])
+                await self._accept_evidence(row, email, "smtp_late_acceptance")
+
+    async def _accept_evidence(self, row: MailDeliveryModel, email: str, code: str) -> None:
+        await self.contact_touches.confirm_smtp_feedback(row.id, email)
+        if row.result_code == "operator_not_submitted":
+            await self.session.execute(
+                insert(MailSourceReservationModel)
+                .values(source_key=row.source_key, delivery_id=row.id)
+                .on_conflict_do_nothing()
+            )
+        if row.status in ("pending", "sending", "unknown", "failed"):
+            row.status = "accepted"
+            row.result_code = code
+            row.lease_until = None
 
     async def recover(self) -> None:
         expired = (
@@ -509,11 +636,7 @@ class MailDeliveryRepository:
         email = row.recipient.strip().lower()
         await self.contact_touches.lock_recipients([email])
         if kind != "unsubscribed":
-            await self.contact_touches.confirm_smtp_feedback(delivery_id, email)
-            if row.status in ("pending", "sending", "unknown", "failed"):
-                row.status = "accepted"
-                row.result_code = "provider_feedback"
-                row.lease_until = None
+            await self._accept_evidence(row, email, "provider_feedback")
         if kind != "delivered":
             await self.session.execute(
                 insert(SuppressionEntryModel)
@@ -532,3 +655,17 @@ class MailDeliveryRepository:
                     index_where=text("active AND email IS NOT NULL"),
                 )
             )
+
+
+def _reconciliation(row: MailDeliveryReconciliationModel) -> DeliveryReconciliation:
+    return DeliveryReconciliation(
+        row.delivery_id,
+        ReconciliationEvidence(
+            row.attempt,
+            cast(ReconciliationDecision, row.decision),
+            row.provider_reference,
+            row.note,
+        ),
+        AuditActor(row.actor_name, row.actor_issuer, row.actor_subject),
+        row.resolved_at,
+    )

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.mail_delivery import FeedbackKind
+from app.domain.mail_delivery import FeedbackKind, ReconciliationDecision
 from app.workflows.mail_delivery.workflow import MailAction
 
 TEXT_INPUT = ConfigDict(str_strip_whitespace=True, extra="forbid")
@@ -45,3 +45,12 @@ class MailFeedbackInput(BaseModel):
     event_id: str = Field(min_length=1, max_length=140)
     delivery_id: UUID
     kind: FeedbackKind
+
+
+class MailReconciliationInput(BaseModel):
+    model_config = TEXT_INPUT
+
+    attempt: int = Field(ge=1, le=2147483647)
+    decision: ReconciliationDecision
+    provider_reference: str = Field(min_length=1, max_length=256)
+    note: str = Field(min_length=1, max_length=1000)

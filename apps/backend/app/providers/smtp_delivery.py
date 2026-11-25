@@ -8,7 +8,7 @@ from email.message import EmailMessage
 from email.utils import formatdate
 
 from app.core.config import Settings
-from app.domain.mail_delivery import ClaimedMail, MailResult, MailSender
+from app.domain.mail_delivery import ClaimedMail, MailResult, MailSender, smtp_message_id
 
 
 class SmtpDelivery:
@@ -27,7 +27,7 @@ class SmtpDelivery:
         message["To"] = mail.recipient
         message["Date"] = formatdate(usegmt=True)
         message["Subject"] = mail.subject
-        message["Message-ID"] = f"<{mail.id}@{sender.address.rsplit('@', 1)[1]}>"
+        message["Message-ID"] = smtp_message_id(mail.id, sender.address)
         message["List-Unsubscribe"] = f"<{url}>"
         message["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
         message.set_content(f"{mail.body}\n\nUnsubscribe: {url}\n")

@@ -10,12 +10,19 @@ from fastapi.responses import HTMLResponse
 from app.api.deps import DbSessionDep, SettingsDep
 from app.api.operator_identity import get_operator, require_operator_roles
 from app.database.repositories.mail_delivery import MailDeliveryRepository
-from app.domain.mail_delivery import CampaignAuditEvent, CampaignSummary, MailPreview
+from app.domain.mail_delivery import (
+    CampaignAuditEvent,
+    CampaignSummary,
+    DeliveryReconciliation,
+    MailPreview,
+    ReconciliationEvidence,
+)
 from app.domain.operator import AuditActor, Operator
 from app.schemas.mail_delivery import (
     MailCampaignAction,
     MailDraftCampaign,
     MailFeedbackInput,
+    MailReconciliationInput,
     MailTemplateCampaign,
 )
 from app.shared.exceptions import ResourceNotFoundError
@@ -32,6 +39,16 @@ def get_campaign_workflow(session: DbSessionDep, settings: SettingsDep) -> MailC
 
 
 CampaignWorkflowDep = Annotated[MailCampaignWorkflow, Depends(get_campaign_workflow)]
+
+
+def get_reconciliation_operator(operator: OperatorDep) -> Operator:
+    if operator is None:
+        raise HTTPException(status_code=403, detail="A verified staff login is required")
+    require_operator_roles(operator, "approver", "admin")
+    return operator
+
+
+ReconciliationOperatorDep = Annotated[Operator, Depends(get_reconciliation_operator)]
 
 
 @router.get("/mail-campaigns/config")
@@ -115,8 +132,38 @@ async def messages(
     session: DbSessionDep,
     offset: Offset = 0,
     limit: Limit = 20,
+    status: Literal["unknown"] | None = None,
 ) -> list[MailPreview]:
-    return await MailDeliveryRepository(session).preview(campaign_id, offset, limit)
+    return await MailDeliveryRepository(session).preview(campaign_id, offset, limit, status=status)
+
+
+@router.get("/mail-campaigns/{campaign_id}/messages/{delivery_id}/reconciliations")
+async def reconciliation_history(
+    campaign_id: UUID,
+    delivery_id: UUID,
+    operator: ReconciliationOperatorDep,
+    session: DbSessionDep,
+) -> list[DeliveryReconciliation]:
+    return await MailDeliveryRepository(session).delivery_reconciliations(campaign_id, delivery_id)
+
+
+@router.post("/mail-campaigns/{campaign_id}/messages/{delivery_id}/reconciliations")
+async def reconcile_delivery(
+    campaign_id: UUID,
+    delivery_id: UUID,
+    payload: MailReconciliationInput,
+    operator: ReconciliationOperatorDep,
+    workflow: CampaignWorkflowDep,
+) -> DeliveryReconciliation:
+    if payload.decision == "not_submitted":
+        require_operator_roles(operator, "admin")
+    evidence = ReconciliationEvidence(
+        payload.attempt,
+        payload.decision,
+        payload.provider_reference,
+        payload.note,
+    )
+    return await workflow.reconcile(campaign_id, delivery_id, evidence, operator.audit_actor())
 
 
 @router.get("/mail-campaigns/{campaign_id}/audit")

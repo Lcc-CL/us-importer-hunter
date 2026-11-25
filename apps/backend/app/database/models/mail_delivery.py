@@ -97,6 +97,32 @@ class MailDeliveryModel(Base):
     result_code: Mapped[str | None] = mapped_column(String(40))
 
 
+class MailDeliveryReconciliationModel(Base):
+    """Immutable operator evidence, one decision per delivery attempt."""
+
+    __tablename__ = "mail_delivery_reconciliations"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('accepted', 'not_submitted')",
+            name="ck_mail_reconciliation_decision",
+        ),
+        CheckConstraint("attempt > 0", name="ck_mail_reconciliation_attempt"),
+    )
+
+    delivery_id: Mapped[UUID] = mapped_column(
+        ForeignKey("mail_deliveries.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    attempt: Mapped[int] = mapped_column(primary_key=True)
+    decision: Mapped[str] = mapped_column(String(16))
+    provider_reference: Mapped[str] = mapped_column(String(256))
+    note: Mapped[str] = mapped_column(Text)
+    actor_name: Mapped[str] = mapped_column(String(160))
+    actor_issuer: Mapped[str] = mapped_column(Text)
+    actor_subject: Mapped[str] = mapped_column(String(255))
+    resolved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class MailSourceReservationModel(Base):
     """Reserve a source only immediately before its first dispatch."""
 

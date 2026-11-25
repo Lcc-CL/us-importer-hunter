@@ -6,8 +6,8 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   changeMailCampaign, createMailCampaign, getMailCampaign, getMailConfig,
-  listMailCampaigns, listMailMessages, type MailCampaign, type MailCampaignAction,
-  type MailPreview,
+  listMailCampaigns, listMailMessages, reconcileMailDelivery, type MailCampaign,
+  type MailCampaignAction, type MailPreview, type MailReconciliationInput,
 } from "@/lib/api";
 
 const label: Record<string, string> = {
@@ -16,6 +16,9 @@ const label: Record<string, string> = {
   unknown: "待核对", suppressed: "已拦截", delivered: "已送达",
   hard_bounced: "硬退信", unsubscribed: "已退订", complained: "投诉",
   recent_or_reserved_touch: "近期已触达或已被其他活动预留",
+  operator_accepted: "人工确认服务商已接收",
+  operator_not_submitted: "人工确认未提交",
+  smtp_late_acceptance: "收到延迟的 SMTP 接收确认",
 };
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2";
@@ -42,6 +45,53 @@ function numbers(values: Record<string, number>) {
   ));
 }
 
+function ReconciliationForm({
+  mail, canRelease, busy, onSave,
+}: {
+  mail: MailPreview;
+  canRelease: boolean;
+  busy: boolean;
+  onSave: (payload: MailReconciliationInput) => void;
+}) {
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const decision = data.get("decision") === "not_submitted" ? "not_submitted" : "accepted";
+    if (decision === "not_submitted" && !window.confirm(
+      "确认原投递任务已停止，且有服务商证据表明邮件未提交。保存后会释放预留；再次发送需要创建并审批新活动。",
+    )) return;
+    onSave({
+      attempt: mail.attempt,
+      decision,
+      provider_reference: String(data.get("provider_reference") ?? "").trim(),
+      note: String(data.get("note") ?? "").trim(),
+    });
+  }
+
+  return (
+    <form className="mt-3 grid gap-3 rounded-lg border bg-slate-50 p-3" onSubmit={submit}>
+      <h4 className="text-sm font-semibold">核对服务商结果</h4>
+      <label className="grid gap-1 text-sm font-medium">
+        处理决定
+        <select className={input} name="decision">
+          <option value="accepted">服务商确认已接收</option>
+          {canRelease && <option value="not_submitted">确认未提交，释放预留</option>}
+        </select>
+      </label>
+      <label className="grid gap-1 text-sm font-medium">
+        服务商日志或工单编号
+        <input className={input} name="provider_reference" maxLength={256} required />
+      </label>
+      <label className="grid gap-1 text-sm font-medium">
+        核对说明
+        <textarea className={input} name="note" rows={3} maxLength={1000} required
+          placeholder="填写支持该决定的证据。仅缺少记录时，请保持待核对。" />
+      </label>
+      <Button type="submit" className="justify-self-start" disabled={busy}>保存核对结果</Button>
+    </form>
+  );
+}
+
 export function MailCampaignWorkspace({
   initialExport, initialOutreach, initialVersion,
 }: {
@@ -52,11 +102,13 @@ export function MailCampaignWorkspace({
   const [selected, setSelected] = useState<MailCampaign | null>(null);
   const [messages, setMessages] = useState<MailPreview[]>([]);
   const [offset, setOffset] = useState(0);
+  const [unknownOnly, setUnknownOnly] = useState(false);
   const [campaignOffset, setCampaignOffset] = useState(0);
   const [actor, setActor] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [configured, setConfigured] = useState<Awaited<ReturnType<typeof getMailConfig>>>();
   const hasActor = Boolean(configured?.operator_name || actor.trim());
+  const canReconcile = Boolean(configured?.operator_name && configured.can_approve);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const draftRequest = useRef<{ payload: string; id: string } | null>(null);
@@ -76,10 +128,11 @@ export function MailCampaignWorkspace({
     return () => { active = false; };
   }, []);
 
-  async function select(id: string, nextOffset = 0) {
+  async function select(id: string, nextOffset = 0, filter = unknownOnly) {
     const [campaign, rows] = await Promise.all([
-      getMailCampaign(id), listMailMessages(id, nextOffset),
+      getMailCampaign(id), listMailMessages(id, nextOffset, filter),
     ]);
+    setUnknownOnly(filter);
     setSelected(campaign);
     setMessages(rows);
     setOffset(nextOffset);
@@ -270,8 +323,18 @@ export function MailCampaignWorkspace({
                 </div>
               </div>
             )}
-            <h3 className="font-semibold">逐封预览与投递状态</h3>
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="font-semibold">逐封预览与投递状态</h3>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={unknownOnly} disabled={busy} onChange={(event) => {
+                  const next = event.target.checked;
+                  void run(() => select(selected.id, 0, next));
+                }} />
+                仅看待核对
+              </label>
+            </div>
             <p className="text-sm text-slate-600">投递时，每封信末尾会附上该收件人的退订链接。</p>
+            {unknownOnly && messages.length === 0 && <p className="text-sm">此页没有待核对邮件。</p>}
             {messages.map((mail) => (
               <details key={mail.id} className="rounded-lg border p-3">
                 <summary className="cursor-pointer break-words text-sm">
@@ -280,7 +343,24 @@ export function MailCampaignWorkspace({
                 <p className="mt-2 break-words text-xs text-slate-600">
                   投递 ID {mail.id} · 尝试 {mail.attempt} 次 {mail.result_code ? (label[mail.result_code] ?? mail.result_code) : ""}
                 </p>
+                {mail.attempt > 0 && (
+                  <p className="mt-1 break-all text-xs text-slate-600">Message-ID {mail.message_id}</p>
+                )}
                 <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm">{mail.body}</pre>
+                {canReconcile && mail.attempt > 0 && (
+                  <Link className="mt-2 inline-block text-sm text-teal-800 underline"
+                    prefetch={false}
+                    href={`/api/v1/mail-campaigns/${selected.id}/messages/${mail.id}/reconciliations`}>
+                    查看核对记录
+                  </Link>
+                )}
+                {canReconcile && mail.status === "unknown" && (
+                  <ReconciliationForm mail={mail} busy={busy} canRelease={Boolean(configured?.can_manage)}
+                    onSave={(payload) => void run(async () => {
+                      await reconcileMailDelivery(selected.id, mail.id, payload);
+                      await select(selected.id);
+                    })} />
+                )}
               </details>
             ))}
             <div className="flex gap-2">

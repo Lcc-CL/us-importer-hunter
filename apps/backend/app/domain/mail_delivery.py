@@ -9,6 +9,11 @@ from app.domain.operator import AuditActor
 
 DeliveryOutcome = Literal["accepted", "retry", "failed", "unknown"]
 FeedbackKind = Literal["delivered", "hard_bounced", "unsubscribed", "complained"]
+ReconciliationDecision = Literal["accepted", "not_submitted"]
+
+
+def smtp_message_id(delivery_id: UUID, sender_address: str) -> str:
+    return f"<{delivery_id}@{sender_address.rsplit('@', 1)[-1]}>"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +89,7 @@ class MailPreview:
     status: str
     attempt: int
     result_code: str | None
+    message_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +102,22 @@ class CampaignAuditEvent:
     from_status: str | None
     to_status: str
     occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationEvidence:
+    attempt: int
+    decision: ReconciliationDecision
+    provider_reference: str
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryReconciliation:
+    delivery_id: UUID
+    evidence: ReconciliationEvidence
+    actor: AuditActor
+    resolved_at: datetime
 
 
 class MailCampaignStore(Protocol):
@@ -125,3 +147,11 @@ class MailCampaignStore(Protocol):
         actor: AuditActor,
         sender_hash: str | None,
     ) -> None: ...
+
+    async def reconcile(
+        self,
+        campaign_id: UUID,
+        delivery_id: UUID,
+        evidence: ReconciliationEvidence,
+        actor: AuditActor,
+    ) -> DeliveryReconciliation: ...

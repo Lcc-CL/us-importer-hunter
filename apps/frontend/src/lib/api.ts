@@ -1863,6 +1863,7 @@ export interface MailPreview {
   status: string;
   attempt: number;
   result_code: string | null;
+  message_id: string;
 }
 
 export function getMailConfig() {
@@ -1885,8 +1886,28 @@ export function getMailCampaign(id: string) {
   return requestJson<MailCampaign>(`/mail-campaigns/${id}`);
 }
 
-export function listMailMessages(id: string, offset: number) {
-  return requestJson<MailPreview[]>(`/mail-campaigns/${id}/messages?offset=${offset}`);
+export function listMailMessages(id: string, offset: number, unknownOnly = false) {
+  const params = new URLSearchParams({ offset: String(offset) });
+  if (unknownOnly) params.set("status", "unknown");
+  return requestJson<MailPreview[]>(`/mail-campaigns/${id}/messages?${params}`);
+}
+
+export interface MailReconciliationInput {
+  attempt: number;
+  decision: "accepted" | "not_submitted";
+  provider_reference: string;
+  note: string;
+}
+
+export function reconcileMailDelivery(
+  campaignId: string,
+  deliveryId: string,
+  payload: MailReconciliationInput,
+) {
+  return requestJson<unknown>(
+    `/mail-campaigns/${campaignId}/messages/${deliveryId}/reconciliations`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
 }
 
 interface MailCampaignInput {

@@ -120,6 +120,19 @@ class SqlAlchemyContactTouchRepository:
             .values(state=state, confirmed_at=utcnow() if state == "confirmed" else None)
         )
 
+    async def release_uncertain_smtp(self, delivery_id: UUID) -> bool:
+        released = await self._session.scalar(
+            update(ContactTouchModel)
+            .where(
+                ContactTouchModel.channel == "smtp",
+                ContactTouchModel.source_id == delivery_id,
+                ContactTouchModel.state == "unknown",
+            )
+            .values(state="released")
+            .returning(ContactTouchModel.source_id)
+        )
+        return released is not None
+
     async def confirm_smtp_feedback(self, delivery_id: UUID, email: str) -> None:
         statement = insert(ContactTouchModel).values(
             channel="smtp",

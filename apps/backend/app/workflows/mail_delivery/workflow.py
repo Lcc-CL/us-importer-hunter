@@ -15,10 +15,12 @@ from app.core.config import Settings
 from app.domain.exceptions import InvalidEmailAddress
 from app.domain.mail_delivery import (
     CampaignSummary,
+    DeliveryReconciliation,
     MailCampaignStore,
     MailContent,
     MailSender,
     MailSource,
+    ReconciliationEvidence,
 )
 from app.domain.operator import AuditActor
 from app.domain.values import EmailAddress
@@ -142,7 +144,9 @@ class MailCampaignWorkflow:
         )
 
     async def prepare(
-        self, request: CampaignRequest, actor: AuditActor | None = None,
+        self,
+        request: CampaignRequest,
+        actor: AuditActor | None = None,
     ) -> CampaignSummary:
         sender = self.sender
         if sender is None:
@@ -236,3 +240,14 @@ class MailCampaignWorkflow:
         await self.repository.transition(campaign_id, action, actor, sender_hash)
         await self.commit()
         return await self.repository.summary(campaign_id)
+
+    async def reconcile(
+        self,
+        campaign_id: UUID,
+        delivery_id: UUID,
+        evidence: ReconciliationEvidence,
+        actor: AuditActor,
+    ) -> DeliveryReconciliation:
+        record = await self.repository.reconcile(campaign_id, delivery_id, evidence, actor)
+        await self.commit()
+        return record
