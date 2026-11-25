@@ -42,6 +42,7 @@ class MailWorker:
             mail = await MailDeliveryRepository(session).claim(
                 self.sender_hash,
                 self.settings.mail_rate_per_second,
+                contact_window_hours=self.settings.outreach_contact_window_hours,
                 require_verified_approval=(
                     self.settings.app_env == "production"
                     or self.settings.operator_identity_mode == "oidc"

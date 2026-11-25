@@ -15,6 +15,7 @@ const label: Record<string, string> = {
   pending: "排队中", sending: "投递中", accepted: "服务商已接受", failed: "失败",
   unknown: "待核对", suppressed: "已拦截", delivered: "已送达",
   hard_bounced: "硬退信", unsubscribed: "已退订", complained: "投诉",
+  recent_or_reserved_touch: "近期已触达或已被其他活动预留",
 };
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2";
@@ -277,7 +278,7 @@ export function MailCampaignWorkspace({
                   {mail.recipient} · {label[mail.status] ?? mail.status} · {mail.subject}
                 </summary>
                 <p className="mt-2 break-words text-xs text-slate-600">
-                  投递 ID {mail.id} · 尝试 {mail.attempt} 次 {mail.result_code ?? ""}
+                  投递 ID {mail.id} · 尝试 {mail.attempt} 次 {mail.result_code ? (label[mail.result_code] ?? mail.result_code) : ""}
                 </p>
                 <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm">{mail.body}</pre>
               </details>

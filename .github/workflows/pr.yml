@@ -69,7 +69,9 @@ jobs:
           uv run pytest
           tests/api/test_operator_identity.py
           tests/database/integration/test_mail_delivery.py
+          tests/database/integration/test_contact_touch.py
           tests/database/integration/test_umail_export_api.py
+          tests/database/integration/test_umail_feedback_api.py
           tests/providers/test_smtp_delivery.py
 
       - name: D5a1 strict mypy

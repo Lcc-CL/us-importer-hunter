@@ -260,9 +260,12 @@ SuppressionWorkflowDep = Annotated[
 ]
 
 
-def get_umail_export_workflow(uow_factory: UowFactoryDep) -> UmailExportWorkflow:
+def get_umail_export_workflow(
+    uow_factory: UowFactoryDep, settings: SettingsDep,
+) -> UmailExportWorkflow:
     return UmailExportWorkflow(
-        cast(Callable[[], UmailExportUnitOfWork], uow_factory)
+        cast(Callable[[], UmailExportUnitOfWork], uow_factory),
+        contact_window_hours=settings.outreach_contact_window_hours,
     )
 
 

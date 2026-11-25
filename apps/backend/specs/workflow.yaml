@@ -90,6 +90,8 @@ workflows:
       email deduplication. CSV contract v1 uses a fixed column order, UTF-8 BOM,
       RFC-compatible quoting and formula-injection protection. Repeated downloads
       are regenerated from persisted rows and verified against the stored SHA-256.
+      Download rechecks suppression and atomically reserves all ready recipients
+      in the shared contact ledger. A reservation never represents a send.
       It never calls Umail or any external provider, creates no Outreach or Outcome,
       and never marks a prospect sent or contacted.
     steps:
@@ -112,8 +114,9 @@ workflows:
       ID, batch plus email, campaign plus email, or a unique 180-day email
       window. It stops ambiguous, unmatched, invalid and duplicate rows at the
       review boundary. Explicit apply appends immutable ContactEngagementEvent
-      records and creates email Suppression entries only for hard bounce,
-      unsubscribe and complaint events. It never mutates export snapshots,
+      records, projects confirmed activity into the shared contact ledger, and
+      creates email Suppression entries only for hard bounce, unsubscribe and
+      complaint events. It never mutates export snapshots,
       Outreach, Draft, Outcome, Opportunity, Pre-Score or A/B/C/D routing, and
       invokes no Umail API, provider, LLM or email delivery path.
     steps:

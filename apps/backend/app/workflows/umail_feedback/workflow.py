@@ -12,6 +12,7 @@ from typing import Any, BinaryIO
 from uuid import UUID, uuid4
 
 from app.domain.clock import utcnow
+from app.domain.contact_touch import UmailTouchResult
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import UmailFeedbackUnitOfWork
 from app.domain.umail_export import SuppressionEntry
@@ -356,6 +357,19 @@ class UmailResultImportWorkflow:
                 for row in rows
                 if row.id in events_by_row
             )
+            snapshot_by_row = {snapshot.export_row_id: snapshot for snapshot in snapshots}
+            # Acquire the recipient locks before reading existing events/suppression.
+            # Returned events are already matched to immutable export rows.
+            await uow.contact_touches.record_export_results(
+                tuple(
+                    UmailTouchResult(
+                        event.export_row_id,
+                        snapshot_by_row[event.export_row_id].email.strip().lower(),
+                        event.occurred_at,
+                    )
+                    for event in events
+                )
+            )
             existing_fingerprints = await uow.umail_feedback.existing_event_fingerprints(
                 tuple(event.event_fingerprint for event in events)
             )
@@ -369,7 +383,6 @@ class UmailResultImportWorkflow:
             active_emails = {
                 entry.email for entry in active_suppressions if entry.email is not None
             }
-            snapshot_by_row = {snapshot.export_row_id: snapshot for snapshot in snapshots}
             suppressions: list[SuppressionEntry] = []
             for row in rows:
                 if row.id not in new_event_row_ids:

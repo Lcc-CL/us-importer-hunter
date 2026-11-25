@@ -11,6 +11,7 @@ from sqlalchemy import func, insert, select
 from app.database.models.bulk_import import ImportSessionModel
 from app.database.models.company import CompanyModel
 from app.database.models.contact import ContactModel
+from app.database.models.contact_touch import ContactTouchModel
 from app.database.models.opportunity import OpportunityModel
 from app.database.models.outreach import EmailDraftModel, OutcomeModel, OutreachModel
 from app.database.models.prospect_routing import ProspectRoutingRunModel
@@ -642,6 +643,20 @@ async def test_feedback_preview_apply_matching_events_and_suppression(
         assert applied.json()["applied_event_count"] == 11
         assert applied.json()["suppression_created_count"] == 3
         assert applied.json()["system_sent_email"] is False
+
+        async with uow_factory() as uow:
+            session = uow._session
+            assert session is not None
+            projected = list(await session.execute(
+                select(ContactTouchModel.source_id, ContactTouchModel.state)
+                .where(ContactTouchModel.channel == "umail")
+            ))
+            expected = set(await session.scalars(
+                select(ContactEngagementEventModel.export_row_id)
+            ))
+            assert projected
+            assert {row[0] for row in projected} == expected
+            assert {row[1] for row in projected} == {"confirmed"}
 
         statistics = await client.get(
             f"/api/v1/umail-result-imports/{result_import_id}/statistics"

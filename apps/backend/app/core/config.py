@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import AliasChoices, Field, PostgresDsn, RedisDsn, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.domain.contact_touch import DEFAULT_CONTACT_WINDOW_HOURS
+
 
 def _find_repo_root() -> Path:
     """Walk upward to the monorepo root; fall back to the working directory.
@@ -124,6 +126,8 @@ class Settings(BaseSettings):
     operator_role_groups: dict[Literal["sales", "approver", "admin"], list[str]] = Field(
         default_factory=dict,
     )
+
+    outreach_contact_window_hours: int = Field(DEFAULT_CONTACT_WINDOW_HOURS, ge=1, le=8760)
 
     # Delivery is independent of the LLM draft provider.
     mail_send_enabled: bool = False

@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.core.config import Settings
+from app.database.models.contact_touch import ContactTouchModel
 from app.database.models.mail_delivery import MailDeliveryModel, MailRateGateModel
 from app.database.repositories.mail_delivery import MailDeliveryRepository
 from app.database.uow import SqlAlchemyUnitOfWork
@@ -255,6 +256,11 @@ async def test_concurrent_workers_rate_dedup_retry_and_recovery(mail_engine: Asy
     retry_transport = RecordingTransport(MailResult("retry", "smtp_451"))
     retry_worker = MailWorker(sessions, settings, retry_transport, sender)
     assert await retry_worker.run_once()
+    async with sessions() as session:
+        retry_touch = await session.get(
+            ContactTouchModel, ("smtp", retry_transport.transmissions[0].id)
+        )
+        assert retry_touch is not None and retry_touch.state == "released"
     assert not await retry_worker.run_once()
     async with sessions.begin() as session:
         await session.execute(
@@ -277,6 +283,8 @@ async def test_concurrent_workers_rate_dedup_retry_and_recovery(mail_engine: Asy
             select(MailDeliveryModel.status).where(MailDeliveryModel.id == claimed.id)
         )
         assert status == "unknown"
+        recovered_touch = await session.get(ContactTouchModel, ("smtp", claimed.id))
+        assert recovered_touch is not None and recovered_touch.state == "unknown"
 
 
 async def test_verified_roles_and_immutable_campaign_audit(mail_engine: AsyncEngine) -> None:

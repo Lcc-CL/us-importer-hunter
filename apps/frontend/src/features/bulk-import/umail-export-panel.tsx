@@ -391,6 +391,7 @@ export function UmailExportPanel({
               <Download className="size-4" /> {t("bulk.umailDownload")}
             </button>
           </div>
+          <p className="mt-2 text-xs text-slate-600">{t("bulk.umailDownloadReservation")}</p>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(["ready", "suppressed", "invalid", "duplicate"] as const).map((status) => (
               <div className="rounded-lg bg-slate-50 p-2" key={status}>

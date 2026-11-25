@@ -13,7 +13,13 @@ from app.database.models.import_resolution import CompanyContactModel
 from app.database.models.outreach import OutcomeModel, OutreachModel
 from app.database.models.umail_export import UmailExportBatchModel, UmailExportRowModel
 from app.database.repositories.mail_delivery import MailDeliveryRepository
-from app.workflows.mail_delivery.workflow import CampaignRequest, MailCampaignWorkflow
+from app.domain.operator import AuditActor
+from app.workflows.mail_delivery.workflow import (
+    CampaignRequest,
+    MailCampaignWorkflow,
+    configured_sender,
+    sender_fingerprint,
+)
 from tests.database.integration.conftest import UowFactory
 from tests.database.integration.test_mail_delivery import configured_settings
 from tests.database.integration.test_prospect_routing_api import (
@@ -222,6 +228,14 @@ async def test_b_export_preview_suppression_download_and_no_send(
             previews = await MailDeliveryRepository(session).preview(mail_campaign_id, 0, 20)
             assert [item.recipient for item in previews] == [ready_email]
             assert previews[0].body.startswith("Hi Alice\n")
+            repo = MailDeliveryRepository(session)
+            sender = configured_sender(configured_settings())
+            assert sender is not None
+            fingerprint = sender_fingerprint(sender)
+            await repo.transition(mail_campaign_id, "approve", AuditActor("Reviewer"), fingerprint)
+            assert await repo.claim(fingerprint, 2) is None
+            blocked = (await repo.preview(mail_campaign_id, 0, 1))[0]
+            assert blocked.result_code == "recent_or_reserved_touch"
             persisted_ready_rows = list(
                 await session.scalars(
                     select(UmailExportRowModel)
@@ -235,6 +249,31 @@ async def test_b_export_preview_suppression_download_and_no_send(
             assert [str(row.id) for row in persisted_ready_rows] == [
                 row["export_row_id"] for row in csv_rows
             ]
+
+        # An independently prepared export must not inherit the first batch reservation.
+        second_export = await client.post(
+            f"/api/v1/prospect-routing-runs/{routing_run_id}/umail-export-batches",
+            json={"company_ids": company_ids, "campaign": "Separate campaign"},
+        )
+        assert second_export.status_code == 201, second_export.text
+        blocked_export = await client.get(
+            f"/api/v1/umail-export-batches/{second_export.json()['batch_id']}/download"
+        )
+        assert blocked_export.status_code == 409
+        assert "recently contacted" in blocked_export.json()["message"]
+        added_after_preview = await client.post(
+            "/api/v1/suppressions",
+            json={
+                "email": ready_email, "reason": "late opt-out",
+                "source": "integration_test", "created_by": "Reviewer",
+            },
+        )
+        assert added_after_preview.status_code == 201
+        stale_export = await client.get(
+            f"/api/v1/umail-export-batches/{payload['batch_id']}/download"
+        )
+        assert stale_export.status_code == 409
+        assert "suppression after the preview" in stale_export.json()["message"]
 
         deactivated = await client.post(
             f"/api/v1/suppressions/{suppression.json()['suppression_id']}/deactivate",

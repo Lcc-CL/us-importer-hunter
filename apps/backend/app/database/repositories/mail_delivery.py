@@ -1,6 +1,7 @@
 """Persistence for delivery and its read-only prospect sources."""
 
 from datetime import timedelta
+from typing import Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, or_, select, text, update
@@ -20,7 +21,9 @@ from app.database.models.mail_delivery import (
 from app.database.models.opportunity import OpportunityModel
 from app.database.models.outreach import EmailDraftModel, OutreachModel
 from app.database.models.umail_export import SuppressionEntryModel, UmailExportRowModel
+from app.database.repositories.contact_touch import SqlAlchemyContactTouchRepository
 from app.domain.clock import utcnow
+from app.domain.contact_touch import DEFAULT_CONTACT_WINDOW_HOURS
 from app.domain.mail_delivery import (
     CampaignAuditEvent,
     CampaignSummary,
@@ -39,6 +42,7 @@ from app.shared.exceptions import ApplicationConflictError, ResourceNotFoundErro
 class MailDeliveryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self.contact_touches = SqlAlchemyContactTouchRepository(session)
 
     async def template_sources(self, batch_id: UUID) -> list[MailSource]:
         rows = await self.session.scalars(
@@ -323,6 +327,7 @@ class MailDeliveryRepository:
         per_second: float,
         *,
         require_verified_approval: bool = False,
+        contact_window_hours: int = DEFAULT_CONTACT_WINDOW_HOURS,
     ) -> ClaimedMail | None:
         # Each consumer locks only its selected row and holds no locks during SMTP.
         query = (
@@ -350,9 +355,20 @@ class MailDeliveryRepository:
         )
         if campaign_state != "active":
             return None
+        email = row.recipient.strip().lower()
+        if not await self.contact_touches.try_lock_recipient(email):
+            return None
         if await self._suppressed(row):
             row.status = "suppressed"
             row.result_code = "suppression_match"
+            return None
+        if await self.contact_touches.smtp_conflict(
+            row.id,
+            email,
+            window=timedelta(hours=contact_window_hours),
+        ):
+            row.status = "suppressed"
+            row.result_code = "recent_or_reserved_touch"
             return None
 
         # A short, database-wide reservation spaces dispatches across replicas.
@@ -384,6 +400,7 @@ class MailDeliveryRepository:
             return None
         now = await self.session.scalar(select(func.clock_timestamp()))
         assert now is not None
+        await self.contact_touches.reserve_smtp(row.id, email, now=now)
         gate.next_slot = now + timedelta(seconds=1 / per_second)
         row.status = "sending"
         row.attempt += 1
@@ -428,7 +445,7 @@ class MailDeliveryRepository:
         code: str,
         **values: object,
     ) -> None:
-        await self.session.execute(
+        updated = await self.session.scalar(
             update(MailDeliveryModel)
             .where(
                 MailDeliveryModel.id == mail.id,
@@ -436,7 +453,16 @@ class MailDeliveryRepository:
                 MailDeliveryModel.status == "sending",
             )
             .values(status=status, result_code=code, lease_until=None, **values)
+            .returning(MailDeliveryModel.id)
         )
+        if updated is not None:
+            await self.contact_touches.lock_recipients([mail.recipient.strip().lower()])
+            touch: Literal["confirmed", "unknown", "released"] = (
+                "confirmed"
+                if status == "accepted"
+                else ("unknown" if status == "unknown" else "released")
+            )
+            await self.contact_touches.finish_smtp([updated], touch)
 
     async def recover(self) -> None:
         expired = (
@@ -449,11 +475,13 @@ class MailDeliveryRepository:
             .limit(1000)
             .with_for_update(skip_locked=True)
         )
-        await self.session.execute(
+        affected = await self.session.scalars(
             update(MailDeliveryModel)
             .where(MailDeliveryModel.id.in_(expired))
             .values(status="unknown", result_code="worker_interrupted", lease_until=None)
+            .returning(MailDeliveryModel.id)
         )
+        await self.contact_touches.finish_smtp(list(affected), "unknown")
 
     async def record_feedback(self, delivery_id: UUID, event_key: str, kind: FeedbackKind) -> None:
         row = await self.session.scalar(
@@ -478,10 +506,14 @@ class MailDeliveryRepository:
             if existing is None or (existing.delivery_id, existing.kind) != (delivery_id, kind):
                 raise ApplicationConflictError("Feedback event ID is already in use")
             return
-        if kind != "unsubscribed" and row.status in ("sending", "unknown"):
-            row.status = "accepted"
-            row.result_code = "provider_feedback"
-            row.lease_until = None
+        email = row.recipient.strip().lower()
+        await self.contact_touches.lock_recipients([email])
+        if kind != "unsubscribed":
+            await self.contact_touches.confirm_smtp_feedback(delivery_id, email)
+            if row.status in ("pending", "sending", "unknown", "failed"):
+                row.status = "accepted"
+                row.result_code = "provider_feedback"
+                row.lease_until = None
         if kind != "delivered":
             await self.session.execute(
                 insert(SuppressionEntryModel)

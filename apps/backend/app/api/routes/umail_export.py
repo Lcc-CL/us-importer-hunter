@@ -126,5 +126,6 @@ async def download_umail_export_batch(
             "Content-Disposition": f'attachment; filename="{download.filename}"',
             "X-Content-SHA256": download.batch.content_sha256,
             "X-Email-Sent": "false",
+            "Cache-Control": "no-store",
         },
     )

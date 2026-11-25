@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Self, cast
 from uuid import UUID, uuid4
 
+from app.domain.contact_touch import UmailTouchResult
 from app.domain.prospect_routing import ProspectTier
 from app.domain.repositories import UmailFeedbackUnitOfWork
 from app.domain.umail_export import SuppressionEntry
@@ -116,10 +117,16 @@ class _ExportRepository:
         self.suppressions.append(entry)
 
 
+class _ContactTouchRepository:
+    async def record_export_results(self, results: tuple[UmailTouchResult, ...]) -> None:
+        pass
+
+
 class _UnitOfWork:
     def __init__(self, snapshot: FeedbackExportSnapshot) -> None:
         self.umail_feedback = _FeedbackRepository(snapshot)
         self.umail_exports = _ExportRepository()
+        self.contact_touches = _ContactTouchRepository()
 
     async def __aenter__(self) -> Self:
         return self

@@ -8,8 +8,10 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from uuid import UUID, uuid4
 
+from app.domain.contact_touch import DEFAULT_CONTACT_WINDOW_HOURS
 from app.domain.exceptions import DuplicateOperation
 from app.domain.prospect_routing import (
     ProspectRouteReviewStatus,
@@ -163,8 +165,14 @@ class SuppressionWorkflow:
 
 
 class UmailExportWorkflow:
-    def __init__(self, uow_factory: UmailUowFactory) -> None:
+    def __init__(
+        self,
+        uow_factory: UmailUowFactory,
+        *,
+        contact_window_hours: int = DEFAULT_CONTACT_WINDOW_HOURS,
+    ) -> None:
         self._uow_factory = uow_factory
+        self._contact_window = timedelta(hours=contact_window_hours)
 
     async def prepare(
         self,
@@ -307,6 +315,7 @@ class UmailExportWorkflow:
                 raise ApplicationConflictError(
                     "persisted export rows no longer match the audited CSV hash"
                 )
+            await uow.contact_touches.reserve_export(rows, window=self._contact_window)
             batch.mark_downloaded()
             await uow.umail_exports.save_batch(batch)
             await uow.commit()

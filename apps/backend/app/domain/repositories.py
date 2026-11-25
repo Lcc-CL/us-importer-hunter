@@ -14,6 +14,7 @@ from uuid import UUID
 from app.domain.bulk_import import ImportSession, RawImportRow, RawImportRowStatus
 from app.domain.company import Company
 from app.domain.contact import Contact, DecisionMakerFitAssessment
+from app.domain.contact_touch import ContactTouchRepository
 from app.domain.discovery import DiscoveryTask
 from app.domain.import_evidence.models import (
     ImporterEvidenceAggregate,
@@ -793,6 +794,7 @@ class ImportResolutionUnitOfWork(Protocol):
 
 
 class UmailExportUnitOfWork(Protocol):
+    contact_touches: ContactTouchRepository
     prospect_routing: ProspectRoutingRepository
     umail_exports: UmailExportRepository
 
@@ -813,6 +815,7 @@ class UmailExportUnitOfWork(Protocol):
 
 
 class UmailFeedbackUnitOfWork(Protocol):
+    contact_touches: ContactTouchRepository
     umail_feedback: UmailFeedbackRepository
     umail_exports: UmailExportRepository
 

@@ -13,6 +13,7 @@ from app.database.models.company import (
     CompanySourceModel,
 )
 from app.database.models.contact import ContactModel
+from app.database.models.contact_touch import ContactTouchModel
 from app.database.models.discovery_task import DiscoveryCandidateModel, DiscoveryTaskModel
 from app.database.models.import_evidence import (
     ImporterEntityMatchModel,
@@ -78,6 +79,7 @@ from app.database.models.umail_feedback import (
 )
 
 __all__ = [
+    "ContactTouchModel",
     "MailCampaignAuditModel",
     "MailCampaignModel",
     "MailDeliveryModel",

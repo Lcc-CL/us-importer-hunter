@@ -40,6 +40,8 @@ from app.database.repositories import (
     SqlAlchemyUmailExportRepository,
     SqlAlchemyUmailFeedbackRepository,
 )
+from app.database.repositories.contact_touch import SqlAlchemyContactTouchRepository
+from app.domain.contact_touch import ContactTouchRepository
 from app.domain.exceptions import DuplicateOperation
 from app.domain.repositories import (
     BulkImportRepository,
@@ -69,6 +71,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
     bulk_import: BulkImportRepository
     companies: CompanyRepository
     contacts: ContactRepository
+    contact_touches: ContactTouchRepository
     import_evidence: ImportEvidenceRepository
     import_evidence_promotions: ImportEvidencePromotionRepository
     opportunities: OpportunityRepository
@@ -103,6 +106,7 @@ class SqlAlchemyUnitOfWork(ImportEvidenceUnitOfWork):
         self.import_resolution = SqlAlchemyImportResolutionRepository(self._session)
         self.import_processing_jobs = SqlAlchemyImportProcessingJobRepository(self._session)
         self.prospect_routing = SqlAlchemyProspectRoutingRepository(self._session)
+        self.contact_touches = SqlAlchemyContactTouchRepository(self._session)
         self.umail_exports = SqlAlchemyUmailExportRepository(self._session)
         self.umail_feedback = SqlAlchemyUmailFeedbackRepository(self._session)
         self.import_evidence = SqlAlchemyImportEvidenceRepository(self._session)
