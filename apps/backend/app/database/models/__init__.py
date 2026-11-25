@@ -46,6 +46,7 @@ from app.database.models.mail_delivery import (
     MailFeedbackModel,
     MailRateGateModel,
     MailSourceReservationModel,
+    MailWorkerPulseModel,
 )
 from app.database.models.opportunity import (
     OpportunityAssessmentModel,
@@ -88,6 +89,7 @@ __all__ = [
     "MailFeedbackModel",
     "MailRateGateModel",
     "MailSourceReservationModel",
+    "MailWorkerPulseModel",
     "CompanyAliasModel",
     "CompanyModel",
     "CompanySignalModel",

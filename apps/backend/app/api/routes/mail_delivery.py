@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from app.api.deps import DbSessionDep, SettingsDep
 from app.api.operator_identity import get_operator, require_operator_roles
 from app.database.repositories.mail_delivery import MailDeliveryRepository
+from app.database.repositories.mail_operations import MailOperationsRepository
 from app.domain.mail_delivery import (
     CampaignAuditEvent,
     CampaignSummary,
@@ -17,6 +18,7 @@ from app.domain.mail_delivery import (
     MailPreview,
     ReconciliationEvidence,
 )
+from app.domain.mail_operations import MailQueueStatus
 from app.domain.operator import AuditActor, Operator
 from app.schemas.mail_delivery import (
     MailCampaignAction,
@@ -26,6 +28,7 @@ from app.schemas.mail_delivery import (
     MailTemplateCampaign,
 )
 from app.shared.exceptions import ResourceNotFoundError
+from app.workflows.mail_delivery.operations import read_mail_operations
 from app.workflows.mail_delivery.workflow import CampaignRequest, MailCampaignWorkflow
 
 router = APIRouter(tags=["mail-delivery"])
@@ -119,6 +122,15 @@ async def list_campaigns(
     limit: Limit = 20,
 ) -> list[CampaignSummary]:
     return await MailDeliveryRepository(session).list_campaigns(offset, limit)
+
+
+@router.get("/mail-campaigns/operations")
+async def operations(
+    operator: ReconciliationOperatorDep,
+    session: DbSessionDep,
+    settings: SettingsDep,
+) -> MailQueueStatus:
+    return await read_mail_operations(MailOperationsRepository(session), settings)
 
 
 @router.get("/mail-campaigns/{campaign_id}")

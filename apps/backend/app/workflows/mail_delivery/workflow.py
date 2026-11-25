@@ -124,6 +124,18 @@ def _render(text: str, source: MailSource) -> str:
         ) from None
 
 
+def verified_approval_required(settings: Settings) -> bool:
+    return settings.app_env == "production" or settings.operator_identity_mode == "oidc"
+
+
+def delivery_configured(settings: Settings, sender: MailSender | None) -> bool:
+    return (
+        sender is not None
+        and transport_configured(settings)
+        and (settings.app_env != "production" or settings.operator_identity_mode == "oidc")
+    )
+
+
 class MailCampaignWorkflow:
     def __init__(
         self,
@@ -134,14 +146,8 @@ class MailCampaignWorkflow:
         self.commit = commit
         self.repository = repository
         self.sender = configured_sender(settings)
-        self.requires_verified_actor = (
-            settings.app_env == "production" or settings.operator_identity_mode == "oidc"
-        )
-        self.send_ready = (
-            self.sender is not None
-            and transport_configured(settings)
-            and (settings.app_env != "production" or settings.operator_identity_mode == "oidc")
-        )
+        self.requires_verified_actor = verified_approval_required(settings)
+        self.send_ready = delivery_configured(settings, self.sender)
 
     async def prepare(
         self,

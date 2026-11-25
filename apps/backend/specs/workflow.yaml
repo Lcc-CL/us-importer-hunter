@@ -330,6 +330,7 @@ workflows:
       - { id: pause, roles: [approver, admin] }
       - { id: resume_or_cancel, roles: [admin] }
       - { id: claim_and_deliver, execution: postgresql_worker }
+      - { id: report_queue_activity, roles: [approver, admin], access: read_only }
       - { id: reconcile_unknown, roles: [approver, admin], requires: provider_evidence }
       - { id: release_unsubmitted, roles: [admin], requires: fresh_campaign_for_retry }
     status: implemented

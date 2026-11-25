@@ -70,6 +70,13 @@ class MailDeliveryModel(Base):
             name="ck_mail_delivery_status",
         ),
         Index(
+            "ix_mail_delivery_ops",
+            "status",
+            "campaign_id",
+            "available_at",
+            postgresql_where="status IN ('pending', 'sending', 'unknown')",
+        ),
+        Index(
             "ix_mail_delivery_claim",
             "available_at",
             "id",
@@ -153,3 +160,16 @@ class MailFeedbackModel(Base):
     delivery_id: Mapped[UUID] = mapped_column(ForeignKey("mail_deliveries.id", ondelete="RESTRICT"))
     kind: Mapped[str] = mapped_column(String(20))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MailWorkerPulseModel(Base):
+    __tablename__ = "mail_worker_pulses"
+    __table_args__ = (Index("ix_mail_worker_pulses_seen", "seen_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    sender_hash: Mapped[str | None] = mapped_column(String(64))
+    verified_only: Mapped[bool] = mapped_column()
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

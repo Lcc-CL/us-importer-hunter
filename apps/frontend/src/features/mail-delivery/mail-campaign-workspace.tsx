@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { MailOperationsPanel } from "./mail-operations-panel";
 import {
   changeMailCampaign, createMailCampaign, getMailCampaign, getMailConfig,
   listMailCampaigns, listMailMessages, reconcileMailDelivery, type MailCampaign,
@@ -207,6 +208,7 @@ export function MailCampaignWorkspace({
         )}
       </div>
       {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-900">{error}</p>}
+      {canReconcile && <MailOperationsPanel />}
       <div className="grid items-start gap-5 lg:grid-cols-[22rem_1fr]">
         <div className="grid gap-5">
           {configured?.can_create && (

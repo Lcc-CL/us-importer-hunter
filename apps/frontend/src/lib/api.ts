@@ -1866,6 +1866,33 @@ export interface MailPreview {
   message_id: string;
 }
 
+export interface MailQueueStatus {
+  dispatch_state:
+    | "disabled" | "not_configured" | "worker_config_mismatch"
+    | "no_worker" | "poll_stale" | "polling";
+  queue: {
+    observed_at: string;
+    ready: number;
+    scheduled: number;
+    paused: number;
+    blocked: number;
+    in_flight: number;
+    expired_leases: number;
+    unknown: number;
+    oldest_ready_seconds: number | null;
+    live_workers: number;
+    dispatch_workers: number;
+    compatible_workers: number;
+    polling_workers: number;
+    last_poll_at: string | null;
+    last_completion_at: string | null;
+  };
+}
+
+export function getMailOperations() {
+  return requestJson<MailQueueStatus>("/mail-campaigns/operations");
+}
+
 export function getMailConfig() {
   return requestJson<{
     sender: string | null;
