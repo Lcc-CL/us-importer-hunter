@@ -36,7 +36,7 @@ class MailCampaignAction(BaseModel):
     model_config = TEXT_INPUT
 
     action: MailAction
-    actor: str = Field(min_length=1, max_length=160)
+    actor: str | None = Field(default=None, min_length=1, max_length=160)
 
 
 class MailFeedbackInput(BaseModel):

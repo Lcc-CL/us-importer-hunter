@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models.company import CompanyModel
 from app.database.models.contact import ContactChannelModel, ContactModel
 from app.database.models.mail_delivery import (
+    MailCampaignAuditModel,
     MailCampaignModel,
     MailDeliveryModel,
     MailFeedbackModel,
@@ -21,6 +22,7 @@ from app.database.models.outreach import EmailDraftModel, OutreachModel
 from app.database.models.umail_export import SuppressionEntryModel, UmailExportRowModel
 from app.domain.clock import utcnow
 from app.domain.mail_delivery import (
+    CampaignAuditEvent,
     CampaignSummary,
     ClaimedMail,
     FeedbackKind,
@@ -29,6 +31,7 @@ from app.domain.mail_delivery import (
     MailResult,
     MailSource,
 )
+from app.domain.operator import AuditActor
 from app.domain.umail_export.models import normalize_suppression_company
 from app.shared.exceptions import ApplicationConflictError, ResourceNotFoundError
 
@@ -107,6 +110,7 @@ class MailDeliveryRepository:
         sender_hash: str,
         sender_address: str,
         contents: list[MailContent],
+        actor: AuditActor | None = None,
     ) -> None:
         now = utcnow()
         created = await self.session.scalar(
@@ -143,6 +147,59 @@ class MailDeliveryRepository:
                 for item in contents
             ],
         )
+
+        if actor is not None:
+            self._audit(campaign_id, "create", actor, None, "draft")
+
+    def _audit(
+        self,
+        campaign_id: UUID,
+        action: str,
+        actor: AuditActor,
+        previous: str | None,
+        target: str,
+    ) -> None:
+        self.session.add(
+            MailCampaignAuditModel(
+                id=uuid4(),
+                campaign_id=campaign_id,
+                action=action,
+                actor_name=actor.name,
+                actor_issuer=actor.issuer,
+                actor_subject=actor.subject,
+                from_status=previous,
+                to_status=target,
+                occurred_at=utcnow(),
+            )
+        )
+
+    async def audit_events(
+        self,
+        campaign_id: UUID,
+        offset: int,
+        limit: int,
+    ) -> list[CampaignAuditEvent]:
+        await self._campaign(campaign_id)
+        rows = await self.session.scalars(
+            select(MailCampaignAuditModel)
+            .where(MailCampaignAuditModel.campaign_id == campaign_id)
+            .order_by(MailCampaignAuditModel.occurred_at.desc(), MailCampaignAuditModel.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return [
+            CampaignAuditEvent(
+                row.id,
+                row.action,
+                row.actor_name,
+                row.actor_issuer,
+                row.actor_subject,
+                row.from_status,
+                row.to_status,
+                row.occurred_at,
+            )
+            for row in rows
+        ]
 
     async def request_hash(self, campaign_id: UUID) -> str | None:
         return (
@@ -234,7 +291,7 @@ class MailDeliveryRepository:
         self,
         campaign_id: UUID,
         action: str,
-        actor: str,
+        actor: AuditActor,
         sender_hash: str | None,
     ) -> None:
         campaign = await self._campaign(campaign_id, lock=True)
@@ -250,14 +307,25 @@ class MailDeliveryRepository:
             raise ApplicationConflictError("Campaign action is invalid for the current state")
         if target == "active" and sender_hash != campaign.sender_hash:
             raise ApplicationConflictError("Sender configuration is disabled or has changed")
+        if action == "resume" and actor.verified and campaign.approved_subject is None:
+            raise ApplicationConflictError("Prepare and approve a new campaign with a staff login")
+        self._audit(campaign.id, action, actor, campaign.status, target)
         campaign.status = target
         if action == "approve":
-            campaign.approved_by = actor
+            campaign.approved_by = actor.name
+            campaign.approved_issuer = actor.issuer
+            campaign.approved_subject = actor.subject
             campaign.approved_at = utcnow()
 
-    async def claim(self, sender_hash: str, per_second: float) -> ClaimedMail | None:
+    async def claim(
+        self,
+        sender_hash: str,
+        per_second: float,
+        *,
+        require_verified_approval: bool = False,
+    ) -> ClaimedMail | None:
         # Each consumer locks only its selected row and holds no locks during SMTP.
-        row = await self.session.scalar(
+        query = (
             select(MailDeliveryModel)
             .join(MailCampaignModel, MailCampaignModel.id == MailDeliveryModel.campaign_id)
             .where(
@@ -270,6 +338,9 @@ class MailDeliveryRepository:
             .limit(1)
             .with_for_update(of=MailDeliveryModel, skip_locked=True)
         )
+        if require_verified_approval:
+            query = query.where(MailCampaignModel.approved_subject.is_not(None))
+        row = await self.session.scalar(query)
         if row is None:
             return None
         campaign_state = await self.session.scalar(

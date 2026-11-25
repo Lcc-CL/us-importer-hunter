@@ -23,9 +23,8 @@
   绝不能带 `NEXT_PUBLIC_` 前缀。
 - 白名单路径见 `apps/frontend/src/app/api/v1/[...path]/route.ts`，无任意 URL
   代理。`research` 不在白名单内：Research API 不经前端代理对外暴露。
-- 整个前端（含 `/api/v1` 代理）由访问口令保护（`apps/frontend/src/proxy.ts`，
-  HTTP Basic，用户名任意，密码为 `FRONTEND_ACCESS_PASSWORD`）。生产环境未设置
-  该变量时所有请求返回 503（fail closed）。
+- 兼容模式用 `FRONTEND_ACCESS_PASSWORD` 保护前端和 API 代理，生产环境缺少口令时
+  拒绝访问。启用生产邮件投递时使用下文的 OIDC 身份入口。
 - 真实密钥只放在服务器上的 `.env.production`（已被 git 忽略）或平台的
   Secret 变量里，绝不提交。
 
@@ -167,9 +166,8 @@ PostgreSQL。部署脚本会先迁移，再等待每个服务和投递实例通�
   SMTP 支持 STARTTLS 和隐式 TLS，要求验证服务端证书。启用前验证发件域、SPF、
   DKIM、DMARC 和服务商对该类业务邮件的许可。
 - 默认 `MAIL_SEND_ENABLED=false`。在工作台生成活动和审核预览时，可保持投递关闭。
-  启用后，操作人打开「开发信投递」，检查最终快照并显式审批。部署访问口令适用于
-  单团队试点，审批人是用户填写的署名。需要个人身份审计时，在开放给多团队前接入
-  SSO 和角色授权。
+  启用后，有审批权限的成员打开「开发信投递」，检查最终快照并显式审批。
+  生产投递要求 OIDC 已验证审批。
 
 ### 投递、反馈与容量
 
@@ -192,3 +190,35 @@ PostgreSQL。部署脚本会先迁移，再等待每个服务和投递实例通�
   `hard_bounced`、`unsubscribed`、`complained`。以邮件 Message-ID 中的 UUID
   关联投递，保持稳定的事件 ID 以幂等重试。硬退信、退订、投诉会加入抑制名单。
   服务商原生回调和签名应在适配器校验后再转发。
+
+
+## 团队身份和投递权限
+
+在前端之前部署支持 OIDC 的登录网关，例如 OAuth2 Proxy。网关校验登录会话并清除来自
+外部的 Authorization 头，再通过 `Authorization: Bearer` 向 Next.js 转交签名 ID Token。
+OAuth2 Proxy 反向代理模式可使用 `--pass-authorization-header=true`。Next.js 和 FastAPI
+应位于网关之后的私网。单机部署可用 `FRONTEND_BIND=127.0.0.1`，再把网关接到该监听端口。
+网关使用 HTTPS 和安全会话 Cookie，生产网关的回调 URL 注册在身份提供商中。
+
+在 frontend、backend 和 mail-worker 都设置 `OPERATOR_IDENTITY_MODE=oidc`。frontend
+设置 `FRONTEND_ORIGIN` 为公网 HTTPS origin。backend 需以下配置：
+
+| 变量 | 所需资源 |
+| --- | --- |
+| `OPERATOR_OIDC_ISSUER` | 身份提供商的完整 HTTPS 签发方 |
+| `OPERATOR_OIDC_AUDIENCE` | 网关注册的 OIDC 应用客户端 ID |
+| `OPERATOR_OIDC_JWKS_URL` | 提供 RS256 公钥的 HTTPS JWKS 地址 |
+| `OPERATOR_ROLE_GROUPS` | IdP 组到应用角色的 JSON 映射，组从签名的 `groups` 数组读取 |
+
+FastAPI 独立校验 ID Token 签名、签发方、受众和有效期，没有映射角色的账号会被拒绝。
+网关仅对 `POST /api/v1/mail-feedback` 和
+`GET/POST /api/v1/mail-unsubscribe/<UUID>` 放行外部调用。这两个入口分别使用反馈密钥
+和退订链接。后端的 `GET /api/v1/health` 供私网探针使用。
+
+销售可创建和读取活动；审批人可批准、暂停及查询审计历史；管理员还可恢复和取消，
+并可创建活动。角色可在身份组内叠加。这一版以单团队为权限范围。活动操作记录与状态
+更新在同一事务提交，记录签发方、主体 ID、显示名和状态变化。
+
+切换旧投递实例时先暂停投递。旧审批仍保留原始署名，但历史共享口令审批没有已验证
+主体。生产 Worker 会跳过这类活动，旧活动可由管理员检查并取消，待处理对象核对触达
+记录后可在新活动中重新审批。跨渠道核对仍以现有发送记录为依据。

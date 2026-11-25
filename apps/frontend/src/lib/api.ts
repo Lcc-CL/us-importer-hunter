@@ -1866,7 +1866,15 @@ export interface MailPreview {
 }
 
 export function getMailConfig() {
-  return requestJson<{ sender: string | null; send_ready: boolean }>("/mail-campaigns/config");
+  return requestJson<{
+    sender: string | null;
+    send_ready: boolean;
+    operator_name: string | null;
+    can_create: boolean;
+    can_approve: boolean;
+    can_pause: boolean;
+    can_manage: boolean;
+  }>("/mail-campaigns/config");
 }
 
 export function listMailCampaigns(offset = 0) {
@@ -1900,7 +1908,7 @@ export function createMailCampaign(
   );
 }
 
-export function changeMailCampaign(id: string, action: MailCampaignAction, actor: string) {
+export function changeMailCampaign(id: string, action: MailCampaignAction, actor?: string) {
   return requestJson<MailCampaign>(`/mail-campaigns/${id}/actions`, {
     method: "POST", body: JSON.stringify({ action, actor }),
   });

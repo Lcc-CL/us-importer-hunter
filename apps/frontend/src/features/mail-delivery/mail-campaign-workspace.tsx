@@ -54,7 +54,8 @@ export function MailCampaignWorkspace({
   const [campaignOffset, setCampaignOffset] = useState(0);
   const [actor, setActor] = useState("");
   const [confirmed, setConfirmed] = useState(false);
-  const [configured, setConfigured] = useState<{ sender: string | null; send_ready: boolean }>();
+  const [configured, setConfigured] = useState<Awaited<ReturnType<typeof getMailConfig>>>();
+  const hasActor = Boolean(configured?.operator_name || actor.trim());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const draftRequest = useRef<{ payload: string; id: string } | null>(null);
@@ -127,7 +128,7 @@ export function MailCampaignWorkspace({
     if (!selected) return;
     const id = selected.id;
     void run(async () => {
-      await changeMailCampaign(id, action, actor.trim());
+      await changeMailCampaign(id, action, configured?.operator_name ? undefined : actor.trim());
       await select(id, offset);
       setCampaigns(await listMailCampaigns(campaignOffset));
     });
@@ -154,43 +155,45 @@ export function MailCampaignWorkspace({
       {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-900">{error}</p>}
       <div className="grid items-start gap-5 lg:grid-cols-[22rem_1fr]">
         <div className="grid gap-5">
-          <form className="grid gap-3 rounded-xl border bg-white p-5" onSubmit={prepare}>
-            <h2 className="text-lg font-semibold">新建投递活动</h2>
-            <label className="grid gap-1 text-sm font-medium">
-              类型
-              <select className={input} value={mode} onChange={(event) =>
-                setMode(event.target.value === "draft" ? "draft" : "template")}>
-                <option value="template">B 类 · 批量模板</option>
-                <option value="draft">A 类 · 定制草稿</option>
-              </select>
-            </label>
-            <InputField name="name" title="活动名称" required />
-            {mode === "template" ? (
-              <InputField name="export_id" title="Umail 导出批次 ID" defaultValue={initialExport} required />
-            ) : (
-              <div className="grid gap-3">
-                <InputField name="outreach_id" title="草稿所属 Outreach ID" defaultValue={initialOutreach} required />
-                <label className="grid gap-1 text-sm font-medium">
-                  草稿版本
-                  <input className={input} name="version" type="number" min="1" defaultValue={initialVersion} required />
-                </label>
-                <label className="grid gap-1 text-sm font-medium">
-                  收件人邮箱
-                  <input className={input} name="recipient" type="email" required />
-                </label>
-              </div>
-            )}
-            <InputField name="subject" title={mode === "template" ? "邮件主题" : "编辑主题（可选）"}
-              required={mode === "template"} />
-            <label className="grid gap-1 text-sm font-medium">
-              {mode === "template" ? "邮件正文" : "编辑正文（可选）"}
-              <textarea className={input} name="body" rows={5} maxLength={20000} required={mode === "template"} />
-            </label>
-            {mode === "template" && (
-              <p className="text-xs text-slate-600">变量 { "{first_name}、{company}、{job_title}" }</p>
-            )}
-            <Button type="submit" disabled={busy || !configured?.sender}>生成预览</Button>
-          </form>
+          {configured?.can_create && (
+            <form className="grid gap-3 rounded-xl border bg-white p-5" onSubmit={prepare}>
+              <h2 className="text-lg font-semibold">新建投递活动</h2>
+              <label className="grid gap-1 text-sm font-medium">
+                类型
+                <select className={input} value={mode} onChange={(event) =>
+                  setMode(event.target.value === "draft" ? "draft" : "template")}>
+                  <option value="template">B 类 · 批量模板</option>
+                  <option value="draft">A 类 · 定制草稿</option>
+                </select>
+              </label>
+              <InputField name="name" title="活动名称" required />
+              {mode === "template" ? (
+                <InputField name="export_id" title="Umail 导出批次 ID" defaultValue={initialExport} required />
+              ) : (
+                <div className="grid gap-3">
+                  <InputField name="outreach_id" title="草稿所属 Outreach ID" defaultValue={initialOutreach} required />
+                  <label className="grid gap-1 text-sm font-medium">
+                    草稿版本
+                    <input className={input} name="version" type="number" min="1" defaultValue={initialVersion} required />
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium">
+                    收件人邮箱
+                    <input className={input} name="recipient" type="email" required />
+                  </label>
+                </div>
+              )}
+              <InputField name="subject" title={mode === "template" ? "邮件主题" : "编辑主题（可选）"}
+                required={mode === "template"} />
+              <label className="grid gap-1 text-sm font-medium">
+                {mode === "template" ? "邮件正文" : "编辑正文（可选）"}
+                <textarea className={input} name="body" rows={5} maxLength={20000} required={mode === "template"} />
+              </label>
+              {mode === "template" && (
+                <p className="text-xs text-slate-600">变量 { "{first_name}、{company}、{job_title}" }</p>
+              )}
+              <Button type="submit" disabled={busy || !configured?.sender}>生成预览</Button>
+            </form>
+          )}
 
           <section className="grid gap-2 rounded-xl border bg-white p-5">
             <h2 className="text-lg font-semibold">投递活动</h2>
@@ -223,33 +226,46 @@ export function MailCampaignWorkspace({
                 onClick={() => void run(() => select(selected.id, offset))}>刷新</Button>
             </div>
             <div className="flex flex-wrap gap-2">{numbers(selected.counts)}{numbers(selected.feedback)}</div>
-            {selected.status !== "cancelled" && (
+            {configured?.can_approve && (
+              <Link className="text-sm text-teal-800 underline"
+                href={`/api/v1/mail-campaigns/${selected.id}/audit`}>
+                查看活动操作记录
+              </Link>
+            )}
+            {selected.status !== "cancelled" && (configured?.can_approve || configured?.can_manage) && (
               <div className="grid gap-2 border-b pb-4">
-                <label className="grid max-w-xs gap-1 text-sm font-medium">
-                  操作人
-                  <input className={input} value={actor} maxLength={160} onChange={(event) => setActor(event.target.value)} />
-                </label>
-                {selected.status === "draft" && (
+                {configured.operator_name ? (
+                  <p className="text-sm">当前操作人 {configured.operator_name}</p>
+                ) : (
+                  <label className="grid max-w-xs gap-1 text-sm font-medium">
+                    操作署名
+                    <input className={input} value={actor} maxLength={160}
+                      onChange={(event) => setActor(event.target.value)} />
+                  </label>
+                )}
+                {selected.status === "draft" && configured.can_approve && (
                   <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
                     已核对收件人和正文，批准投递此活动
                   </label>
                 )}
                 <div className="flex flex-wrap gap-2">
-                  {selected.status === "draft" && (
-                    <Button disabled={busy || !actor.trim() || !confirmed || !configured?.send_ready}
+                  {selected.status === "draft" && configured.can_approve && (
+                    <Button disabled={busy || !hasActor || !confirmed || !configured.send_ready}
                       onClick={() => act("approve")}>审批并加入投递队列</Button>
                   )}
-                  {selected.status === "active" && (
-                    <Button disabled={busy || !actor.trim()} onClick={() => act("pause")}>暂停</Button>
+                  {selected.status === "active" && configured.can_pause && (
+                    <Button disabled={busy || !hasActor} onClick={() => act("pause")}>暂停</Button>
                   )}
-                  {selected.status === "paused" && (
-                    <Button disabled={busy || !actor.trim() || !configured?.send_ready}
+                  {selected.status === "paused" && configured.can_manage && (
+                    <Button disabled={busy || !hasActor || !configured.send_ready}
                       onClick={() => act("resume")}>恢复</Button>
                   )}
-                  <Button variant="outline" disabled={busy || !actor.trim()} onClick={() => {
-                    if (window.confirm("取消后将停止领取剩余邮件，已领取的邮件仍可能送出。")) act("cancel");
-                  }}>取消活动</Button>
+                  {configured.can_manage && (
+                    <Button variant="outline" disabled={busy || !hasActor} onClick={() => {
+                      if (window.confirm("取消后将停止领取剩余邮件，已领取的邮件仍可能送出。")) act("cancel");
+                    }}>取消活动</Button>
+                  )}
                 </div>
               </div>
             )}

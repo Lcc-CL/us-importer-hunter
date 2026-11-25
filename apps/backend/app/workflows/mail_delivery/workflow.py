@@ -20,6 +20,7 @@ from app.domain.mail_delivery import (
     MailSender,
     MailSource,
 )
+from app.domain.operator import AuditActor
 from app.domain.values import EmailAddress
 from app.shared.exceptions import ApplicationConflictError, InvalidInputError
 
@@ -131,9 +132,18 @@ class MailCampaignWorkflow:
         self.commit = commit
         self.repository = repository
         self.sender = configured_sender(settings)
-        self.send_ready = self.sender is not None and transport_configured(settings)
+        self.requires_verified_actor = (
+            settings.app_env == "production" or settings.operator_identity_mode == "oidc"
+        )
+        self.send_ready = (
+            self.sender is not None
+            and transport_configured(settings)
+            and (settings.app_env != "production" or settings.operator_identity_mode == "oidc")
+        )
 
-    async def prepare(self, request: CampaignRequest) -> CampaignSummary:
+    async def prepare(
+        self, request: CampaignRequest, actor: AuditActor | None = None,
+    ) -> CampaignSummary:
         sender = self.sender
         if sender is None:
             raise ApplicationConflictError(
@@ -150,6 +160,7 @@ class MailCampaignWorkflow:
                 sender_fingerprint(sender),
                 sender.address,
                 contents,
+                actor,
             )
             previous = await self.repository.request_hash(request.id)
         if previous != request_hash:
@@ -213,8 +224,12 @@ class MailCampaignWorkflow:
         self,
         campaign_id: UUID,
         action: MailAction,
-        actor: str,
+        actor: AuditActor,
     ) -> CampaignSummary:
+        if action in ("approve", "resume") and self.requires_verified_actor and not actor.verified:
+            raise ApplicationConflictError(
+                "A verified staff login is required to activate delivery"
+            )
         sender_hash = (
             sender_fingerprint(self.sender) if self.send_ready and self.sender is not None else None
         )

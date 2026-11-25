@@ -42,6 +42,10 @@ class MailWorker:
             mail = await MailDeliveryRepository(session).claim(
                 self.sender_hash,
                 self.settings.mail_rate_per_second,
+                require_verified_approval=(
+                    self.settings.app_env == "production"
+                    or self.settings.operator_identity_mode == "oidc"
+                ),
             )
         if mail is None:
             return False
@@ -97,6 +101,12 @@ async def run(*, check: bool = False) -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
     sender = configured_sender(settings)
+    if (
+        settings.mail_send_enabled
+        and settings.app_env == "production"
+        and settings.operator_identity_mode != "oidc"
+    ):
+        raise RuntimeError("Production mail delivery requires OIDC operator identity")
     if settings.mail_send_enabled and (sender is None or not transport_configured(settings)):
         raise RuntimeError(
             "Mail delivery is enabled but sender or SMTP configuration is incomplete"

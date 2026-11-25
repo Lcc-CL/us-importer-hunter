@@ -38,6 +38,7 @@ from app.database.models.import_resolution import (
     ImportResolutionModel,
 )
 from app.database.models.mail_delivery import (
+    MailCampaignAuditModel,
     MailCampaignModel,
     MailDeliveryModel,
     MailFeedbackModel,
@@ -77,6 +78,7 @@ from app.database.models.umail_feedback import (
 )
 
 __all__ = [
+    "MailCampaignAuditModel",
     "MailCampaignModel",
     "MailDeliveryModel",
     "MailFeedbackModel",

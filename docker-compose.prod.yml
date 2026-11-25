@@ -13,6 +13,7 @@
 # No secrets live in this file; they come from the env file.
 
 x-mail-environment: &mail-environment
+  OPERATOR_IDENTITY_MODE: ${OPERATOR_IDENTITY_MODE:-legacy}
   MAIL_SEND_ENABLED: ${MAIL_SEND_ENABLED:-false}
   MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
   MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
@@ -34,6 +35,10 @@ services:
     environment:
       <<: *mail-environment
       MAIL_FEEDBACK_SECRET: ${MAIL_FEEDBACK_SECRET:-}
+      OPERATOR_OIDC_ISSUER: ${OPERATOR_OIDC_ISSUER:-}
+      OPERATOR_OIDC_AUDIENCE: ${OPERATOR_OIDC_AUDIENCE:-}
+      OPERATOR_OIDC_JWKS_URL: ${OPERATOR_OIDC_JWKS_URL:-}
+      OPERATOR_ROLE_GROUPS:
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-}
       REDIS_URL: ${REDIS_URL:-}
@@ -131,7 +136,9 @@ services:
         NEXT_PUBLIC_ENABLE_RESEARCH: ${NEXT_PUBLIC_ENABLE_RESEARCH:-false}
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
-      FRONTEND_ACCESS_PASSWORD: ${FRONTEND_ACCESS_PASSWORD:?set FRONTEND_ACCESS_PASSWORD in the env file}
+      FRONTEND_ACCESS_PASSWORD: ${FRONTEND_ACCESS_PASSWORD:-}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-}
+      OPERATOR_IDENTITY_MODE: ${OPERATOR_IDENTITY_MODE:-legacy}
     ports:
       - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -145,7 +152,9 @@ services:
         - node
         - -e
         - >-
-          fetch("http://127.0.0.1:3000/", {headers: {authorization: "Basic " +
+          const oidc = process.env.OPERATOR_IDENTITY_MODE === "oidc";
+          fetch("http://127.0.0.1:3000" + (oidc ? "/favicon.ico" : "/"), oidc ? {} :
+          {headers: {authorization: "Basic " +
           Buffer.from(":" + process.env.FRONTEND_ACCESS_PASSWORD).toString("base64")}})
           .then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))
       interval: 15s

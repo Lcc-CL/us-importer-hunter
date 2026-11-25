@@ -7,9 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_error_handlers
+from app.api.operator_identity import authenticate_operator
 from app.api.request_id import RequestIdMiddleware
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
+from app.core.operator_identity import OperatorIdentityVerifier
 from app.core.redis import create_redis_client
 from app.database.session import create_engine, create_session_factory
 from app.observability.logging import configure_logging
@@ -46,6 +48,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    if settings.operator_identity_mode == "oidc":
+        app.state.operator_verifier = OperatorIdentityVerifier(settings)
+    app.middleware("http")(authenticate_operator)
     app.add_middleware(RequestIdMiddleware)
 
     app.add_middleware(

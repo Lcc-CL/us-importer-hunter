@@ -315,6 +315,20 @@ workflows:
       - { id: persist_run, aggregate: research_run }
     status: implemented
 
+  mail_delivery:
+    package: app.workflows.mail_delivery
+    description: >-
+      Freeze rendered recipients and messages from eligible prospect exports
+      or draft versions. Campaign state changes and operator audit events commit
+      together. Production dispatch requires verified OIDC campaign approval.
+    steps:
+      - { id: prepare, roles: [sales, admin], creates: immutable_mail_snapshot }
+      - { id: approve, roles: [approver, admin], requires: verified_operator_in_production }
+      - { id: pause, roles: [approver, admin] }
+      - { id: resume_or_cancel, roles: [admin] }
+      - { id: claim_and_deliver, execution: postgresql_worker }
+    status: implemented
+
   email:
     package: app.workflows.email
     description: >

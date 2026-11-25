@@ -115,6 +115,16 @@ class Settings(BaseSettings):
     import_job_retry_delay_seconds: int = 5
     import_job_max_attempts: int = 3
 
+    # The OIDC gateway vouches for the browser session. FastAPI verifies the
+    # signed token independently and maps trusted group claims to operator roles.
+    operator_identity_mode: Literal["legacy", "oidc"] = "legacy"
+    operator_oidc_issuer: str = ""
+    operator_oidc_audience: str = ""
+    operator_oidc_jwks_url: str = ""
+    operator_role_groups: dict[Literal["sales", "approver", "admin"], list[str]] = Field(
+        default_factory=dict,
+    )
+
     # Delivery is independent of the LLM draft provider.
     mail_send_enabled: bool = False
     mail_from_address: str = ""

@@ -17,6 +17,10 @@ class MailCampaignModel(Base):
             name="ck_mail_campaign_status",
         ),
         Index("ix_mail_campaign_created", "created_at", "id"),
+        CheckConstraint(
+            "(approved_issuer IS NULL) = (approved_subject IS NULL)",
+            name="ck_mail_campaign_approved_identity",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -28,6 +32,33 @@ class MailCampaignModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by: Mapped[str | None] = mapped_column(String(160))
+    approved_issuer: Mapped[str | None] = mapped_column(Text)
+    approved_subject: Mapped[str | None] = mapped_column(String(255))
+
+
+class MailCampaignAuditModel(Base):
+    __tablename__ = "mail_campaign_audit"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('create', 'approve', 'pause', 'resume', 'cancel')",
+            name="ck_mail_campaign_audit_action",
+        ),
+        CheckConstraint(
+            "(actor_issuer IS NULL) = (actor_subject IS NULL)",
+            name="ck_mail_campaign_audit_identity",
+        ),
+        Index("ix_mail_campaign_audit_page", "campaign_id", "occurred_at", "id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    campaign_id: Mapped[UUID] = mapped_column(ForeignKey("mail_campaigns.id", ondelete="RESTRICT"))
+    action: Mapped[str] = mapped_column(String(16))
+    actor_name: Mapped[str] = mapped_column(String(160))
+    actor_issuer: Mapped[str | None] = mapped_column(Text)
+    actor_subject: Mapped[str | None] = mapped_column(String(255))
+    from_status: Mapped[str | None] = mapped_column(String(16))
+    to_status: Mapped[str] = mapped_column(String(16))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class MailDeliveryModel(Base):

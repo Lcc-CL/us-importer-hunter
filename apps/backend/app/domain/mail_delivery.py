@@ -1,8 +1,11 @@
 """Values shared by the delivery workflow, queue and transport."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Protocol
 from uuid import UUID
+
+from app.domain.operator import AuditActor
 
 DeliveryOutcome = Literal["accepted", "retry", "failed", "unknown"]
 FeedbackKind = Literal["delivered", "hard_bounced", "unsubscribed", "complained"]
@@ -83,6 +86,18 @@ class MailPreview:
     result_code: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class CampaignAuditEvent:
+    id: UUID
+    action: str
+    actor_name: str
+    actor_issuer: str | None
+    actor_subject: str | None
+    from_status: str | None
+    to_status: str
+    occurred_at: datetime
+
+
 class MailCampaignStore(Protocol):
     async def template_sources(self, batch_id: UUID) -> list[MailSource]: ...
 
@@ -98,6 +113,7 @@ class MailCampaignStore(Protocol):
         sender_hash: str,
         sender_address: str,
         contents: list[MailContent],
+        actor: AuditActor | None = None,
     ) -> None: ...
 
     async def summary(self, campaign_id: UUID) -> CampaignSummary: ...
@@ -106,6 +122,6 @@ class MailCampaignStore(Protocol):
         self,
         campaign_id: UUID,
         action: str,
-        actor: str,
+        actor: AuditActor,
         sender_hash: str | None,
     ) -> None: ...

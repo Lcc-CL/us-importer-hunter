@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Resp
 from fastapi.responses import HTMLResponse
 
 from app.api.deps import DbSessionDep, SettingsDep
+from app.api.operator_identity import get_operator, require_operator_roles
 from app.database.repositories.mail_delivery import MailDeliveryRepository
-from app.domain.mail_delivery import CampaignSummary, MailPreview
+from app.domain.mail_delivery import CampaignAuditEvent, CampaignSummary, MailPreview
+from app.domain.operator import AuditActor, Operator
 from app.schemas.mail_delivery import (
     MailCampaignAction,
     MailDraftCampaign,
@@ -22,6 +24,7 @@ from app.workflows.mail_delivery.workflow import CampaignRequest, MailCampaignWo
 router = APIRouter(tags=["mail-delivery"])
 Offset = Annotated[int, Query(ge=0)]
 Limit = Annotated[int, Query(ge=1, le=50)]
+OperatorDep = Annotated[Operator | None, Depends(get_operator)]
 
 
 def get_campaign_workflow(session: DbSessionDep, settings: SettingsDep) -> MailCampaignWorkflow:
@@ -32,10 +35,19 @@ CampaignWorkflowDep = Annotated[MailCampaignWorkflow, Depends(get_campaign_workf
 
 
 @router.get("/mail-campaigns/config")
-async def config(workflow: CampaignWorkflowDep) -> dict[str, str | bool | None]:
+async def config(
+    workflow: CampaignWorkflowDep,
+    operator: OperatorDep,
+) -> dict[str, str | bool | None]:
+    roles = operator.roles if operator is not None else {"sales", "approver", "admin"}
     return {
         "sender": workflow.sender.address if workflow.sender else None,
         "send_ready": workflow.send_ready,
+        "operator_name": operator.name if operator else None,
+        "can_create": bool(roles.intersection({"sales", "admin"})),
+        "can_approve": bool(roles.intersection({"approver", "admin"})),
+        "can_pause": bool(roles.intersection({"approver", "admin"})),
+        "can_manage": "admin" in roles,
     }
 
 
@@ -43,7 +55,9 @@ async def config(workflow: CampaignWorkflowDep) -> dict[str, str | bool | None]:
 async def template_campaign(
     payload: MailTemplateCampaign,
     workflow: CampaignWorkflowDep,
+    operator: OperatorDep,
 ) -> CampaignSummary:
+    require_operator_roles(operator, "sales", "admin")
     return await workflow.prepare(
         CampaignRequest(
             id=payload.id,
@@ -54,7 +68,8 @@ async def template_campaign(
             recipient=None,
             subject=payload.subject,
             body=payload.body,
-        )
+        ),
+        operator.audit_actor() if operator else AuditActor("Unverified operator"),
     )
 
 
@@ -62,7 +77,9 @@ async def template_campaign(
 async def draft_campaign(
     payload: MailDraftCampaign,
     workflow: CampaignWorkflowDep,
+    operator: OperatorDep,
 ) -> CampaignSummary:
+    require_operator_roles(operator, "sales", "admin")
     return await workflow.prepare(
         CampaignRequest(
             id=payload.id,
@@ -73,7 +90,8 @@ async def draft_campaign(
             recipient=payload.recipient,
             subject=payload.subject,
             body=payload.body,
-        )
+        ),
+        operator.audit_actor() if operator else AuditActor("Unverified operator"),
     )
 
 
@@ -101,17 +119,33 @@ async def messages(
     return await MailDeliveryRepository(session).preview(campaign_id, offset, limit)
 
 
+@router.get("/mail-campaigns/{campaign_id}/audit")
+async def campaign_audit(
+    campaign_id: UUID,
+    session: DbSessionDep,
+    operator: OperatorDep,
+    offset: Offset = 0,
+    limit: Limit = 20,
+) -> list[CampaignAuditEvent]:
+    require_operator_roles(operator, "approver", "admin")
+    return await MailDeliveryRepository(session).audit_events(campaign_id, offset, limit)
+
+
 @router.post("/mail-campaigns/{campaign_id}/actions")
 async def campaign_action(
     campaign_id: UUID,
     payload: MailCampaignAction,
     workflow: CampaignWorkflowDep,
+    operator: OperatorDep,
 ) -> CampaignSummary:
-    return await workflow.change(
-        campaign_id,
-        payload.action,
-        payload.actor,
+    if payload.action in ("approve", "pause"):
+        require_operator_roles(operator, "approver", "admin")
+    else:
+        require_operator_roles(operator, "admin")
+    actor = (
+        operator.audit_actor() if operator else AuditActor(payload.actor or "Unverified operator")
     )
+    return await workflow.change(campaign_id, payload.action, actor)
 
 
 @router.post("/mail-feedback", status_code=204)

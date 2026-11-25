@@ -33,6 +33,16 @@ function passwordFromBasicAuth(header: string | null): string | null {
 
 export function proxy(request: NextRequest): NextResponse | undefined {
   if (isPublicMailRoute(request.nextUrl.pathname, request.method)) return undefined;
+  if (process.env.OPERATOR_IDENTITY_MODE === "oidc") {
+    const authorization = request.headers.get("authorization");
+    if (!authorization || !/^Bearer [^\s]+$/i.test(authorization)) {
+      return NextResponse.json(
+        { code: "operator_login_required", message: "A staff login is required." },
+        { status: 401 },
+      );
+    }
+    return undefined;
+  }
   const expected = process.env.FRONTEND_ACCESS_PASSWORD ?? "";
   if (!expected) {
     if (process.env.NODE_ENV !== "production") return undefined;

@@ -95,6 +95,18 @@ async function proxy(
   if (contentType) headers.set("content-type", contentType);
   const requestId = request.headers.get("x-request-id");
   if (requestId) headers.set("x-request-id", requestId);
+  if (!publicMail && process.env.OPERATOR_IDENTITY_MODE === "oidc") {
+    const origin = request.headers.get("origin");
+    const expectedOrigin = (process.env.FRONTEND_ORIGIN ?? "").replace(/\/$/, "");
+    if (request.method !== "GET" && request.method !== "HEAD" && origin && origin !== expectedOrigin) {
+      return NextResponse.json(
+        { code: "operator_origin_denied", message: "Request origin is not permitted." },
+        { status: 403 },
+      );
+    }
+    const token = request.headers.get("authorization");
+    if (token) headers.set("authorization", token);
+  }
   if (publicMail && prefix === "mail-feedback") {
     const key = request.headers.get("x-mail-feedback-key");
     if (key) headers.set("x-mail-feedback-key", key);

@@ -17,6 +17,7 @@ from app.database.repositories.mail_delivery import MailDeliveryRepository
 from app.database.uow import SqlAlchemyUnitOfWork
 from app.domain.clock import utcnow
 from app.domain.mail_delivery import ClaimedMail, MailContent, MailResult, MailSender
+from app.domain.operator import AuditActor
 from app.main import create_app
 from app.services.email import FakeEmailDraftGenerator
 from app.tasks.mail_delivery_worker import MailWorker
@@ -182,7 +183,7 @@ async def test_concurrent_workers_rate_dedup_retry_and_recovery(mail_engine: Asy
         async with sessions.begin() as session:
             repo = MailDeliveryRepository(session)
             await repo.create(id_, "Queue test", "x", fingerprint, sender.address, rows)
-            await repo.transition(id_, "approve", "Operator", fingerprint)
+            await repo.transition(id_, "approve", AuditActor("Operator"), fingerprint)
 
     data = [
         MailContent(
@@ -196,7 +197,9 @@ async def test_concurrent_workers_rate_dedup_retry_and_recovery(mail_engine: Asy
     ]
     await seed(campaign_id, data)
     async with sessions.begin() as session:
-        await MailDeliveryRepository(session).transition(campaign_id, "pause", "Operator", None)
+        await MailDeliveryRepository(session).transition(
+            campaign_id, "pause", AuditActor("Operator"), None
+        )
 
     transport = RecordingTransport()
     workers = [MailWorker(sessions, settings, transport, sender) for _ in range(2)]
@@ -205,7 +208,7 @@ async def test_concurrent_workers_rate_dedup_retry_and_recovery(mail_engine: Asy
         await MailDeliveryRepository(session).transition(
             campaign_id,
             "resume",
-            "Operator",
+            AuditActor("Operator"),
             fingerprint,
         )
 
@@ -274,3 +277,120 @@ async def test_concurrent_workers_rate_dedup_retry_and_recovery(mail_engine: Asy
             select(MailDeliveryModel.status).where(MailDeliveryModel.id == claimed.id)
         )
         assert status == "unknown"
+
+
+async def test_verified_roles_and_immutable_campaign_audit(mail_engine: AsyncEngine) -> None:
+    from tests.api.test_operator_identity import TestIssuer
+
+    sessions = async_sessionmaker(mail_engine, expire_on_commit=False)
+    settings = configured_settings()
+    settings.app_env = "production"
+    issuer = TestIssuer()
+    verifier = issuer.configure(settings)
+    app = create_app(settings)
+    app.state.operator_verifier = verifier
+    app.state.session_factory = sessions
+
+    def uow() -> SqlAlchemyUnitOfWork:
+        return SqlAlchemyUnitOfWork(sessions)
+
+    opportunity, contact_id = await seed_chain(uow)
+    draft = await EmailDraftGenerationWorkflow(
+        uow_factory=uow,
+        generator=FakeEmailDraftGenerator(),
+    ).handle(opportunity_id=opportunity.id, contact_id=contact_id, sender=SENDER)
+    assert draft.outreach_id is not None
+
+    campaign_id = uuid4()
+    payload = {
+        "id": str(campaign_id),
+        "name": "Approved activity",
+        "outreach_id": str(draft.outreach_id),
+        "draft_version": 1,
+        "recipient": "maria@phg.com",
+    }
+    root = f"/api/v1/mail-campaigns/{campaign_id}"
+    seller = issuer.headers("sales", "seller")
+    approver = issuer.headers("approver", "reviewer")
+    admin = issuer.headers("admin", "owner")
+    sender = configured_sender(settings)
+    assert sender is not None
+    transport = RecordingTransport()
+    worker = MailWorker(sessions, settings, transport, sender)
+    async with sessions.begin() as session:
+        old_id = uuid4()
+        repo = MailDeliveryRepository(session)
+        fingerprint = sender_fingerprint(sender)
+        await repo.create(
+            old_id,
+            "Previously active",
+            "old",
+            fingerprint,
+            sender.address,
+            [MailContent("test:old", opportunity.company_id, "old@example.com", "Old", "Old")],
+        )
+        await repo.transition(old_id, "approve", AuditActor("Shared passcode"), fingerprint)
+    assert not await worker.run_once()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
+        config = await client.get("/api/v1/mail-campaigns/config", headers=seller)
+        assert config.json()["can_create"] is True
+        assert config.json()["can_approve"] is False
+        create = "/api/v1/mail-campaigns/draft"
+        assert (await client.post(create, json=payload, headers=approver)).status_code == 403
+        for _ in range(2):
+            response = await client.post(create, json=payload, headers=seller)
+            assert response.status_code == 201, response.text
+
+        approve = {"action": "approve", "actor": "Forged approval name"}
+        denied = await client.post(f"{root}/actions", json=approve, headers=seller)
+        assert denied.status_code == 403
+        approved = await client.post(f"{root}/actions", json=approve, headers=approver)
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["approved_by"] == "Operator reviewer"
+        assert await worker.run_once()
+        assert len(transport.transmissions) == 1
+        assert transport.transmissions[0].recipient == "maria@phg.com"
+
+        for action, headers in (
+            ("pause", approver),
+            ("resume", admin),
+            ("cancel", admin),
+            ("cancel", admin),
+        ):
+            response = await client.post(
+                f"{root}/actions", json={"action": action}, headers=headers
+            )
+            assert response.status_code == 200, response.text
+
+        assert (await client.get(f"{root}/audit", headers=seller)).status_code == 403
+        audit = await client.get(f"{root}/audit", headers=approver)
+        assert audit.status_code == 200, audit.text
+        records = audit.json()
+        assert [item["action"] for item in records] == [
+            "cancel",
+            "resume",
+            "pause",
+            "approve",
+            "create",
+        ]
+        assert [item["actor_subject"] for item in records] == [
+            "owner",
+            "owner",
+            "reviewer",
+            "reviewer",
+            "seller",
+        ]
+        assert all(item["actor_issuer"] == "https://login.example.test" for item in records)
+
+        await client.post(
+            f"/api/v1/mail-campaigns/{old_id}/actions",
+            json={"action": "pause"},
+            headers=admin,
+        )
+        old_resume = await client.post(
+            f"/api/v1/mail-campaigns/{old_id}/actions",
+            json={"action": "resume"},
+            headers=admin,
+        )
+        assert old_resume.status_code == 409
