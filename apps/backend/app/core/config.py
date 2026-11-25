@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, PostgresDsn, RedisDsn, computed_field
+from pydantic import AliasChoices, Field, PostgresDsn, RedisDsn, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -114,6 +114,24 @@ class Settings(BaseSettings):
     import_job_lease_ttl_seconds: int = 120
     import_job_retry_delay_seconds: int = 5
     import_job_max_attempts: int = 3
+
+    # Delivery is independent of the LLM draft provider.
+    mail_send_enabled: bool = False
+    mail_from_address: str = ""
+    mail_from_name: str = ""
+    mail_reply_to: str = ""
+    mail_postal_address: str = ""
+    mail_signature: str = ""
+    mail_public_origin: str = ""
+    mail_smtp_host: str = ""
+    mail_smtp_port: int = Field(587, ge=1, le=65535)
+    mail_smtp_tls: Literal["starttls", "implicit"] = "starttls"
+    mail_smtp_username: str = ""
+    mail_smtp_password: SecretStr = SecretStr("")
+    mail_feedback_secret: SecretStr = SecretStr("")
+    mail_worker_concurrency: int = Field(8, ge=1, le=32)
+    mail_rate_per_second: float = Field(2, ge=0.1, le=200)
+    mail_max_attempts: int = Field(3, ge=1, le=6)
 
     # Local-only acknowledgement before a user may persist real uploaded data.
     # Preflight remains available while this is false because it has no side effects.

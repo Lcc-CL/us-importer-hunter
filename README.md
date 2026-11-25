@@ -23,7 +23,8 @@ make frontend                 # Next.js dev server
 Open <http://localhost:3000> for the single-page MVP flow. Submit a company with
 real evidence sources, inspect the qualification and draft, approve it, then use
 **Refresh result** (or reload the `?company_id=...` URL) to verify persistence.
-The UI never sends email. Browser API access always uses same-origin
+Lead analysis generates reviewable drafts. The optional [mail delivery workspace](docs/deployment.md#开发信投递与横向扩容) can queue approved campaigns through a configured
+SMTP relay. Browser API access always uses same-origin
 `/api/v1/*`; the Next.js server reads `BACKEND_INTERNAL_URL` at runtime.
 
 ## Website research (v0.2.0 — Internal Beta)

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Download, Plus, ShieldX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -375,6 +377,10 @@ export function UmailExportPanel({
                 {batch.batch_id} · {batch.mapping_version}
               </p>
             </div>
+            <Link className="text-sm font-medium text-teal-800 underline"
+              href={{ pathname: "/mail-campaigns", query: { export_id: batch.batch_id } }}>
+              创建模板信投递
+            </Link>
             <button
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
               data-testid="umail-export-download"

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { MvpAnalysisPage } from "@/features/mvp-analysis";
 
 export default async function Home({
@@ -28,25 +30,32 @@ export default async function Home({
   const realData = params.real_data;
   const step = params.step;
   return (
-    <MvpAnalysisPage
-      initialCompanyId={typeof companyId === "string" ? companyId : undefined}
-      initialImportSessionId={
-        typeof importSessionId === "string" ? importSessionId : undefined
-      }
-      initialRoutingRunId={
-        typeof routingRunId === "string" ? routingRunId : undefined
-      }
-      initialBatchId={typeof batchId === "string" ? batchId : undefined}
-      initialResearchId={typeof researchId === "string" ? researchId : undefined}
-      initialTaskId={typeof taskId === "string" ? taskId : undefined}
-      initialUmailExportBatchId={
-        typeof umailExportBatchId === "string" ? umailExportBatchId : undefined
-      }
-      initialUmailResultImportId={
-        typeof umailResultImportId === "string" ? umailResultImportId : undefined
-      }
-      initialRealDataMode={realData === "1"}
-      initialStep={typeof step === "string" ? Number(step) : undefined}
-    />
+    <>
+      <nav className="mx-auto flex w-full max-w-6xl justify-end px-5 pt-4">
+        <Link className="text-sm font-medium text-teal-800 underline" href="/mail-campaigns">
+          开发信投递
+        </Link>
+      </nav>
+      <MvpAnalysisPage
+        initialCompanyId={typeof companyId === "string" ? companyId : undefined}
+        initialImportSessionId={
+          typeof importSessionId === "string" ? importSessionId : undefined
+        }
+        initialRoutingRunId={
+          typeof routingRunId === "string" ? routingRunId : undefined
+        }
+        initialBatchId={typeof batchId === "string" ? batchId : undefined}
+        initialResearchId={typeof researchId === "string" ? researchId : undefined}
+        initialTaskId={typeof taskId === "string" ? taskId : undefined}
+        initialUmailExportBatchId={
+          typeof umailExportBatchId === "string" ? umailExportBatchId : undefined
+        }
+        initialUmailResultImportId={
+          typeof umailResultImportId === "string" ? umailResultImportId : undefined
+        }
+        initialRealDataMode={realData === "1"}
+        initialStep={typeof step === "string" ? Number(step) : undefined}
+      />
+    </>
   );
 }

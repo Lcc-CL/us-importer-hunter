@@ -44,12 +44,19 @@ main() {
 
   echo "==> waiting for health (timeout ${timeout}s)"
   local deadline=$((SECONDS + timeout)) service cid status pending
+  local -a cids
   while :; do
     pending=""
-    for service in backend worker frontend; do
-      cid="$("${compose[@]}" ps -q "$service")"
-      status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || echo missing)"
-      [[ "$status" == "healthy" ]] || pending+=" $service=$status"
+    for service in backend worker mail-worker frontend; do
+      mapfile -t cids < <("${compose[@]}" ps -q "$service")
+      if (( ${#cids[@]} == 0 )); then
+        pending+=" $service=missing"
+        continue
+      fi
+      for cid in "${cids[@]}"; do
+        status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || echo missing)"
+        [[ "$status" == "healthy" ]] || pending+=" $service=${status}"
+      done
     done
     [[ -z "$pending" ]] && break
     if (( SECONDS >= deadline )); then

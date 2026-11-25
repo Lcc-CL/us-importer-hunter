@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useState } from "react";
 import { Check, Clipboard, FileText, LoaderCircle, ShieldAlert } from "lucide-react";
 
@@ -136,6 +137,13 @@ export function EmailDraftCard({
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-600">
             {t("draft.empty")}
           </div>
+        )}
+
+        {outreachId && version && subject && body && status !== "rejected" && (
+          <Link className="mt-4 inline-block text-sm font-medium text-teal-800 underline"
+            href={{ pathname: "/mail-campaigns", query: { outreach_id: outreachId, version } }}>
+            创建定制信投递
+          </Link>
         )}
 
         {approvedAt && approvedBy ? (

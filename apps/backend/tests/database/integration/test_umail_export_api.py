@@ -4,6 +4,7 @@ import csv
 import io
 import json
 from typing import cast
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, update
 
@@ -11,7 +12,10 @@ from app.database.models.contact import ContactChannelModel, ContactModel
 from app.database.models.import_resolution import CompanyContactModel
 from app.database.models.outreach import OutcomeModel, OutreachModel
 from app.database.models.umail_export import UmailExportBatchModel, UmailExportRowModel
+from app.database.repositories.mail_delivery import MailDeliveryRepository
+from app.workflows.mail_delivery.workflow import CampaignRequest, MailCampaignWorkflow
 from tests.database.integration.conftest import UowFactory
+from tests.database.integration.test_mail_delivery import configured_settings
 from tests.database.integration.test_prospect_routing_api import (
     make_client,
     make_runner,
@@ -199,6 +203,25 @@ async def test_b_export_preview_suppression_download_and_no_send(
             assert int(
                 await session.scalar(select(func.count()).select_from(UmailExportRowModel)) or 0
             ) == 4
+            mail_campaign_id = uuid4()
+            campaign = await MailCampaignWorkflow(
+                MailDeliveryRepository(session), session.commit, configured_settings()
+            ).prepare(
+                CampaignRequest(
+                    id=mail_campaign_id,
+                    name="B outreach",
+                    export_id=UUID(payload["batch_id"]),
+                    outreach_id=None,
+                    draft_version=None,
+                    recipient=None,
+                    subject="Logistics for {company}",
+                    body="Hi {first_name}",
+                )
+            )
+            assert campaign.counts == {"pending": 1}
+            previews = await MailDeliveryRepository(session).preview(mail_campaign_id, 0, 20)
+            assert [item.recipient for item in previews] == [ready_email]
+            assert previews[0].body.startswith("Hi Alice\n")
             persisted_ready_rows = list(
                 await session.scalars(
                     select(UmailExportRowModel)

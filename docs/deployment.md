@@ -144,3 +144,51 @@ PostgreSQL 16 与 Redis 7）：
 3. 未带口令访问 `https://<前端地址>/api/v1/health/runtime` 应返回 401；
    带口令访问应返回 JSON 且**不含**任何密钥；`/api/v1/research/...` 应返回
    404；backend 没有可从公网访问的地址。
+
+## 开发信投递与横向扩容
+
+投递由独立的 `mail-worker` 执行。Compose 默认启动一个实例，其他容器平台可用 backend
+的 `prod` 镜像另建无公网端口的服务，启动命令为
+`uv run --no-dev python -m app.tasks.mail_delivery_worker`。它与 Backend 共用同一个
+PostgreSQL。部署脚本会先迁移，再等待每个服务和投递实例通过健康检查。健康检查覆盖
+数据库和投递配置，不连接真实 SMTP。
+
+### 分环境配置
+
+- 测试与生产各用自己的域名、Compose 项目、数据库、邮箱及凭据。用
+  `COMPOSE_PROJECT_NAME` 和 `ENV_FILE` 指定项目和环境文件。同一台主机上的环境应
+  使用不同 `FRONTEND_PORT`。测试优先使用可验证 TLS 的测试中继与自有收件箱。
+- 确认现有数据库的备份能恢复、迁移能通过、历史导入和草稿能读取，再切换生产入口。
+  回滚前暂停投递并确认新旧版本的数据库兼容性。降级迁移会删除新增的投递记录和活动，
+  先备份并优先使用兼容数据库的代码回退。
+- Backend 与 mail-worker 使用相同的 `MAIL_FROM_*`、`MAIL_REPLY_TO`、
+  `MAIL_SIGNATURE`、`MAIL_POSTAL_ADDRESS`、`MAIL_PUBLIC_ORIGIN` 和 SMTP 配置。
+  `MAIL_PUBLIC_ORIGIN` 是收件人可访问的 HTTPS 域名，迁移域名时应保留旧退订地址。
+  SMTP 支持 STARTTLS 和隐式 TLS，要求验证服务端证书。启用前验证发件域、SPF、
+  DKIM、DMARC 和服务商对该类业务邮件的许可。
+- 默认 `MAIL_SEND_ENABLED=false`。在工作台生成活动和审核预览时，可保持投递关闭。
+  启用后，操作人打开「开发信投递」，检查最终快照并显式审批。部署访问口令适用于
+  单团队试点，审批人是用户填写的署名。需要个人身份审计时，在开放给多团队前接入
+  SSO 和角色授权。
+
+### 投递、反馈与容量
+
+- B 类使用 Umail 导出批次的 ready 行，按 `{first_name}`、`{company}`、`{job_title}`
+  渲染模板。现有独立 Umail CSV 流程可继续用。同一批业务是否在外部 Umail 已发送，
+  需由操作人核对。A 类绑定现有草稿版本和联系人邮箱，可编辑主题与正文后生成预览。
+- 每个活动最多 1,000 封。各 Worker 用 PostgreSQL `FOR UPDATE SKIP LOCKED` 领取单封，
+  提交后调用 SMTP。换机器或重试不会自动抢回结果不明的邮件。数据库按
+  `MAIL_RATE_PER_SECOND` 为所有实例分配发送起始时隙，同一数据库的所有实例配置同一速率。
+  用 `MAIL_WORKER_REPLICAS` 增加实例，用 `MAIL_WORKER_CONCURRENCY` 控制单实例并行数。
+  测试环境逐步提高限制，按数据库延迟、连接数、SMTP 延迟、服务商配额和退信率定生产吞吐。
+- 暂停或取消阻止新领取，已经领取的邮件可能送出。系统在每次领取时检查邮箱、域名和
+  公司抑制。明确的临时拒绝会有限次退避重试。连接中断后无法判断是否已接收的邮件，
+  或 Worker 领取后失联的邮件，进入「待核对」。以 SMTP 日志和邮件的 Message-ID 核对。
+  工作台的「服务商已接受」表示 SMTP 已确认接收，送达确认取决于反馈。
+- 邮件附带一键退订和确认页面。GET 只展示页面，POST 写入现有邮箱抑制表。SMTP 中继的
+  投递事件需由服务商适配器转换，POST 到 `/api/v1/mail-feedback`，通过
+  `X-Mail-Feedback-Key` 提供 `MAIL_FEEDBACK_SECRET`。请求为
+  `{"event_id":"provider-id","delivery_id":"UUID","kind":"delivered"}`，也接受
+  `hard_bounced`、`unsubscribed`、`complained`。以邮件 Message-ID 中的 UUID
+  关联投递，保持稳定的事件 ID 以幂等重试。硬退信、退订、投诉会加入抑制名单。
+  服务商原生回调和签名应在适配器校验后再转发。

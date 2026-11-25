@@ -9,6 +9,7 @@ from app.api.routes import (
     health,
     import_evidence,
     import_resolution,
+    mail_delivery,
     mvp,
     prospect_batches,
     prospect_routing,
@@ -30,3 +31,4 @@ api_router.include_router(prospect_batches.router)
 api_router.include_router(prospect_routing.router)
 api_router.include_router(umail_export.router)
 api_router.include_router(umail_feedback.router)
+api_router.include_router(mail_delivery.router)

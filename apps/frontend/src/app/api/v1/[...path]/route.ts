@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { isPublicMailRoute } from "@/lib/mail-routes";
+
 const ALLOWED_PREFIXES = [
   "health",
   "acceptance",
@@ -13,6 +15,7 @@ const ALLOWED_PREFIXES = [
   "umail-result-imports",
   "discovery-tasks",
   "mvp",
+  "mail-campaigns",
   "companies",
 ] as const;
 
@@ -20,6 +23,9 @@ const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
   "content-disposition",
   "x-request-id",
+  "cache-control",
+  "content-security-policy",
+  "referrer-policy",
 ] as const;
 
 function getBackendBaseUrl(): string {
@@ -32,13 +38,39 @@ function getBackendBaseUrl(): string {
   return process.env.NODE_ENV === "production" ? "" : "http://localhost:8000";
 }
 
+// Public form and webhook payloads are small. Stop reading oversized bodies
+// even when the caller omits Content-Length or uses chunked encoding.
+async function readPublicMailBody(request: NextRequest): Promise<ArrayBuffer | null> {
+  const limit = 8192;
+  const buffer = new Uint8Array(limit);
+  const reader = request.body?.getReader();
+  if (!reader) return buffer.buffer.slice(0, 0);
+
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return buffer.buffer.slice(0, size);
+      if (size + value.byteLength > limit) {
+        await reader.cancel();
+        return null;
+      }
+      buffer.set(value, size);
+      size += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function proxy(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await context.params;
   const prefix = path[0] ?? "";
-  if (!ALLOWED_PREFIXES.some((allowed) => allowed === prefix)) {
+  const publicMail = isPublicMailRoute(request.nextUrl.pathname, request.method);
+  if (!publicMail && !ALLOWED_PREFIXES.some((allowed) => allowed === prefix)) {
     return NextResponse.json(
       { code: "frontend_proxy_path_blocked", message: "API path is not available." },
       { status: 404 },
@@ -63,14 +95,24 @@ async function proxy(
   if (contentType) headers.set("content-type", contentType);
   const requestId = request.headers.get("x-request-id");
   if (requestId) headers.set("x-request-id", requestId);
+  if (publicMail && prefix === "mail-feedback") {
+    const key = request.headers.get("x-mail-feedback-key");
+    if (key) headers.set("x-mail-feedback-key", key);
+  }
 
   try {
+    let body: ArrayBuffer | undefined;
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      const incoming = publicMail ? await readPublicMailBody(request) : await request.arrayBuffer();
+      if (incoming === null) {
+        return NextResponse.json({ message: "Request body is too large." }, { status: 413 });
+      }
+      body = incoming;
+    }
     const upstream = await fetch(target, {
       method: request.method,
       headers,
-      body: request.method === "GET" || request.method === "HEAD"
-        ? undefined
-        : await request.arrayBuffer(),
+      body,
       cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     });

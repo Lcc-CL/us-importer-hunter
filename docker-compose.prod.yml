@@ -12,16 +12,35 @@
 #
 # No secrets live in this file; they come from the env file.
 
+x-mail-environment: &mail-environment
+  MAIL_SEND_ENABLED: ${MAIL_SEND_ENABLED:-false}
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
+  MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+  MAIL_POSTAL_ADDRESS: ${MAIL_POSTAL_ADDRESS:-}
+  MAIL_SIGNATURE: ${MAIL_SIGNATURE:-}
+  MAIL_PUBLIC_ORIGIN: ${MAIL_PUBLIC_ORIGIN:-}
+  MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+  MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-587}
+  MAIL_SMTP_TLS: ${MAIL_SMTP_TLS:-starttls}
+  MAIL_SMTP_USERNAME: ${MAIL_SMTP_USERNAME:-}
+  MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+
 services:
   backend:
     build:
       context: ./apps/backend
       target: prod
     environment:
+      <<: *mail-environment
+      MAIL_FEEDBACK_SECRET: ${MAIL_FEEDBACK_SECRET:-}
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-}
       REDIS_URL: ${REDIS_URL:-}
       POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: ${POSTGRES_DB:-importer_hunter}
       REDIS_HOST: redis
       RESEARCH_EXTRACTOR_PROVIDER: ${RESEARCH_EXTRACTOR_PROVIDER:-deepseek}
       RESEARCH_MODEL: ${RESEARCH_MODEL:-}
@@ -52,6 +71,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       REDIS_URL: ${REDIS_URL:-}
       POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: ${POSTGRES_DB:-importer_hunter}
       REDIS_HOST: redis
       RESEARCH_EXTRACTOR_PROVIDER: ${RESEARCH_EXTRACTOR_PROVIDER:-deepseek}
       RESEARCH_MODEL: ${RESEARCH_MODEL:-}
@@ -70,6 +92,35 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
+
+  mail-worker:
+    build:
+      context: ./apps/backend
+      target: prod
+    command: ["uv", "run", "--no-dev", "python", "-m", "app.tasks.mail_delivery_worker"]
+    environment:
+      <<: *mail-environment
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: ${POSTGRES_DB:-importer_hunter}
+      MAIL_WORKER_CONCURRENCY: ${MAIL_WORKER_CONCURRENCY:-8}
+      MAIL_RATE_PER_SECOND: ${MAIL_RATE_PER_SECOND:-2}
+      MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-3}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    scale: ${MAIL_WORKER_REPLICAS:-1}
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-dev", "python", "-m", "app.tasks.mail_delivery_worker", "--check"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 2m
     restart: unless-stopped
 
   frontend:

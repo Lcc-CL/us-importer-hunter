@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { isPublicMailRoute } from "@/lib/mail-routes";
+
 /**
  * Access passcode for the whole frontend, including the /api/v1 proxy.
  *
@@ -30,6 +32,7 @@ function passwordFromBasicAuth(header: string | null): string | null {
 }
 
 export function proxy(request: NextRequest): NextResponse | undefined {
+  if (isPublicMailRoute(request.nextUrl.pathname, request.method)) return undefined;
   const expected = process.env.FRONTEND_ACCESS_PASSWORD ?? "";
   if (!expected) {
     if (process.env.NODE_ENV !== "production") return undefined;

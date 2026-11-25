@@ -37,6 +37,13 @@ from app.database.models.import_resolution import (
     ImportProcessingJobModel,
     ImportResolutionModel,
 )
+from app.database.models.mail_delivery import (
+    MailCampaignModel,
+    MailDeliveryModel,
+    MailFeedbackModel,
+    MailRateGateModel,
+    MailSourceReservationModel,
+)
 from app.database.models.opportunity import (
     OpportunityAssessmentModel,
     OpportunityEvidenceModel,
@@ -70,6 +77,11 @@ from app.database.models.umail_feedback import (
 )
 
 __all__ = [
+    "MailCampaignModel",
+    "MailDeliveryModel",
+    "MailFeedbackModel",
+    "MailRateGateModel",
+    "MailSourceReservationModel",
     "CompanyAliasModel",
     "CompanyModel",
     "CompanySignalModel",

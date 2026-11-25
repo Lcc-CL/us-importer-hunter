@@ -1842,3 +1842,66 @@ export function approveDraft(
     },
   );
 }
+
+export type MailCampaignAction = "approve" | "pause" | "resume" | "cancel";
+
+export interface MailCampaign {
+  id: string;
+  name: string;
+  status: "draft" | "active" | "paused" | "cancelled";
+  sender_address: string;
+  approved_by: string | null;
+  counts: Record<string, number>;
+  feedback: Record<string, number>;
+}
+
+export interface MailPreview {
+  id: string;
+  recipient: string;
+  subject: string;
+  body: string;
+  status: string;
+  attempt: number;
+  result_code: string | null;
+}
+
+export function getMailConfig() {
+  return requestJson<{ sender: string | null; send_ready: boolean }>("/mail-campaigns/config");
+}
+
+export function listMailCampaigns(offset = 0) {
+  return requestJson<MailCampaign[]>(`/mail-campaigns?offset=${offset}`);
+}
+
+export function getMailCampaign(id: string) {
+  return requestJson<MailCampaign>(`/mail-campaigns/${id}`);
+}
+
+export function listMailMessages(id: string, offset: number) {
+  return requestJson<MailPreview[]>(`/mail-campaigns/${id}/messages?offset=${offset}`);
+}
+
+interface MailCampaignInput {
+  id: string;
+  name: string;
+  subject?: string;
+  body?: string;
+}
+
+export function createMailCampaign(
+  input: MailCampaignInput & (
+    { export_id: string } |
+    { outreach_id: string; draft_version: number; recipient: string }
+  ),
+) {
+  return requestJson<MailCampaign>(
+    `/mail-campaigns/${"export_id" in input ? "template" : "draft"}`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function changeMailCampaign(id: string, action: MailCampaignAction, actor: string) {
+  return requestJson<MailCampaign>(`/mail-campaigns/${id}/actions`, {
+    method: "POST", body: JSON.stringify({ action, actor }),
+  });
+}
