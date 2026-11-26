@@ -9,6 +9,7 @@ from app.api.routes import (
     health,
     import_evidence,
     import_resolution,
+    interview_demo,
     mvp,
     prospect_batches,
     prospect_routing,
@@ -22,6 +23,7 @@ api_router.include_router(acceptance.router)
 api_router.include_router(bulk_import.router)
 api_router.include_router(import_resolution.router)
 api_router.include_router(health.router)
+api_router.include_router(interview_demo.router)
 api_router.include_router(mvp.router)
 api_router.include_router(research.router)
 api_router.include_router(import_evidence.router)

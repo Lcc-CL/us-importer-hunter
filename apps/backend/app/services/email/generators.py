@@ -66,6 +66,8 @@ class OpenAIEmailDraftGenerator:
         base_url: str | None = None,
         provider: str = "openai",
         client: object | None = None,  # test seam: anything with .chat.completions.create
+        max_output_tokens: int | None = None,
+        max_retries: int = 2,
     ) -> None:
         self._api_key = api_key
         self._model = model
@@ -73,6 +75,8 @@ class OpenAIEmailDraftGenerator:
         self._base_url = (base_url or "").strip() or None
         self._provider = provider
         self._client = client
+        self._max_output_tokens = max_output_tokens
+        self._max_retries = max_retries
 
     @property
     def provider_name(self) -> str:
@@ -93,17 +97,19 @@ class OpenAIEmailDraftGenerator:
                 ],
                 response_format={"type": "json_object"},
                 timeout=self._timeout,
+                **({"max_tokens": self._max_output_tokens} if self._max_output_tokens else {}),
             )
         except EmailGenerationError:
             raise
         except Exception as exc:  # SDK errors never leak past this boundary
-            raise EmailGenerationError(
-                f"{self._provider} request failed: {exc}"
-            ) from exc
+            raise EmailGenerationError(f"{self._provider} request failed") from exc
         return self._parse(response)
 
     def _build_client(self) -> Any:
-        if self._provider == "deepseek":
+        if self._provider == "kimi":
+            api_key = self._api_key
+            env_name = "KIMI_API_KEY"
+        elif self._provider == "deepseek":
             api_key = self._api_key or os.environ.get("DEEPSEEK_API_KEY", "").strip()
             env_name = "DEEPSEEK_API_KEY"
         else:
@@ -115,11 +121,12 @@ class OpenAIEmailDraftGenerator:
             )
         from openai import AsyncOpenAI  # imported here: startup never needs it
 
-        if self._base_url:
-            return AsyncOpenAI(
-                api_key=api_key, base_url=self._base_url, timeout=self._timeout
-            )
-        return AsyncOpenAI(api_key=api_key, timeout=self._timeout)
+        return AsyncOpenAI(
+            api_key=api_key,
+            base_url=self._base_url,
+            timeout=self._timeout,
+            max_retries=self._max_retries,
+        )
 
     def _parse(self, response: Any) -> GeneratedEmail:
         try:

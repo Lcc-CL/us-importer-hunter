@@ -1842,3 +1842,21 @@ export function approveDraft(
     },
   );
 }
+
+export type InterviewDraft = {
+  source: "cached" | "live";
+  model: string;
+  subject: string;
+  body: string;
+};
+
+export function getInterviewDemoCapability(signal: AbortSignal) {
+  return requestJson<{ live_enabled: boolean }>("/interview-demo/capability", { signal });
+}
+
+export function generateInterviewDraft() {
+  return requestJson<InterviewDraft>("/interview-demo/draft", {
+    method: "POST",
+    signal: AbortSignal.timeout(14_000),
+  });
+}

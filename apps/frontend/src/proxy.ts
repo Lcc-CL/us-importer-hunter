@@ -3,7 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Access passcode for the whole frontend, including the /api/v1 proxy.
+ * Access passcode for the workspace and its API. The fixed demo is public.
  *
  * HTTP Basic auth keeps it simple: the browser prompts once, then resends the
  * credentials on every same-origin page load and fetch, so the API proxy is
@@ -30,6 +30,15 @@ function passwordFromBasicAuth(header: string | null): string | null {
 }
 
 export function proxy(request: NextRequest): NextResponse | undefined {
+  const { pathname } = request.nextUrl;
+  if (
+    pathname === "/interview-demo" ||
+    (pathname === "/api/v1/interview-demo/capability" && request.method === "GET") ||
+    (pathname === "/api/v1/interview-demo/draft" && request.method === "POST")
+  ) {
+    return undefined;
+  }
+
   const expected = process.env.FRONTEND_ACCESS_PASSWORD ?? "";
   if (!expected) {
     if (process.env.NODE_ENV !== "production") return undefined;

@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, PostgresDsn, RedisDsn, computed_field
+from pydantic import AliasChoices, Field, PostgresDsn, RedisDsn, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,6 +73,19 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-pro"
+
+    # Isolated interview demo. Zero attempts keeps provider access off.
+    kimi_api_key: SecretStr = SecretStr("")
+    kimi_model: str = "moonshot-v1-8k"
+    kimi_demo_max_attempts: int = Field(0, ge=0, le=10)
+
+    @property
+    def kimi_demo_live_enabled(self) -> bool:
+        return bool(
+            self.kimi_demo_max_attempts
+            and self.kimi_api_key.get_secret_value().strip()
+            and self.kimi_model.strip()
+        )
 
     # Research extraction (v0.2 phase 5, ADR-0027). Fake stays the default so
     # no code path reaches a paid provider without an explicit opt-in.

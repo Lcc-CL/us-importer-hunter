@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_PREFIXES = [
   "health",
+  "interview-demo",
   "acceptance",
   "import-sessions",
   "import-entity-decisions",
@@ -68,7 +69,7 @@ async function proxy(
     const upstream = await fetch(target, {
       method: request.method,
       headers,
-      body: request.method === "GET" || request.method === "HEAD"
+      body: prefix === "interview-demo" || request.method === "GET" || request.method === "HEAD"
         ? undefined
         : await request.arrayBuffer(),
       cache: "no-store",
